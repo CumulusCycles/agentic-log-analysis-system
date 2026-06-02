@@ -1,0 +1,167 @@
+name: agentic-log-analysis-system
+
+# Phase 2 — Docker Infrastructure
+#
+# DB tier (postgres, mongodb, chroma) is fully functional with healthchecks.
+# App tier (shared-data-api, fnol-app, customer-portal, agent-portal, log-dashboard)
+# are bare-bones placeholders running `tail -f /dev/null` so the network, volumes,
+# and env wiring can be verified before any app code exists.
+#
+# Phases 3–7 replace each placeholder with the real service — adding port mappings,
+# healthchecks, `condition: service_healthy` on depends_on, and a Dockerfile.
+
+services:
+  # ============================================================================
+  # DB tier — fully functional
+  # ============================================================================
+
+  postgres:
+    image: postgres:16-alpine
+    platform: linux/arm64
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insurance-net
+
+  mongodb:
+    image: mongo:7
+    platform: linux/arm64
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongodb-data:/data/db
+    # /data/configdb is only used by config servers in sharded clusters; this
+    # is a single-instance mongo. Mounting tmpfs prevents the image's VOLUME
+    # directive from creating an anonymous volume on every container creation.
+    tmpfs:
+      - /data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand({ping:1}).ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insurance-net
+
+  chroma:
+    image: chromadb/chroma:1.5.9
+    platform: linux/arm64
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+    volumes:
+      - chroma-data:/chroma/chroma
+    # The chromadb/chroma image ships without curl/wget — use bash's /dev/tcp
+    # to GET /api/v2/heartbeat and check for a 200 response.
+    healthcheck:
+      test: ["CMD", "bash", "-c", 'exec 3<>/dev/tcp/localhost/8000 && printf "GET /api/v2/heartbeat HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3 && grep -q "200 OK" <&3']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - insurance-net
+
+  # ============================================================================
+  # App tier — Phase 2 placeholders
+  #
+  # Each app container runs `tail -f /dev/null` so the container stays alive.
+  # Port mappings, healthchecks, and `condition: service_healthy` on depends_on
+  # are added when the real server lands in Phases 3–7.
+  # ============================================================================
+
+  shared-data-api:
+    image: python:3.12-slim
+    platform: linux/arm64
+    restart: unless-stopped
+    env_file: .env
+    command: ["tail", "-f", "/dev/null"]
+    depends_on:
+      - postgres
+    networks:
+      - insurance-net
+
+  fnol-app:
+    image: python:3.12-slim
+    platform: linux/arm64
+    restart: unless-stopped
+    env_file: .env
+    command: ["tail", "-f", "/dev/null"]
+    volumes:
+      - fnol-logs:/app/logs
+    depends_on:
+      - postgres
+      - shared-data-api
+    networks:
+      - insurance-net
+
+  customer-portal:
+    image: node:20-alpine
+    platform: linux/arm64
+    restart: unless-stopped
+    env_file: .env
+    command: ["tail", "-f", "/dev/null"]
+    volumes:
+      - customer-portal-logs:/app/logs
+    depends_on:
+      - mongodb
+    networks:
+      - insurance-net
+
+  agent-portal:
+    image: eclipse-temurin:21-jdk-alpine
+    platform: linux/arm64
+    restart: unless-stopped
+    env_file: .env
+    command: ["tail", "-f", "/dev/null"]
+    volumes:
+      - agent-portal-logs:/app/logs
+    depends_on:
+      - postgres
+    networks:
+      - insurance-net
+
+  log-dashboard:
+    image: python:3.12-slim
+    platform: linux/arm64
+    restart: unless-stopped
+    env_file: .env
+    command: ["tail", "-f", "/dev/null"]
+    volumes:
+      - fnol-logs:/mnt/logs/fnol:ro
+      - customer-portal-logs:/mnt/logs/customer-portal:ro
+      - agent-portal-logs:/mnt/logs/agent-portal:ro
+    depends_on:
+      chroma:
+        condition: service_healthy
+    networks:
+      - insurance-net
+
+volumes:
+  postgres-data:
+  mongodb-data:
+  fnol-logs:
+  customer-portal-logs:
+  agent-portal-logs:
+  chroma-data:
+
+networks:
+  insurance-net:
+    driver: bridge

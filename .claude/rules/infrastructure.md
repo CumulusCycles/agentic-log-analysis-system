@@ -52,15 +52,17 @@ volumes:
 ```
 
 ## Healthchecks
-Every container must define a Docker healthcheck.
+Every container must define a Docker healthcheck **once the real server is in place**.
+Phase 2 placeholders (app tier running `tail -f /dev/null`) ship without a healthcheck —
+each phase 3–7 adds the real check when the server lands.
 
 - **Postgres:** `pg_isready -U $POSTGRES_USER`
 - **MongoDB:** `mongosh --eval "db.runCommand({ping:1})"`
-- **Chroma:** `curl -f http://localhost:8000/api/v1/heartbeat`
+- **Chroma:** bash + `/dev/tcp` against `http://localhost:8000/api/v2/heartbeat` — the `chromadb/chroma:1.5.9` image ships without curl/wget but does include bash, so the healthcheck is `bash -c 'exec 3<>/dev/tcp/localhost/8000 && printf "GET /api/v2/heartbeat HTTP/1.0\r\nHost: localhost\r\n\r\n" >&3 && grep -q "200 OK" <&3'`
 - **App containers** (`shared-data-api`, `fnol-app`, `customer-portal`, `log-dashboard`): HTTP `GET /health` — see `.claude/rules/apps.md`
 - **Agent Portal:** HTTP `GET /actuator/health` — see `.claude/rules/apps.md`
 
-`log-dashboard` has `depends_on: chroma: condition: service_healthy` — the Chroma healthcheck above must pass before the dashboard starts.
+`log-dashboard` has `depends_on: chroma: condition: service_healthy` — the Chroma healthcheck above must pass before the dashboard starts. App-tier `depends_on` entries use the short-form list until the dependency's real healthcheck lands in its phase, then they are upgraded to `condition: service_healthy`.
 
 ## NEVER run
 ```bash

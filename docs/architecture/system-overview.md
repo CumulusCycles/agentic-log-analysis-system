@@ -76,8 +76,8 @@ in `docker compose logs` rather than in the dashboard.
 
 ## Startup Dependencies
 
-`docker-compose.yml` (introduced in Phase 2) wires these `depends_on`
-relationships so Compose starts services in a valid order:
+`docker-compose.yml` wires these `depends_on` relationships so Compose starts services
+in a valid order:
 
 | Service | Waits for |
 |---|---|
@@ -86,3 +86,9 @@ relationships so Compose starts services in a valid order:
 | customer-portal | mongodb (healthy) |
 | agent-portal | postgres (healthy) |
 | log-dashboard | chroma (healthy) |
+
+> **Phase 2 state:** only `log-dashboard → chroma` currently uses
+> `condition: service_healthy` — chroma is the only dependency whose target has a
+> real healthcheck. The other rows above are the target end-state; their app-tier
+> dependencies use the short-form list in Phase 2 (no condition) and are upgraded
+> to `service_healthy` in the phase that adds the real server.
