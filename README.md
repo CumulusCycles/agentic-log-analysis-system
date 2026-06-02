@@ -27,7 +27,7 @@ Infrastructure: PostgreSQL · MongoDB · Chroma vector store · Docker Compose �
 | Phase | Description | Status |
 |---|---|---|
 | 1 | Project scaffold — repo structure, root config, Claude Code config, docs | ✅ |
-| 2 | Docker infrastructure — all 8 containers, 6 volumes, networking, healthchecks | ⬜ |
+| 2 | Docker infrastructure — all 8 containers, 6 volumes, networking, healthchecks | ✅ |
 | 3 | Shared Data API — PostgreSQL schema, customer/policy endpoints | ⬜ |
 | 4 | FNOL — accident report submission + React frontend | ⬜ |
 | 5 | Customer Portal — policy/claim views + React frontend + MongoDB | ⬜ |
@@ -57,8 +57,6 @@ Infrastructure: PostgreSQL · MongoDB · Chroma vector store · Docker Compose �
 
 ## Quick Start
 
-> Available once **Phase 2** adds `docker-compose.yml`. Until then, see `PLAN.md` for build status.
-
 ```bash
 # 1. Copy the environment template and fill in your values
 cp .env.example .env
@@ -69,6 +67,11 @@ docker compose up -d
 # 3. Verify every container is running and healthy
 docker compose ps
 ```
+
+> **Phase 2 note:** the DB tier (`postgres`, `mongodb`, `chroma`) is fully functional
+> and reports `(healthy)`. The five app containers run `tail -f /dev/null` as
+> placeholders — they appear as `Up` without a health status. Phases 3–7 replace each
+> placeholder with the real server and add its `GET /health` healthcheck.
 
 ### Common Docker Commands
 

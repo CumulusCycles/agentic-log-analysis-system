@@ -30,11 +30,28 @@ and `docs/` (architecture, tech, decisions).
 Define the full `docker-compose.yml`: all 8 containers, 6 persistent volumes,
 `insurance-net` bridge network, healthchecks, ARM64 platform flags.
 
-> **Enter Plan Mode before starting this phase.**
+DB tier (postgres, mongodb, chroma) ships fully functional with real healthchecks.
+App tier (shared-data-api, fnol-app, customer-portal, agent-portal, log-dashboard)
+ships as bare-bones placeholders running `tail -f /dev/null` — Phases 3–7 replace
+each with the real server, adding the port mapping, healthcheck, and
+`condition: service_healthy` on depends_on.
 
 | Task | Status |
 |---|---|
-| *(tasks to be defined in Plan Mode)* | ⬜ |
+| Create `feature/phase-2-docker-infrastructure` branch | ✅ |
+| Write root `docker-compose.yml` (8 services, 6 volumes, `insurance-net`, ARM64) | ✅ |
+| Configure `postgres` with healthcheck and persistent volume | ✅ |
+| Configure `mongodb` with healthcheck and persistent volume | ✅ |
+| Configure `chroma` 1.5.9 with healthcheck (internal port only) | ✅ |
+| Add placeholder app services with base runtime images + `tail -f /dev/null` (no ports, no healthcheck) | ✅ |
+| Wire log volumes (FNOL/CP/AP write, log-dashboard read-only) | ✅ |
+| Wire `depends_on` (log-dashboard waits for `chroma` `service_healthy`) | ✅ |
+| Fix `chroma` heartbeat path drift (`/api/v1/` → `/api/v2/`) in `infrastructure.md` | ✅ |
+| `docker compose config` passes | ✅ |
+| `docker compose up -d` brings DB tier healthy; app tier placeholders stay `Up` | ✅ |
+| Update README phase table and remove Quick Start caveat | ✅ |
+| Update `docs/architecture/system-overview.md` depends_on note | ✅ |
+| Run `/ship`: self-review → security-review → verify → push → PR | ✅ |
 
 ---
 
