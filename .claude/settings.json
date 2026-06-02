@@ -1,0 +1,69 @@
+{
+  "model": "claude-sonnet-4-6",
+  "permissions": {
+    "allow": [
+      "Bash(docker compose up*)",
+      "Bash(docker compose down)",
+      "Bash(docker compose logs*)",
+      "Bash(docker compose ps*)",
+      "Bash(docker compose build*)",
+      "Bash(docker compose config*)",
+      "Bash(docker logs *)",
+      "Bash(docker ps*)",
+      "Bash(docker run --rm *)",
+      "Bash(git *)",
+      "Bash(gh *)",
+      "Bash(pnpm *)",
+      "Bash(uv *)",
+      "Bash(./mvnw *)",
+      "Bash(cat *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(find *)",
+      "Bash(grep *)"
+    ],
+    "deny": [
+      "Bash(cat .env)",
+      "Bash(docker compose down -v)",
+      "Bash(rm -rf *)",
+      "Bash(npm *)",
+      "Bash(pip *)",
+      "Bash(yarn *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/pre_bash_guard.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/post_format.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/post_compose_validate.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

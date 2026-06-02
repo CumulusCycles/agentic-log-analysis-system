@@ -1,0 +1,64 @@
+# =============================================================================
+# .gitattributes — repo-wide file handling for the Agentic Log Analysis System.
+#
+# Scope is tight: only patterns for file types that actually appear in this
+# project's stack (Python + uv, Node/TS/React + pnpm, Java + Maven, Docker,
+# SQL, Claude Code hooks). Generic boilerplate (notebooks, fonts, archives,
+# vector-store binaries, etc.) is intentionally omitted — those files either
+# don't appear or live in Docker volumes outside the repo.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Default — autodetect text vs binary, normalize text to LF on commit.
+# This single rule already handles line endings for every text file below;
+# explicit per-extension `text eol=lf` lines are only used when needed.
+# -----------------------------------------------------------------------------
+*                       text=auto eol=lf
+
+# -----------------------------------------------------------------------------
+# MUST be LF — Claude Code hooks and the Maven Wrapper. CRLF here silently
+# breaks execution on Unix.
+# -----------------------------------------------------------------------------
+*.sh                    text eol=lf
+mvnw                    text eol=lf
+
+# -----------------------------------------------------------------------------
+# MUST be CRLF — Maven Wrapper's Windows companion.
+# -----------------------------------------------------------------------------
+mvnw.cmd                text eol=crlf
+
+# -----------------------------------------------------------------------------
+# Language diff drivers — language-aware hunk headers in `git diff` / PRs.
+# -----------------------------------------------------------------------------
+*.py                    diff=python
+*.java                  diff=java
+*.html                  diff=html
+*.css                   diff=css
+
+# -----------------------------------------------------------------------------
+# Binary artifacts — explicit markers as a safety net against git's
+# autodetect misclassifying these as text.
+# -----------------------------------------------------------------------------
+*.pyc                   binary
+*.class                 binary
+*.jar                   binary
+*.png                   binary
+*.jpg                   binary
+*.jpeg                  binary
+*.ico                   binary
+
+# SVG is XML — keep as text so React component diffs are reviewable.
+*.svg                   text
+
+# -----------------------------------------------------------------------------
+# Lock files — suppress diff (large, unreadable in review). Still mergeable;
+# regenerate via pnpm / uv on real conflicts. Do NOT set merge=ours — that
+# silently drops the other side's deps.
+# -----------------------------------------------------------------------------
+pnpm-lock.yaml          -diff
+uv.lock                 -diff
+
+# -----------------------------------------------------------------------------
+# Claude Code — exclude per-machine settings from `git archive` outputs.
+# -----------------------------------------------------------------------------
+.claude/settings.local.json     export-ignore
