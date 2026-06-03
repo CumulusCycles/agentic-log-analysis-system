@@ -1,0 +1,7 @@
+node_modules
+dist
+*.log
+coverage
+.env
+!.env.example
+pnpm-workspace.yaml
