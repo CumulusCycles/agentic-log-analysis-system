@@ -31,7 +31,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | 1 | Project scaffold — repo structure, root config, Claude Code config, docs | ✅ |
 | 2 | Docker infrastructure — all 8 containers, 6 volumes, networking, healthchecks | ✅ |
 | 3 | Shared Data API — sole data-access API (Mongo + Postgres), JWT auth, per-app API keys, background claim-status simulator, 7th log volume | ✅ |
-| 4 | FNOL — accident report submission + React frontend | ⬜ |
+| 4 | FNOL — accident report submission (FastAPI proxy to SDA) + React frontend (Vite + TypeScript + Tailwind), Playwright E2E suite | ✅ |
 | 5 | Customer Portal — policy/claim views + React frontend + MongoDB | ⬜ |
 | 6 | Agent Portal — claim handler tool + React frontend | ⬜ |
 | ⛔ | **HARD STOP** — all 4 apps stable, all 3 log volumes populated | — |
@@ -77,7 +77,8 @@ After `docker compose up -d`, click the link to verify the corresponding contain
 | Container | Endpoint | Phase |
 |---|---|---|
 | Shared Data API | [`http://localhost:8002/health`](http://localhost:8002/health) | 3 ✅ |
-| FNOL | `http://localhost:8001/health` | 4 — placeholder until phase ships |
+| FNOL — backend health | [`http://localhost:8001/health`](http://localhost:8001/health) | 4 ✅ |
+| FNOL — React UI (mobile-first) | [`http://localhost:8001/`](http://localhost:8001/) | 4 ✅ |
 | Customer Portal | `http://localhost:3001/health` | 5 — placeholder until phase ships |
 | Agent Portal | `http://localhost:8081/actuator/health` | 6 — placeholder until phase ships |
 | Agentic Log Analysis Dashboard | `http://localhost:4001/health` | 7 — placeholder until phase ships |

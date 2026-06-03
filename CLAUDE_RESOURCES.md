@@ -9,9 +9,9 @@ This file lists every Claude Code resource in this project, what it does, and wh
 | Command | File | When to Use |
 |---|---|---|
 | `/self-review` | `.claude/commands/self-review.md` | After writing code, before running tests — query MCP docs, review diff, fix issues |
-| `/ship` | `.claude/commands/ship.md` | Ready to commit and open a PR — runs pre-ship doc check → self-review → security-review → lint → build → test → commit → push → PR |
+| `/ship` | `.claude/commands/ship.md` | Ready to commit and open a PR — runs pre-ship doc check → self-review → security-review → lint → build → **every app's test suite (backend + frontend unit + Playwright E2E)** → commit → push → PR |
 | `/done` | `.claude/commands/done.md` | After a PR is merged — checkout main, pull, delete local + remote branch |
-| `/test` | `.claude/commands/test.md` | Run the test suite for the current app |
+| `/test` | `.claude/commands/test.md` | Run tests for the current app, a single named app, or `/test all` for every app's suite (mirrors `/ship`'s gate) |
 | `/lint` | `.claude/commands/lint.md` | Run linting and formatting checks for the current app |
 | `/build` | `.claude/commands/build.md` | Run a production build and report errors |
 | `/logs` | `.claude/commands/logs.md` | Tail live Docker container logs |
