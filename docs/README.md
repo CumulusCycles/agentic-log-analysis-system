@@ -28,6 +28,7 @@ that all implementation must follow.
 |---|---|
 | [`tech/tech-stack.md`](tech/tech-stack.md) | Per-app language, framework, database, and tooling choices |
 | [`tech/logging-strategy.md`](tech/logging-strategy.md) | Per-stack log formats, volume mount paths, and dashboard ingestion approach |
+| [`tech/data-model.md`](tech/data-model.md) | Mongo + Postgres schemas, claim status enum, seed counts |
 | [`tech/file-naming-convention.md`](tech/file-naming-convention.md) | File and path naming rules for the whole repo |
 
 ---
@@ -39,4 +40,7 @@ that all implementation must follow.
 | [`decisions/ADR-001-local-docker-only.md`](decisions/ADR-001-local-docker-only.md) | All infrastructure runs locally via Docker Compose — no cloud deployment |
 | [`decisions/ADR-002-monorepo.md`](decisions/ADR-002-monorepo.md) | All apps in a single repo, orchestrated from one `docker-compose.yml` |
 | [`decisions/ADR-003-logging-strategy.md`](decisions/ADR-003-logging-strategy.md) | Polyglot logging — each app uses its native format, dashboard handles heterogeneity |
-| [`decisions/ADR-004-database-architecture.md`](decisions/ADR-004-database-architecture.md) | Shared PostgreSQL for relational apps, dedicated MongoDB for Customer Portal |
+| [`decisions/ADR-004-database-architecture.md`](decisions/ADR-004-database-architecture.md) | _Superseded by ADR-005._ Original DB topology (shared Postgres, dedicated Mongo) |
+| [`decisions/ADR-005-shared-data-api-as-sole-data-layer.md`](decisions/ADR-005-shared-data-api-as-sole-data-layer.md) | Shared Data API owns both DBs — FNOL/CP/AP access data only via HTTP |
+| [`decisions/ADR-006-auth-strategy.md`](decisions/ADR-006-auth-strategy.md) | JWT for insurance apps via SDA; standalone JWT for Dashboard; per-app API keys |
+| [`decisions/ADR-007-background-claim-status-simulator.md`](decisions/ADR-007-background-claim-status-simulator.md) | In-process simulator inside SDA advances claim statuses for log realism |

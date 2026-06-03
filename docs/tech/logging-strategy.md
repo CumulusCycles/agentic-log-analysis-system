@@ -13,10 +13,26 @@ Everything else is stack-native.
 
 ## Per-Stack Implementation
 
-### Shared Data API (Python / logging)
+### Shared Data API (Python / structlog + logging)
 
-Logs to stdout only — no log file, no volume. Visible via `docker compose logs shared-data-api`.
-Uses Python `logging` with INFO level. No structlog dependency.
+```python
+import structlog
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    handlers=[
+        logging.FileHandler("/app/logs/shared-data-api.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = structlog.get_logger()
+```
+
+Output: structured JSON events. Every request log line includes `caller=<app>` and
+`user=<id>` for dashboard correlation — caller comes from the `X-API-Key` header
+(see ADR-006), user from the JWT subject.
 
 ---
 
@@ -89,11 +105,12 @@ Do not emit ERROR for conditions that are handled and recovered. Do not suppress
 
 | App | Container log path | Docker volume | Dashboard mount |
 |---|---|---|---|
+| Shared Data API | `/app/logs/shared-data-api.log` | `shared-data-api-logs` | `/mnt/logs/shared-data-api/shared-data-api.log` |
 | FNOL | `/app/logs/fnol-app.log` | `fnol-logs` | `/mnt/logs/fnol/fnol-app.log` |
 | Customer Portal | `/app/logs/customer-portal.log` | `customer-portal-logs` | `/mnt/logs/customer-portal/customer-portal.log` |
 | Agent Portal | `/app/logs/agent-portal.log` | `agent-portal-logs` | `/mnt/logs/agent-portal/agent-portal.log` |
 
-Dashboard mounts all three volumes **read-only**. It never writes to log volumes.
+Dashboard mounts all four volumes **read-only**. It never writes to log volumes.
 
 ---
 
@@ -102,5 +119,5 @@ Dashboard mounts all three volumes **read-only**. It never writes to log volumes
 The dashboard is a log consumer, not a log producer in the traditional sense.
 
 - **Own logs:** stdout only (no log volume, no file). Visible via `docker compose logs log-dashboard`.
-- **Consumed logs:** mounts `fnol-logs`, `customer-portal-logs`, and `agent-portal-logs` read-only at `/mnt/logs/<app>/`. A `watchdog` file watcher detects new entries and streams them to Chroma.
+- **Consumed logs:** mounts `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, and `agent-portal-logs` read-only at `/mnt/logs/<app>/`. A `watchdog` file watcher detects new entries and streams them to Chroma.
 - The dashboard does not normalize incoming log formats — the LangGraph agent interprets heterogeneous formats at query time.

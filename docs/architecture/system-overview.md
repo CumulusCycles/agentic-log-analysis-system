@@ -28,26 +28,28 @@ graph LR
     Browser -- "host :4001" --> DASH
 
     FNOL --> SDA
-    FNOL --> PG
+    CP --> SDA
+    AP --> SDA
     SDA --> PG
-    CP --> MG
-    AP --> PG
+    SDA --> MG
     DASH --> CR
 ```
 
 ## Log Flow
 
-The three logging apps write to their own named volumes. The dashboard mounts
-all three log volumes **read-only**, watches them with `watchdog`, embeds new
+All four logging apps write to their own named volumes. The dashboard mounts
+every log volume **read-only**, watches them with `watchdog`, embeds new
 entries into Chroma, and serves analysis through the LangGraph agent.
 
 ```mermaid
 graph TB
+    SDA[shared-data-api] -- writes --> SV[("shared-data-api-logs")]
     FNOL[fnol-app] -- writes --> FV[("fnol-logs")]
     CP[customer-portal] -- writes --> CV[("customer-portal-logs")]
     AP[agent-portal] -- writes --> AV[("agent-portal-logs")]
 
-    FV -. read-only mount .-> DASH[log-dashboard]
+    SV -. read-only mount .-> DASH[log-dashboard]
+    FV -. read-only mount .-> DASH
     CV -. read-only mount .-> DASH
     AV -. read-only mount .-> DASH
 
@@ -58,8 +60,10 @@ graph TB
     LG --> UI[React UI]
 ```
 
-Shared Data API logs to stdout only and has no log volume — its events surface
-in `docker compose logs` rather than in the dashboard.
+Shared Data API logs to both stdout and `/app/logs/shared-data-api.log` (volume
+`shared-data-api-logs`), which the dashboard also mounts read-only. Every request
+line includes `caller=<app>` and `user=<id>` attribution — see ADR-005 and
+`docs/tech/logging-strategy.md`.
 
 ## Port Reference
 
@@ -81,10 +85,10 @@ in a valid order:
 
 | Service | Waits for |
 |---|---|
-| shared-data-api | postgres (healthy) |
-| fnol-app | postgres (healthy), shared-data-api (healthy) |
-| customer-portal | mongodb (healthy) |
-| agent-portal | postgres (healthy) |
+| shared-data-api | postgres (healthy), mongodb (healthy) |
+| fnol-app | shared-data-api (healthy) |
+| customer-portal | shared-data-api (healthy) |
+| agent-portal | shared-data-api (healthy) |
 | log-dashboard | chroma (healthy) |
 
 > **Phase 2 state:** only `log-dashboard → chroma` currently uses

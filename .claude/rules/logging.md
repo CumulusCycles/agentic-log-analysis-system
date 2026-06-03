@@ -15,6 +15,12 @@ Every app MUST log a parseable **severity level** and **timestamp**. Everything 
 
 ## Per-Stack Formats
 
+### Shared Data API (Python / FastAPI)
+- Library: Python `logging` + `structlog`
+- Mix of structured JSON request logs and plain exception tracebacks
+- Every request line includes `caller=<app>` (from `X-API-Key`) and `user=<id>` (from JWT) — the dashboard's primary correlation source
+- Log file: `/app/logs/shared-data-api.log` → volume: `shared-data-api-logs`
+
 ### FNOL (Python / FastAPI)
 - Library: Python `logging` + `structlog`
 - Mix of structured JSON events and plain exception tracebacks
@@ -30,12 +36,9 @@ Every app MUST log a parseable **severity level** and **timestamp**. Everything 
 - Multi-line stack traces
 - Log file: `/app/logs/agent-portal.log` → volume: `agent-portal-logs`
 
-### Shared Data API (Python / FastAPI)
-- Logs to stdout only — no log volume. Visible via `docker compose logs shared-data-api`.
-
 ### Agentic Log Analysis Dashboard
 - Own logs: stdout only — no log volume. Visible via `docker compose logs log-dashboard`.
-- Consumes `fnol-logs`, `customer-portal-logs`, `agent-portal-logs` read-only. Never writes to log volumes.
+- Consumes `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, `agent-portal-logs` read-only. Never writes to log volumes.
 
 ---
 
@@ -43,8 +46,9 @@ Every app MUST log a parseable **severity level** and **timestamp**. Everything 
 
 | App | Container path | Volume | Dashboard read path |
 |---|---|---|---|
+| Shared Data API | `/app/logs/shared-data-api.log` | `shared-data-api-logs` | `/mnt/logs/shared-data-api/shared-data-api.log` |
 | FNOL | `/app/logs/fnol-app.log` | `fnol-logs` | `/mnt/logs/fnol/fnol-app.log` |
 | Customer Portal | `/app/logs/customer-portal.log` | `customer-portal-logs` | `/mnt/logs/customer-portal/customer-portal.log` |
 | Agent Portal | `/app/logs/agent-portal.log` | `agent-portal-logs` | `/mnt/logs/agent-portal/agent-portal.log` |
 
-Dashboard mounts all three app log volumes **read-only**.
+Dashboard mounts all four app log volumes **read-only**.

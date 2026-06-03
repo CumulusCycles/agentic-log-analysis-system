@@ -1,9 +1,9 @@
 # Project Rules — Agentic Log Analysis Dashboard
 
 ## Purpose
-The primary deliverable. An agentic AI system that will continuously monitor logs from the
-three logging apps (FNOL, Customer Portal, Agent Portal), identify issues, suggest
-remediation, and proactively predict problems before they escalate.
+The primary deliverable. An agentic AI system that will continuously monitor logs from all
+four logging apps (Shared Data API, FNOL, Customer Portal, Agent Portal), identify issues,
+suggest remediation, and proactively predict problems before they escalate.
 
 ---
 
@@ -16,6 +16,7 @@ remediation, and proactively predict problems before they escalate.
 - **Observability**: LangSmith (trace every agent run)
 - **Log ingestion**: `watchdog` file watcher → embeds entries into Chroma continuously
 - **Single container**: FastAPI serves React build as static files
+- **Standalone auth**: local JWT signed with `DASHBOARD_JWT_SECRET`; admin credentials from env (`DASHBOARD_ADMIN_USERNAME` / `DASHBOARD_ADMIN_PASSWORD`). Independent of the Shared Data API — the dashboard must function for diagnostics when SDA is down. See ADR-006.
 
 ---
 
@@ -51,6 +52,7 @@ remediation, and proactively predict problems before they escalate.
 ## Volume Access — READ-ONLY
 ```yaml
 volumes:
+  - shared-data-api-logs:/mnt/logs/shared-data-api:ro
   - fnol-logs:/mnt/logs/fnol:ro
   - customer-portal-logs:/mnt/logs/customer-portal:ro
   - agent-portal-logs:/mnt/logs/agent-portal:ro
@@ -58,6 +60,7 @@ volumes:
 
 ## Environment Variables
 - `OPENAI_API_KEY`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `DASHBOARD_CHROMA_URL`
+- `DASHBOARD_JWT_SECRET`, `DASHBOARD_ADMIN_USERNAME`, `DASHBOARD_ADMIN_PASSWORD` (standalone auth)
 
 ---
 
@@ -84,10 +87,15 @@ Required endpoints (derived from 4 UI screens):
 | Method | Path | Purpose |
 |---|---|---|
 | `GET` | `/health` | Container healthcheck |
+| `POST` | `/api/auth/login` | Admin login → JWT (standalone, independent of SDA) |
+| `GET` | `/api/auth/me` | Current admin from JWT |
 | `GET` | `/api/status` | Per-app status cards for Overview Dashboard |
 | `GET` | `/api/logs` | Paginated log entries for Log Explorer |
 | `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response |
 | `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis |
+
+> Dashboard auth does NOT depend on the Shared Data API being healthy — by design.
+> Local-only JWT keeps the diagnostic tool usable when the apps it observes are sick.
 
 ---
 

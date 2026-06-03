@@ -55,10 +55,30 @@ each with the real server, adding the port mapping, healthcheck, and
 
 ---
 
+## Pre-Phase-3 — Architecture Pivot (Docs & Rules Only)
+
+Captures the data-layer, auth, and simulator decisions in docs, rules, and ADRs so
+Phase 3 implementation can land cleanly. No code or container changes in this PR.
+
+| Task | Status |
+|---|---|
+| Add ADR-005 (Shared Data API as sole data layer), ADR-006 (auth strategy), ADR-007 (claim-status simulator) | ✅ |
+| Mark ADR-004 superseded by ADR-005 (and ADR-003 amended) | ✅ |
+| Add `docs/tech/data-model.md` (Mongo + Postgres schemas, status enum, seed counts) | ✅ |
+| Update `docs/project-brief.md`, `docs/architecture/system-overview.md`, `docs/tech/{tech-stack,logging-strategy}.md`, `docs/README.md` | ✅ |
+| Update `.claude/rules/*` (project, apps, dashboard, logging, infrastructure) | ✅ |
+| Update `README.md` architecture + resources tables | ✅ |
+| Rewrite `.env.example` (remove direct DB envs for FNOL/CP/AP; add JWT, API keys, admin creds, demo logins) | ✅ |
+| Run `/ship`: pre-ship doc check → self-review → security-review → commit → push → PR | 🔄 |
+
+---
+
 ## Phase 3 — Shared Data API
 
-Backend-only FastAPI service for centralized customer and policy data.
-Establishes the PostgreSQL schema used by FNOL and Agent Portal.
+Backend FastAPI service. Sole data-access layer (Mongo for users/policies, Postgres for
+claims). Issues JWTs for FNOL/CP/AP, enforces per-app API keys, runs background
+claim-status simulator, writes logs to 7th volume `shared-data-api-logs`.
+Full scope in `.claude/rules/apps.md` and `docs/tech/data-model.md`.
 
 > **Enter Plan Mode before starting this phase.**
 
@@ -113,9 +133,10 @@ Internal claim handler app. Spring Boot backend + React frontend + PostgreSQL.
 |---|---|
 | All 4 app containers start healthy (`docker compose up`) | ⬜ |
 | All 4 apps pass their full test suites | ⬜ |
-| All 3 log volumes contain real log entries | ⬜ |
+| All 4 log volumes contain real log entries | ⬜ |
 | FNOL ↔ Shared Data API integration verified end-to-end | ⬜ |
-| Agent Portal reads FNOL claims correctly | ⬜ |
+| Agent Portal reads claims via Shared Data API correctly | ⬜ |
+| Shared Data API auth (JWT + API key) round-trips for FNOL/CP/AP | ⬜ |
 | All 4 app containers + 2 DBs stable together under load | ⬜ |
 
 ---
