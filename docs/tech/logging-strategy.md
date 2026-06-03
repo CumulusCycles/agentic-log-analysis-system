@@ -34,6 +34,13 @@ Output: structured JSON events. Every request log line includes `caller=<app>` a
 `user=<id>` for dashboard correlation — caller comes from the `X-API-Key` header
 (see ADR-006), user from the JWT subject.
 
+> **structlog configuration note:** the Shared Data API sets
+> `cache_logger_on_first_use=False`. Module-level `log = get_logger(__name__)`
+> calls would otherwise lock in whatever config existed at first use, which
+> breaks both `structlog.testing.capture_logs()` in tests and live
+> reconfiguration. Do not flip this back to `True` without a corresponding
+> refactor to fetch loggers inside functions.
+
 ---
 
 ### FNOL (Python / structlog + logging)

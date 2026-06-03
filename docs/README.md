@@ -44,3 +44,4 @@ that all implementation must follow.
 | [`decisions/ADR-005-shared-data-api-as-sole-data-layer.md`](decisions/ADR-005-shared-data-api-as-sole-data-layer.md) | Shared Data API owns both DBs — FNOL/CP/AP access data only via HTTP |
 | [`decisions/ADR-006-auth-strategy.md`](decisions/ADR-006-auth-strategy.md) | JWT for insurance apps via SDA; standalone JWT for Dashboard; per-app API keys |
 | [`decisions/ADR-007-background-claim-status-simulator.md`](decisions/ADR-007-background-claim-status-simulator.md) | In-process simulator inside SDA advances claim statuses for log realism |
+| [`decisions/ADR-008-defer-alembic-to-post-phase-3.md`](decisions/ADR-008-defer-alembic-to-post-phase-3.md) | Phase 3 uses `create_all`; Alembic lands as a dedicated PR before Phase 4 |
