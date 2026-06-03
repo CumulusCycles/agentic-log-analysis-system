@@ -39,6 +39,7 @@ jobs:
       agent_portal: ${{ steps.filter.outputs.agent_portal }}
       dashboard: ${{ steps.filter.outputs.dashboard }}
       shared_infra: ${{ steps.filter.outputs.shared_infra }}
+      dashboard_exists: ${{ steps.dashboard_exists.outputs.exists }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v4
@@ -60,6 +61,16 @@ jobs:
               - '.env.example'
               - '.claude/rules/apps.md'
               - '.github/workflows/**'
+      # hashFiles() is not available in job-level `if:` expressions — must be
+      # evaluated at step level. Surface the dashboard scaffolding state as a
+      # `changes` output so the dashboard job below can gate on it.
+      - id: dashboard_exists
+        run: |
+          if [ -f dashboard/pyproject.toml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
   # ---------------------------------------------------------------------------
   # shared-data-api — Python only
@@ -266,7 +277,7 @@ jobs:
        needs.changes.outputs.shared_infra == 'true' ||
        github.event_name == 'push' ||
        github.event_name == 'workflow_dispatch') &&
-      hashFiles('dashboard/pyproject.toml') != ''
+      needs.changes.outputs.dashboard_exists == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

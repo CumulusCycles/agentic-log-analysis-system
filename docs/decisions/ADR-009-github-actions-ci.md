@@ -10,7 +10,7 @@
 4. CI does **not** run: Playwright E2E (requires the live Docker stack — see decision 5), container image builds, image pushes, deployment. E2E remains local-only via `/ship`.
 5. E2E in CI was considered and deferred. The two viable paths are (a) skipping it (defeats the purpose) or (b) a self-hosted runner with Docker (ties CI to a maintained machine + ongoing infra burden). The scoped `/ship` rule already enforces E2E locally when the shared contract moves, and the PR test-plan discipline keeps the gate honest.
 6. Default `GITHUB_TOKEN` is used with least-privilege permissions (`contents: read`, `pull-requests: write`, `checks: write`). No fine-grained PAT, no organization-level secrets, no rotation maintenance.
-7. The dashboard job is defined now with a `hashFiles('dashboard/pyproject.toml') != ''` guard so it activates automatically once Phase 7 scaffolds the directory — no follow-up CI PR required when Phase 7 lands.
+7. The dashboard job is defined now with a filesystem existence check in the `changes` job (`dashboard_exists` output testing for `dashboard/pyproject.toml`). The dashboard job's `if:` gates on that output, so the job activates automatically once Phase 7 scaffolds the directory — no follow-up CI PR required when Phase 7 lands.
 8. Branch protection on `main` (require CI checks before merge) is **recommended** but configured outside this PR, in repo Settings → Branches. The workflow file is the prerequisite; flipping the protection switch is a one-click follow-up.
 
 ## Rationale
