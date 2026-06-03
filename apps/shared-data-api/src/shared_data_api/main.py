@@ -21,7 +21,7 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await postgres.init_engine(settings.postgres_url)
-        await postgres.create_all()
+        await postgres.run_migrations()
         await mongo.init_client(settings.mongodb_uri, settings.mongodb_database)
         await mongo.ensure_indexes()
         await run_seed_if_empty(settings)

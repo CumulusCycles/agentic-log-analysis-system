@@ -69,7 +69,7 @@ Phase 3 implementation can land cleanly. No code or container changes in this PR
 | Update `.claude/rules/*` (project, apps, dashboard, logging, infrastructure) | ✅ |
 | Update `README.md` architecture + resources tables | ✅ |
 | Rewrite `.env.example` (remove direct DB envs for FNOL/CP/AP; add JWT, API keys, admin creds, demo logins) | ✅ |
-| Run `/ship`: pre-ship doc check → self-review → security-review → commit → push → PR | 🔄 |
+| Run `/ship`: pre-ship doc check → self-review → security-review → commit → push → PR | ✅ |
 
 ---
 
@@ -106,7 +106,39 @@ Full scope in `.claude/rules/apps.md` and `docs/tech/data-model.md`.
 | Multi-pass review and fix — Critical (5), Medium (10), Low (5), Functional (3); 85 tests total | ✅ |
 | ADR-008 (defer Alembic to post-Phase-3 PR) | ✅ |
 | Documentation drift fixes — `.claude/rules/apps.md`, `docs/tech/data-model.md`, `docs/tech/logging-strategy.md`, `docs/README.md`, `README.md` | ✅ |
-| Run `/ship`: pre-ship doc check → self-review → security-review → lint → build → test → commit → push → PR | 🔄 |
+| Run `/ship`: pre-ship doc check → self-review → security-review → lint → build → test → commit → push → PR | ✅ |
+
+---
+
+## Alembic Baseline — Schema Management for Phase 4+
+
+Lands Alembic ahead of Phase 4 per ADR-008, before FNOL begins writing persistent
+claims that schema changes must preserve. Generates the baseline migration from the
+Phase 3 models, swaps the lifespan from `create_all()` to `run_migrations()`, and
+replaces the "wipe `postgres-data` to evolve schema" runbook with the `alembic revision`
+workflow. Tests continue to use SQLite + `create_all()` directly via an autouse
+conftest bypass.
+
+| Task | Status |
+|---|---|
+| Create `feature/alembic-baseline` branch | ✅ |
+| Add `alembic` dep to `pyproject.toml` + regenerate `uv.lock` | ✅ |
+| Scaffold `apps/shared-data-api/alembic/` (env.py async pattern, blank `sqlalchemy.url`) | ✅ |
+| Generate baseline migration via `alembic revision --autogenerate -m "phase 3 baseline"` | ✅ |
+| Hand-verify migration: both tables, CHECK constraints, JSONB/BigInteger variants, FK, PK | ✅ |
+| Add `postgres.run_migrations()` (5-retry/2s-backoff, `asyncio.to_thread`) | ✅ |
+| Swap `main.py` lifespan: `postgres.create_all()` → `postgres.run_migrations()` | ✅ |
+| Update `Dockerfile` to copy `alembic/` and `alembic.ini` | ✅ |
+| Add `_bypass_run_migrations` autouse fixture in `tests/conftest.py` (with opt-out marker) | ✅ |
+| Replace `test_create_all_retry.py` with `test_run_migrations.py` (3 retry tests against mocked `command.upgrade`) | ✅ |
+| Exclude `alembic/versions/` from ruff/black (autogen output has unavoidable long SQL strings) | ✅ |
+| `uv run pytest -v` passes (91 tests) | ✅ |
+| Container build + healthy startup; `alembic_version` table populated; structured JSON logs preserved end-to-end | ✅ |
+| Auth round-trip works against Alembic-managed schema | ✅ |
+| Downgrade smoke test: `alembic downgrade base` then `upgrade head` cycle clean | ✅ |
+| Update `docs/tech/data-model.md` "Schema evolution" section with Alembic workflow | ✅ |
+| Update `.claude/rules/apps.md` schema-enforcement line | ✅ |
+| Run `/ship`: pre-ship doc check → self-review → security-review → lint → build → test → commit → push → PR | ✅ |
 
 ---
 

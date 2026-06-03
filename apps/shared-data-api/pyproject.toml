@@ -16,6 +16,7 @@ dependencies = [
     "bcrypt==4.2.1",
     "structlog==24.4.0",
     "python-multipart==0.0.20",
+    "alembic==1.18.4",
 ]
 
 [dependency-groups]
@@ -46,10 +47,14 @@ pythonpath = ["src"]
 [tool.black]
 line-length = 100
 target-version = ["py312"]
+# Alembic-generated migrations include long inline SQL strings (CHECK constraint
+# bodies) that can't break cleanly. Style is governed by alembic/script.py.mako.
+extend-exclude = "alembic/versions/.*"
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
