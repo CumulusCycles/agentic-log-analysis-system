@@ -30,7 +30,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 |---|---|---|
 | 1 | Project scaffold — repo structure, root config, Claude Code config, docs | ✅ |
 | 2 | Docker infrastructure — all 8 containers, 6 volumes, networking, healthchecks | ✅ |
-| 3 | Shared Data API — sole data-access API (Mongo + Postgres), JWT auth, per-app API keys, background claim-status simulator, 7th log volume | 🔄 |
+| 3 | Shared Data API — sole data-access API (Mongo + Postgres), JWT auth, per-app API keys, background claim-status simulator, 7th log volume | ✅ |
 | 4 | FNOL — accident report submission + React frontend | ⬜ |
 | 5 | Customer Portal — policy/claim views + React frontend + MongoDB | ⬜ |
 | 6 | Agent Portal — claim handler tool + React frontend | ⬜ |
@@ -70,10 +70,26 @@ docker compose up -d
 docker compose ps
 ```
 
+### Healthcheck endpoints
+
+After `docker compose up -d`, click the link to verify the corresponding container is responding. Endpoints become live as their phase ships.
+
+| Container | Endpoint | Phase |
+|---|---|---|
+| Shared Data API | [`http://localhost:8002/health`](http://localhost:8002/health) | 3 ✅ |
+| FNOL | `http://localhost:8001/health` | 4 — placeholder until phase ships |
+| Customer Portal | `http://localhost:3001/health` | 5 — placeholder until phase ships |
+| Agent Portal | `http://localhost:8081/actuator/health` | 6 — placeholder until phase ships |
+| Agentic Log Analysis Dashboard | `http://localhost:4001/health` | 7 — placeholder until phase ships |
+| PostgreSQL | `pg_isready` via Docker on TCP `localhost:5433` (not HTTP) | 2 ✅ |
+| MongoDB | `mongosh` ping via Docker on TCP `localhost:27018` (not HTTP) | 2 ✅ |
+| Chroma | `bash + /dev/tcp` via Docker, internal port `8000` only (not host-exposed) | 2 ✅ |
+
 > **Phase 2 note:** the DB tier (`postgres`, `mongodb`, `chroma`) is fully functional
-> and reports `(healthy)`. The five app containers run `tail -f /dev/null` as
-> placeholders — they appear as `Up` without a health status. Phases 3–7 replace each
-> placeholder with the real server and add its `GET /health` healthcheck.
+> and reports `(healthy)`. App containers whose phase has not shipped yet run
+> `tail -f /dev/null` as placeholders — they appear as `Up` without a health status.
+> Phases 3–7 replace each placeholder with the real server and add its `GET /health`
+> healthcheck.
 
 ### Common Docker Commands
 
