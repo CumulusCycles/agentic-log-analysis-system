@@ -1,0 +1,326 @@
+name: CI
+
+# Per ADR-009. Scoping mirrors the /ship rule shipped in PR #10:
+#   - per-app jobs run when their apps/<name>/** changed, OR when shared-infra
+#     files changed, OR on push to main / manual dispatch.
+#   - lint + typecheck/build + unit tests only. No E2E (stays local via /ship),
+#     no container builds, no deployment.
+#   - default GITHUB_TOKEN with least-privilege permissions; no PAT.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Path-filter — determine which app jobs need to run.
+  # On `push` and `workflow_dispatch` every app job runs regardless (forced by
+  # the per-job `if:` condition below).
+  # ---------------------------------------------------------------------------
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      shared_data_api: ${{ steps.filter.outputs.shared_data_api }}
+      fnol: ${{ steps.filter.outputs.fnol }}
+      customer_portal: ${{ steps.filter.outputs.customer_portal }}
+      agent_portal: ${{ steps.filter.outputs.agent_portal }}
+      dashboard: ${{ steps.filter.outputs.dashboard }}
+      shared_infra: ${{ steps.filter.outputs.shared_infra }}
+      dashboard_exists: ${{ steps.dashboard_exists.outputs.exists }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            shared_data_api:
+              - 'apps/shared-data-api/**'
+            fnol:
+              - 'apps/fnol/**'
+            customer_portal:
+              - 'apps/customer-portal/**'
+            agent_portal:
+              - 'apps/agent-portal/**'
+            dashboard:
+              - 'dashboard/**'
+            shared_infra:
+              - 'docker-compose.yml'
+              - '.env.example'
+              - '.claude/rules/apps.md'
+              - '.github/workflows/**'
+      # hashFiles() is not available in job-level `if:` expressions — must be
+      # evaluated at step level. Surface the dashboard scaffolding state as a
+      # `changes` output so the dashboard job below can gate on it.
+      - id: dashboard_exists
+        run: |
+          if [ -f dashboard/pyproject.toml ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # shared-data-api — Python only
+  # ---------------------------------------------------------------------------
+  shared-data-api:
+    name: shared-data-api
+    needs: changes
+    if: |
+      needs.changes.outputs.shared_data_api == 'true' ||
+      needs.changes.outputs.shared_infra == 'true' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/shared-data-api
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run black --check .
+      - run: uv run pytest -q
+
+  # ---------------------------------------------------------------------------
+  # fnol — Python backend + Node frontend
+  # ---------------------------------------------------------------------------
+  fnol:
+    name: fnol
+    needs: changes
+    if: |
+      needs.changes.outputs.fnol == 'true' ||
+      needs.changes.outputs.shared_infra == 'true' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: backend — install
+        working-directory: apps/fnol
+        run: uv sync --frozen
+      - name: backend — lint
+        working-directory: apps/fnol
+        run: |
+          uv run ruff check .
+          uv run black --check .
+      - name: backend — tests
+        working-directory: apps/fnol
+        run: uv run pytest -q
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/fnol/frontend/pnpm-lock.yaml
+      - name: frontend — install
+        working-directory: apps/fnol/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: apps/fnol/frontend
+        run: pnpm lint
+      - name: frontend — typecheck
+        working-directory: apps/fnol/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: apps/fnol/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: apps/fnol/frontend
+        run: pnpm test
+
+  # ---------------------------------------------------------------------------
+  # customer-portal — Node backend + Node frontend
+  # ---------------------------------------------------------------------------
+  customer-portal:
+    name: customer-portal
+    needs: changes
+    if: |
+      needs.changes.outputs.customer_portal == 'true' ||
+      needs.changes.outputs.shared_infra == 'true' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            apps/customer-portal/pnpm-lock.yaml
+            apps/customer-portal/frontend/pnpm-lock.yaml
+
+      - name: backend — install
+        working-directory: apps/customer-portal
+        run: pnpm install --frozen-lockfile
+      - name: backend — lint
+        working-directory: apps/customer-portal
+        run: pnpm lint
+      - name: backend — typecheck
+        working-directory: apps/customer-portal
+        run: pnpm typecheck
+      - name: backend — build
+        working-directory: apps/customer-portal
+        run: pnpm build
+      - name: backend — tests
+        working-directory: apps/customer-portal
+        run: pnpm test
+
+      - name: frontend — install
+        working-directory: apps/customer-portal/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: apps/customer-portal/frontend
+        run: pnpm lint
+      - name: frontend — typecheck
+        working-directory: apps/customer-portal/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: apps/customer-portal/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: apps/customer-portal/frontend
+        run: pnpm test
+
+  # ---------------------------------------------------------------------------
+  # agent-portal — Java/Maven backend + Node frontend
+  # ---------------------------------------------------------------------------
+  agent-portal:
+    name: agent-portal
+    needs: changes
+    if: |
+      needs.changes.outputs.agent_portal == 'true' ||
+      needs.changes.outputs.shared_infra == 'true' ||
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: backend — build + test
+        working-directory: apps/agent-portal
+        run: ./mvnw -B verify
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/agent-portal/frontend/pnpm-lock.yaml
+      - name: frontend — install
+        working-directory: apps/agent-portal/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: apps/agent-portal/frontend
+        run: pnpm lint
+      - name: frontend — typecheck
+        working-directory: apps/agent-portal/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: apps/agent-portal/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: apps/agent-portal/frontend
+        run: pnpm test
+
+  # ---------------------------------------------------------------------------
+  # dashboard — Python backend + Node frontend (Phase 7)
+  #
+  # Gated on hashFiles('dashboard/pyproject.toml') so the job activates
+  # automatically once Phase 7 scaffolds the directory. No CI edit needed
+  # when Phase 7 lands.
+  # ---------------------------------------------------------------------------
+  dashboard:
+    name: dashboard
+    needs: changes
+    if: |
+      (needs.changes.outputs.dashboard == 'true' ||
+       needs.changes.outputs.shared_infra == 'true' ||
+       github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch') &&
+      needs.changes.outputs.dashboard_exists == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: backend — install
+        working-directory: dashboard
+        run: uv sync --frozen
+      - name: backend — lint
+        working-directory: dashboard
+        run: |
+          uv run ruff check .
+          uv run black --check .
+      - name: backend — tests
+        working-directory: dashboard
+        run: uv run pytest -q
+
+      - if: hashFiles('dashboard/frontend/pnpm-lock.yaml') != ''
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - if: hashFiles('dashboard/frontend/pnpm-lock.yaml') != ''
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: dashboard/frontend/pnpm-lock.yaml
+      - if: hashFiles('dashboard/frontend/pnpm-lock.yaml') != ''
+        name: frontend — install
+        working-directory: dashboard/frontend
+        run: pnpm install --frozen-lockfile
+      - if: hashFiles('dashboard/frontend/pnpm-lock.yaml') != ''
+        name: frontend — lint
+        working-directory: dashboard/frontend
+        run: pnpm lint
+      - if: hashFiles('dashboard/frontend/pnpm-lock.yaml') != ''
+        name: frontend — typecheck
+        working-directory: dashboard/frontend
+        run: pnpm typecheck
+      - if: hashFiles('dashboard/frontend/pnpm-lock.yaml') != ''
+        name: frontend — build
+        working-directory: dashboard/frontend
+        run: pnpm build
+      - if: hashFiles('dashboard/frontend/pnpm-lock.yaml') != ''
+        name: frontend — tests
+        working-directory: dashboard/frontend
+        run: pnpm test

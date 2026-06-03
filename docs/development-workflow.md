@@ -2,8 +2,10 @@
 
 This document describes the **planned** development workflow for this project: local
 Claude Code automation (hooks and slash commands), optional early review, and GitHub PRs.
-There is **no cloud CI/CD** — validation runs on the developer machine via `/ship` and
-Docker Compose (see [ADR-001](decisions/ADR-001-local-docker-only.md)).
+Apps are **not deployed to any cloud** (see [ADR-001](decisions/ADR-001-local-docker-only.md)).
+Validation is two-layered: local `/ship` runs the pre-push gate against the live Docker
+stack, and GitHub Actions runs lint + unit tests + build on every PR (see
+[ADR-009](decisions/ADR-009-github-actions-ci.md)). E2E stays local.
 
 ---
 
