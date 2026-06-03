@@ -11,7 +11,9 @@
 5. E2E in CI was considered and deferred. The two viable paths are (a) skipping it (defeats the purpose) or (b) a self-hosted runner with Docker (ties CI to a maintained machine + ongoing infra burden). The scoped `/ship` rule already enforces E2E locally when the shared contract moves, and the PR test-plan discipline keeps the gate honest.
 6. Default `GITHUB_TOKEN` is used with least-privilege permissions (`contents: read`, `pull-requests: write`, `checks: write`). No fine-grained PAT, no organization-level secrets, no rotation maintenance.
 7. The dashboard job is defined now with a filesystem existence check in the `changes` job (`dashboard_exists` output testing for `dashboard/pyproject.toml`). The dashboard job's `if:` gates on that output, so the job activates automatically once Phase 7 scaffolds the directory — no follow-up CI PR required when Phase 7 lands.
-8. Branch protection on `main` (require CI checks before merge) is **recommended** but configured outside this PR, in repo Settings → Branches. The workflow file is the prerequisite; flipping the protection switch is a one-click follow-up.
+8. If the per-app jobs are ever wired in as branch-protection required checks on `main`, the workflow needs a small refactor first: the `dorny/paths-filter` design causes app jobs to report `skipped` on PRs that don't touch their code, and a `skipped` status does NOT satisfy a required check. Two patterns work:
+   - **(a) Umbrella job (recommended).** Add a `ci-summary` job that `needs:` every per-app job, runs `if: always()`, and aggregates `needs.<job>.result` — pass when every result is `success` or `skipped`, fail on `failure`/`cancelled`. Only `ci-summary` goes in the required-checks list.
+   - **(b) Drop CI's path scoping.** Run all unit tests on every PR. Simpler workflow; small CI cost with cache. Local `/ship` scoping unaffected.
 
 ## Rationale
 
@@ -35,5 +37,5 @@ E2E is deferred for the cost/benefit reason in decision 5. Spinning up Docker on
 - README CI status badges and `dorny/test-reporter`-style inline PR annotations are intentionally **out of scope for this PR** — they depend on the workflow existing on `main` first. Both are small follow-up PRs.
 - When Phase 7 scaffolds the dashboard, its CI job activates automatically the next time `dashboard/pyproject.toml` exists on `main` — no workflow edit needed.
 - Local `/ship` workflow is unchanged. CI is the *additional*, after-push verification layer; the pre-push gate stays in place.
-- The branch protection setting is documented as a recommended manual follow-up. Without it, CI is informational, not enforcing. With it, the workflow becomes a true merge gate.
+- The workflow is structured so per-app jobs can serve as branch-protection required checks via the umbrella-job refactor in §8 when desired.
 - Future regressions of the "no remote CI/CD" line should be checked against this ADR. The line was right for app deployment; it was wrong for CI.
