@@ -26,7 +26,18 @@ def create_app() -> FastAPI:
         finally:
             await app.state.sda.aclose()
 
-    app = FastAPI(title="FNOL", version="0.1.0", lifespan=lifespan)
+    # FNOL is a SPA + write-proxy, not an integration target. Suppress
+    # FastAPI's auto-mounted Swagger / ReDoc / OpenAPI schema — SDA is the
+    # only app in this stack that exposes Swagger (see ADR-001 and the
+    # Healthcheck endpoints table in README.md).
+    app = FastAPI(
+        title="FNOL",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+    )
 
     app.add_middleware(RequestLoggerMiddleware)
 

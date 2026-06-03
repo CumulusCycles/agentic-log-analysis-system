@@ -73,7 +73,9 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **Auth:** JWT via Shared Data API `POST /auth/login`. Inter-service header: `X-API-Key: $SHARED_DATA_API_KEY_AGENT_PORTAL`.
 
-**Routes:** `GET /claims`, `GET /claims/{id}`, `POST /auth/login` (proxies SDA), `GET /actuator/health`, `GET /`
+**Routes:** API surface lives under `/api/*` so the React SPA can own the top-level routes `/claims`, `/claims/:id`, `/profile`, and `/login` without conflicting with the controllers. `GET /api/health`, `POST /api/auth/login` (proxies SDA), `GET /api/profile/me` (proxies SDA `/users/{user_id}`), `GET /api/claims`, `GET /api/claims/{id}`, `GET /actuator/health` (Spring Boot Actuator — Docker healthcheck probe), `GET /` (SPA index.html).
+
+**HTTP/1.1 only:** the Spring `RestClient` that calls SDA is pinned to `HttpClient.Version.HTTP_1_1` — uvicorn (SDA's ASGI server) does not support HTTP/2 cleartext upgrade and rejects h2c attempts with `"Unsupported upgrade request"` / 400 before the body reaches pydantic.
 
 ---
 

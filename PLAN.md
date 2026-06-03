@@ -212,13 +212,27 @@ per ADR-006.
 
 ## Phase 6 — Agent Portal
 
-Internal claim handler app. Spring Boot backend + React frontend + PostgreSQL.
-
-> **Enter Plan Mode before starting this phase.**
+Internal claim handler app. Java 21 / Spring Boot 3 backend + React 18 / Vite / TypeScript / Tailwind frontend, served as one container. Reads claims via the Shared Data API.
 
 | Task | Status |
 |---|---|
-| *(tasks to be defined in Plan Mode)* | ⬜ |
+| Maven scaffold (`pom.xml`, Maven Wrapper `mvnw` + `.mvn/wrapper/`, `groupId=com.cumuluscycles`, `artifactId=agent-portal`) | ✅ |
+| Backend source — `AgentPortalApplication`, `AppProperties` (zod-equivalent via `@ConfigurationProperties + @Validated`), `SdaClient` (Spring `RestClient` pinned to HTTP/1.1 — uvicorn rejects h2c upgrade), `JwtAuthenticationFilter` (`OncePerRequestFilter` — verifies HS256 / `iss` / `aud`), `RequestLoggingFilter`, SPA static + path-traversal-safe resolver | ✅ |
+| API surface mounted under `/api/*` (deviation from CP) — `/api/health`, `/api/auth/login`, `/api/profile/me`, `/api/claims`, `/api/claims/{id}` — leaves React Router free for `/claims`, `/claims/:id`, `/profile`, `/login` | ✅ |
+| Logback `logback-spring.xml` — Console + RollingFileAppender to `/app/logs/agent-portal.log`, pattern matches `.claude/rules/logging.md` | ✅ |
+| Backend tests — JUnit 5 + Spring Boot Test + Mockito @MockitoBean SdaClient — 24 tests (Auth/Profile/Claims controllers, JwtAuthenticationFilter for iss/aud/expired/wrong-secret/missing-header, SpaFallback for `/`, SPA routes, `/api/missing`, path-traversal) | ✅ |
+| Frontend scaffold copied verbatim from Customer Portal — package.json, pnpm-workspace.yaml (`allowBuilds: esbuild: true`), tsconfig, vite/vitest/playwright/tailwind/postcss/eslint configs, MemoryStorage polyfill — customized to `VITE_AGENT_PORTAL_API_BASE_URL` + `http://localhost:8081` | ✅ |
+| Frontend source — pages (Login → `/claims`, Claims list, **Claim detail + StatusTimeline**, Profile), components (RequireAuth, TopNav, StatusBadge, StatusTimeline), lib (`api.ts` hits `/api/*`, `auth.ts` with `STORAGE_KEY="agent_portal_token"`), types | ✅ |
+| Frontend unit tests — Vitest 3 + jsdom + @testing-library/react — 8 tests | ✅ |
+| Playwright E2E — 5 specs × 2 viewports = **30 tests pass** against live stack | ✅ |
+| Multi-stage `Dockerfile` — `node:22-alpine` (frontend build) → `maven:3.9-eclipse-temurin-21-alpine` (backend build) → `eclipse-temurin:21-jre-alpine` (runtime, non-root `app:1000`) | ✅ |
+| Swap `agent-portal` block in `docker-compose.yml` — build, port 8081:8080, actuator healthcheck (`wget /actuator/health \| grep UP`), drop `postgres` dep | ✅ |
+| `.env.example` already has `SHARED_DATA_API_KEY_AGENT_PORTAL` + `VITE_AGENT_PORTAL_API_BASE_URL` from architecture pivot — no change | ✅ |
+| Cold-start verification — full stack (all 8 containers) healthy with new AP image | ✅ |
+| Host-side functional probes — `/actuator/health`, `/api/health`, `/api/auth/login` (`agent1`/`agent`), `/api/profile/me`, `/api/claims` (count=16), `/api/claims/{id}` (status history present); verify `caller=agent-portal` in SDA logs; `agent-portal-logs` volume populated with Logback lines | ✅ |
+| HTTP/2 trap fix — JDK `HttpClient` defaults to HTTP/2 cleartext upgrade; uvicorn rejects with "Unsupported upgrade request" → pin `HttpClient.Version.HTTP_1_1` in `SdaClientConfig` | ✅ |
+| Update `.claude/rules/apps.md` AP routes to `/api/*` prefix + add `GET /api/profile/me` | ✅ |
+| Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps tests → commit → push → PR | ⬜ |
 
 ---
 
@@ -228,13 +242,13 @@ Internal claim handler app. Spring Boot backend + React frontend + PostgreSQL.
 
 | Checkpoint | Status |
 |---|---|
-| All 4 app containers start healthy (`docker compose up`) | ⬜ |
-| All 4 apps pass their full test suites | ⬜ |
-| All 4 log volumes contain real log entries | ⬜ |
-| FNOL ↔ Shared Data API integration verified end-to-end | ⬜ |
-| Agent Portal reads claims via Shared Data API correctly | ⬜ |
-| Shared Data API auth (JWT + API key) round-trips for FNOL/CP/AP | ⬜ |
-| All 4 app containers + 2 DBs stable together under load | ⬜ |
+| All 4 app containers start healthy (`docker compose up`) | ✅ |
+| All 4 apps pass their full test suites | ✅ |
+| All 4 log volumes contain real log entries | ✅ |
+| FNOL ↔ Shared Data API integration verified end-to-end | ✅ |
+| Agent Portal reads claims via Shared Data API correctly | ✅ |
+| Shared Data API auth (JWT + API key) round-trips for FNOL/CP/AP | ✅ |
+| All 4 app containers + 2 DBs stable together under load | ✅ |
 
 ---
 
