@@ -7,7 +7,7 @@
 | Shared Data API | Python 3.12 / FastAPI | None | PostgreSQL (SQLAlchemy async) + MongoDB (Motor) — sole owner of both | `uv` |
 | FNOL | Python 3.12 / FastAPI | React 18 + Vite + TypeScript | Via Shared Data API (HTTP) — no direct DB | `uv` |
 | Customer Portal | Node.js 20 / Express | React 18 + Vite + TypeScript | Via Shared Data API (HTTP, read-only) — no direct DB | `pnpm` |
-| Agent Portal | Java 21 / Spring Boot 3 | React 18 + Vite + TypeScript | Via Shared Data API (HTTP, read-only) — no direct DB | Maven |
+| Agent Portal | Java 21 / Spring Boot 3.5 | React 18 + Vite + TypeScript | Via Shared Data API (HTTP, read-only) — no direct DB | Maven Wrapper (`mvnw` checked in) |
 | Agentic Log Analysis Dashboard | Python 3.12 / FastAPI | React 18 + Vite + TypeScript | Chroma (vector store) | `uv` + `pnpm` |
 
 ## AI / ML
@@ -30,7 +30,7 @@ See ADR-006 for the strategy. Library choices per stack:
 | JWT (Customer Portal) | `jsonwebtoken` |
 | JWT (Agent Portal) | `jjwt` |
 | Password hashing | `bcrypt` (Python), `bcryptjs` (Node), `BCryptPasswordEncoder` (Java) |
-| HTTP client (apps → Shared Data API) | `httpx` (Python — SDA, FNOL, Dashboard), `axios` (Node — Customer Portal), `RestClient` (Java — Agent Portal) |
+| HTTP client (apps → Shared Data API) | `httpx` (Python — SDA, FNOL, Dashboard), `axios` (Node — Customer Portal), Spring `RestClient` + JDK `HttpClient` pinned to `HTTP_1_1` (Java — Agent Portal) |
 | Config validation (Node apps) | `zod` (Customer Portal) |
 
 ## Infrastructure
@@ -75,4 +75,7 @@ See ADR-006 for the strategy. Library choices per stack:
 | Customer Portal (backend) | Vitest 3 + Supertest + `nock` (SDA mock) + `jsonwebtoken` | 25 tests; node env; mounts each protected endpoint at its exact path so `/policies` falls through to the SPA |
 | Customer Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
 | Customer Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 28 tests; runs against the live stack |
-| Agent Portal / Dashboard | Stack-equivalents (TBD per phase) | Inherits the same Tailwind / Vitest / Playwright conventions |
+| Agent Portal (backend) | JUnit 5 + Spring Boot Test + Mockito (`@MockitoBean SdaClient`) | 24 tests; `@SpringBootTest` + `@AutoConfigureMockMvc` for controller + filter coverage; `MockMvc.forwardedUrl(...)` for SPA welcome-page checks |
+| Agent Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
+| Agent Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 30 tests; runs against the live stack |
+| Dashboard | Stack-equivalents (TBD per phase) | Inherits the same Tailwind / Vitest / Playwright conventions |

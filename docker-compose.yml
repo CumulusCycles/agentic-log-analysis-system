@@ -165,16 +165,21 @@ services:
       - insurance-net
 
   agent-portal:
-    image: eclipse-temurin:21-jdk-alpine
+    build: ./apps/agent-portal
     platform: linux/arm64
     restart: unless-stopped
     env_file: .env
-    command: ["tail", "-f", "/dev/null"]
+    ports:
+      - "8081:8080"
     volumes:
       - agent-portal-logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     depends_on:
-      postgres:
-        condition: service_healthy
       shared-data-api:
         condition: service_healthy
     networks:

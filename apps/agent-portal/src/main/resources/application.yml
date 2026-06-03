@@ -1,0 +1,31 @@
+server:
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+
+spring:
+  application:
+    name: agent-portal
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  config: classpath:logback-spring.xml
+
+app:
+  shared-data-api:
+    base-url: ${SHARED_DATA_API_BASE_URL:http://shared-data-api:8000}
+    api-key: ${SHARED_DATA_API_KEY_AGENT_PORTAL}
+    timeout-ms: 10000
+  jwt:
+    secret: ${JWT_SECRET}
+    algorithm: ${JWT_ALGORITHM:HS256}
+  log-file-path: ${LOG_FILE_PATH:/app/logs/agent-portal.log}

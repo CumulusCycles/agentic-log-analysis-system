@@ -1,0 +1,15 @@
+server:
+  port: 0
+
+logging:
+  config: classpath:logback-test.xml
+
+app:
+  shared-data-api:
+    base-url: http://shared-data-api-test
+    api-key: test-ap-key
+    timeout-ms: 5000
+  jwt:
+    secret: test-secret-please-change-test-secret-please-change
+    algorithm: HS256
+  log-file-path: /tmp/agent-portal-test.log

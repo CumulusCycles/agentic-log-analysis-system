@@ -83,16 +83,24 @@ Output: one JSON object per line. Required fields: `level`, `message`, `timestam
 
 ### Agent Portal (Java / Logback)
 
+Actual config in `apps/agent-portal/src/main/resources/logback-spring.xml` uses a `RollingFileAppender` with `SizeAndTimeBasedRollingPolicy` (10 MB max, 5 files history, 100 MB total cap):
+
 ```xml
-<appender name="FILE" class="ch.qos.logback.core.FileAppender">
+<appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
   <file>/app/logs/agent-portal.log</file>
   <encoder>
-    <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level --- [%thread] %-40logger{40} : %msg%n</pattern>
+    <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level --- [%thread] %logger : %msg%n</pattern>
   </encoder>
+  <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+    <fileNamePattern>/app/logs/agent-portal.log.%d{yyyy-MM-dd}.%i.gz</fileNamePattern>
+    <maxFileSize>10MB</maxFileSize>
+    <maxHistory>5</maxHistory>
+    <totalSizeCap>100MB</totalSizeCap>
+  </rollingPolicy>
 </appender>
 ```
 
-Output: `YYYY-MM-DD HH:mm:ss.SSS LEVEL --- [thread] class : message`. Multi-line stack traces.
+Output: `YYYY-MM-DD HH:mm:ss.SSS LEVEL --- [thread] class : message`. Per-request lines from `RequestLoggingFilter` follow the shape `request method=<m> path=<p> caller=- user=<jwt user_id|-> status=<s> duration_ms=<n>` so the dashboard's heterogeneous-format parser can correlate against SDA's structured JSON. Multi-line stack traces use Logback's native formatting.
 
 ---
 
