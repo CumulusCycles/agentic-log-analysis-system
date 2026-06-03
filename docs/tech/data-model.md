@@ -144,15 +144,35 @@ Applied at table creation. The status enum is the same one used by the simulator
 
 ### Schema evolution
 
-Phase 3 uses `Base.metadata.create_all()` — no Alembic. See ADR-008 for the rationale and the migration path. **During Phase 3 development, changing a CHECK constraint or column requires wiping the `postgres-data` volume:**
+Postgres schema is managed by **Alembic** (`apps/shared-data-api/alembic/`). The lifespan
+runs `alembic upgrade head` on every start via `postgres.run_migrations()`. The current
+baseline is `a51e64afbd0f_phase_3_baseline.py`. See ADR-008.
+
+**To add a migration:**
 
 ```bash
-docker compose down
-docker volume rm \
-  agentic-log-analysis-system_postgres-data \
-  agentic-log-analysis-system_mongodb-data \
-  agentic-log-analysis-system_shared-data-api-logs
-docker compose up -d
+cd apps/shared-data-api
+# 1. Edit the model in src/shared_data_api/db/models.py
+
+# 2. Make sure Postgres is running and your env vars point at it
+docker compose up -d postgres
+
+# 3. Autogenerate the migration (env vars: SHARED_DATA_API_POSTGRES_URL etc.)
+uv run alembic revision --autogenerate -m "<short description>"
+
+# 4. Inspect alembic/versions/<slug>_<description>.py — autogen does NOT detect
+#    CHECK constraint edits, enum changes inside strings, or some index renames.
+#    Hand-fix anything missed; commit the file.
+
+# 5. Restart the SDA container — alembic upgrade head runs automatically
+docker compose up -d shared-data-api
 ```
 
-This is acceptable while no real user data exists. Alembic lands as a dedicated PR before Phase 4 (FNOL) begins writing persistent claims.
+**Tests bypass Alembic** for speed: the autouse `_bypass_run_migrations` fixture in
+`tests/conftest.py` routes `postgres.run_migrations()` → `postgres.create_all()` so
+the SQLite-in-memory test fixture creates tables directly from `Base.metadata`. Tests
+that need the real `run_migrations()` opt out with `@pytest.mark.no_run_migrations_mock`
+(see `tests/test_run_migrations.py`).
+
+**Downgrades** are supported (`alembic downgrade -1` or `alembic downgrade base`) but
+are not part of the standard runbook — forward-only migrations are the expectation.

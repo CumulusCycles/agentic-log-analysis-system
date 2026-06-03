@@ -31,7 +31,7 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **JWT claims:** `{ iss, aud, user_id, role, app, iat, exp }`. `iss` = `"shared-data-api"`, `aud` = `"agentic-log-analysis-insurance-apps"` — constants defined in `apps/shared-data-api/src/shared_data_api/auth/jwt.py`. FNOL / Customer Portal / Agent Portal **MUST** validate `iss` and `aud` when decoding (`PyJWT.decode(..., issuer=..., audience=...)`). `POST /claims` additionally enforces `jwt.app == "fnol"` as defense-in-depth against cross-app token replay.
 
-**Schema enforcement:** Mongo unique indexes on `users.username` and `policies.policy_number`; Postgres CHECK constraints on `claims.current_status` and `claim_status_history.{from_status,to_status}` against the ADR-007 status enum. Both are applied on startup via `ensure_indexes()` and `Base.metadata.create_all()`. See `docs/tech/data-model.md` and ADR-008 (Alembic deferral).
+**Schema enforcement:** Mongo unique indexes on `users.username` and `policies.policy_number`; Postgres CHECK constraints on `claims.current_status` and `claim_status_history.{from_status,to_status}` against the ADR-007 status enum. Mongo indexes are applied on startup via `ensure_indexes()`; Postgres schema is managed by Alembic (`apps/shared-data-api/alembic/`) and applied on startup via `postgres.run_migrations()` → `alembic upgrade head`. See `docs/tech/data-model.md` and ADR-008.
 
 **Background task:** In-process asyncio claim-status simulator advances claim statuses on a tick — see ADR-007.
 

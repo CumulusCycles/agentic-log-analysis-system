@@ -34,6 +34,13 @@ from shared_data_api.db import mongo, postgres  # noqa: E402
 from shared_data_api.db.models import Base  # noqa: E402
 
 
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "no_run_migrations_mock: opt out of the autouse run_migrations→create_all bypass",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _reset_structlog():
     """Restore structlog defaults before each test so capture_logs() works.
@@ -44,6 +51,25 @@ def _reset_structlog():
     cannot intercept events emitted afterward.
     """
     structlog.reset_defaults()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _bypass_run_migrations(request, monkeypatch):
+    """Route postgres.run_migrations() → postgres.create_all() in tests.
+
+    Production lifespan calls run_migrations(), which opens its own engine via
+    alembic/env.py. With SQLite-in-memory each connection is a separate DB, so
+    Alembic would create the schema in a throwaway DB invisible to the
+    lifespan's engine. Bypassing to create_all on the existing engine keeps
+    test_lifespan.py working without sacrificing the production code path.
+    Opt out with @pytest.mark.no_run_migrations_mock for tests that exercise
+    the real run_migrations() (e.g., test_run_migrations.py).
+    """
+    if request.node.get_closest_marker("no_run_migrations_mock"):
+        yield
+        return
+    monkeypatch.setattr(postgres, "run_migrations", postgres.create_all)
     yield
 
 

@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -13,6 +14,10 @@ from ..logging_setup import get_logger
 from .models import Base
 
 log = get_logger(__name__)
+
+# alembic.ini lives at apps/shared-data-api/alembic.ini — three parents up from
+# src/shared_data_api/db/postgres.py.
+_ALEMBIC_INI_PATH = Path(__file__).resolve().parents[3] / "alembic.ini"
 
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
@@ -54,6 +59,29 @@ async def create_all(*, retries: int = 5, backoff_seconds: float = 2.0) -> None:
         except Exception as exc:
             last_error = exc
             log.warning("postgres_create_all_failed", attempt=attempt, error=str(exc))
+            if attempt < retries:
+                await asyncio.sleep(backoff_seconds)
+    assert last_error is not None
+    raise last_error
+
+
+async def run_migrations(*, retries: int = 5, backoff_seconds: float = 2.0) -> None:
+    # Run `alembic upgrade head` from the async lifespan. `command.upgrade` is sync
+    # and opens its own engine via alembic/env.py, so we offload to a worker thread.
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(_ALEMBIC_INI_PATH))
+
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            await asyncio.to_thread(command.upgrade, cfg, "head")
+            log.info("postgres_schema_ready", attempt=attempt, via="alembic")
+            return
+        except Exception as exc:
+            last_error = exc
+            log.warning("postgres_migrate_failed", attempt=attempt, error=str(exc))
             if attempt < retries:
                 await asyncio.sleep(backoff_seconds)
     assert last_error is not None
