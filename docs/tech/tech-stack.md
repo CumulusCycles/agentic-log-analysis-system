@@ -30,7 +30,8 @@ See ADR-006 for the strategy. Library choices per stack:
 | JWT (Customer Portal) | `jsonwebtoken` |
 | JWT (Agent Portal) | `jjwt` |
 | Password hashing | `bcrypt` (Python), `bcryptjs` (Node), `BCryptPasswordEncoder` (Java) |
-| HTTP client (apps → Shared Data API) | `httpx` (Python), `axios` (Node), `RestClient` (Java) |
+| HTTP client (apps → Shared Data API) | `httpx` (Python — SDA, FNOL, Dashboard), `axios` (Node — Customer Portal), `RestClient` (Java — Agent Portal) |
+| Config validation (Node apps) | `zod` (Customer Portal) |
 
 ## Infrastructure
 
@@ -71,4 +72,7 @@ See ADR-006 for the strategy. Library choices per stack:
 | FNOL (backend) | `pytest` + `pytest-asyncio` + `respx` + `asgi-lifespan` | 20 tests; SDA calls mocked via respx |
 | FNOL (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 7 tests; mocks `fetch` via `vi.stubGlobal` |
 | FNOL (frontend E2E) | Playwright 1.60 — `desktop-chromium` + `mobile-safari` (iPhone 14) projects | 5 specs × 2 viewports = 33 tests + 3 intentional skips; runs against the live stack |
-| Customer Portal / Agent Portal / Dashboard | Stack-equivalents (TBD per phase) | Inherits the same Tailwind / Vitest / Playwright conventions |
+| Customer Portal (backend) | Vitest 3 + Supertest + `nock` (SDA mock) + `jsonwebtoken` | 25 tests; node env; mounts each protected endpoint at its exact path so `/policies` falls through to the SPA |
+| Customer Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
+| Customer Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 28 tests; runs against the live stack |
+| Agent Portal / Dashboard | Stack-equivalents (TBD per phase) | Inherits the same Tailwind / Vitest / Playwright conventions |

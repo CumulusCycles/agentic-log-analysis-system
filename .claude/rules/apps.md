@@ -27,7 +27,7 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **Data ownership:** `users`, `policies` (with embedded vehicles) in Mongo; `claims`, `claim_status_history` in Postgres. Full schemas in `docs/tech/data-model.md`.
 
-**Auth:** Issues JWT (HS256, `JWT_SECRET`) at `POST /auth/login`. Requires `X-API-Key` on every request **except** `/health` (the Docker healthcheck endpoint is the only anonymous path). `/auth/login`, `/auth/me`, `/docs`, `/openapi.json`, and `/redoc` all require `X-API-Key`. Logs `caller=<app> user=<id>` on every request.
+**Auth:** Issues JWT (HS256, `JWT_SECRET`) at `POST /auth/login`. Requires `X-API-Key` on every request **except** the public paths: `/health` (Docker healthcheck) and `/docs` / `/openapi.json` / `/redoc` (Swagger UI + OpenAPI schema — browser-accessible for local dev per ADR-001; calling endpoints from Swagger still requires JWT via the **Authorize** button). `/auth/login` and `/auth/me` require `X-API-Key`. Logs `caller=<app> user=<id>` on every request.
 
 **JWT claims:** `{ iss, aud, user_id, role, app, iat, exp }`. `iss` = `"shared-data-api"`, `aud` = `"agentic-log-analysis-insurance-apps"` — constants defined in `apps/shared-data-api/src/shared_data_api/auth/jwt.py`. FNOL / Customer Portal / Agent Portal **MUST** validate `iss` and `aud` when decoding (`PyJWT.decode(..., issuer=..., audience=...)`). `POST /claims` additionally enforces `jwt.app == "fnol"` as defense-in-depth against cross-app token replay.
 

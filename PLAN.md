@@ -177,13 +177,36 @@ in the system (SDA enforces via `caller=fnol` + `jwt.app=fnol`).
 
 ## Phase 5 — Customer Portal
 
-Policyholder self-service app. Express backend + React frontend + MongoDB.
-
-> **Enter Plan Mode before starting this phase.**
+Policyholder self-service app. Node 20 / Express + TypeScript backend (read-only
+proxy to SDA — no DB) + React 18 + Vite + TypeScript + Tailwind frontend. Browses
+the customer's policies, claims, and profile. JWT issued by SDA's `/auth/login`;
+every outbound SDA call carries `X-API-Key: $SHARED_DATA_API_KEY_CUSTOMER_PORTAL`
+per ADR-006.
 
 | Task | Status |
 |---|---|
-| *(tasks to be defined in Plan Mode)* | ⬜ |
+| Create `feature/phase-5-customer-portal` branch | ✅ |
+| Scaffold `apps/customer-portal/` pnpm project (`package.json`, `tsconfig.json`, `.dockerignore`) | ✅ |
+| Backend modules — `config.ts` (zod-validated env), `logger.ts` (winston JSON), `errors.ts`, `spa.ts` (path-traversal-safe SPA fallback) | ✅ |
+| Backend middleware — `request-logger.ts` (caller/user/method/path/status/duration_ms), `require-auth.ts` (jsonwebtoken decode w/ iss+aud verification) | ✅ |
+| Backend `clients/sda-client.ts` — axios wrapper with `X-API-Key` on every call | ✅ |
+| Backend routers — `health.ts`, `auth.ts` (login proxy), `profile.ts`, `policies.ts`, `claims.ts` (each protected, mounted at exact path so SPA fallback can claim `/policies`, `/claims`, `/profile`) | ✅ |
+| Backend Vitest suite (25 tests: health, auth-login, profile, policies, claims, require-auth, spa-fallback — SDA mocked via nock) | ✅ |
+| Backend typecheck + ESLint + tsc build pass | ✅ |
+| Scaffold React frontend — pnpm, Vite 6, TypeScript 5, Tailwind 3, ESLint 9, Vitest 3, Playwright 1.60 (copied verbatim from FNOL) | ✅ |
+| Frontend source — `types/api.ts` (UserOut, PolicyOut, ClaimOut), `lib/{api,auth,auth-context}`, `components/{RequireAuth,TopNav,StatusBadge}`, four pages (Login, Policies, Claims, Profile), `App.tsx` | ✅ |
+| Frontend Vitest unit tests (8 tests across 4 page components) + Node 25 localStorage polyfill | ✅ |
+| Frontend typecheck + ESLint + Vitest + production build pass | ✅ |
+| Multi-stage `Dockerfile` — `node:22-alpine` (frontend build + backend tsc) + `node:20-alpine` runtime (non-root `node:1000`) | ✅ |
+| Swap `customer-portal` block in `docker-compose.yml` — build, port 3001:3000, healthcheck, drop `mongodb` dep | ✅ |
+| `.env.example` already has `SHARED_DATA_API_KEY_CUSTOMER_PORTAL` from architecture pivot — no change | ✅ |
+| Cold-start verification — `docker compose down` + volume wipe of all 7 named volumes + `up -d`; all 8 containers come back healthy from zero | ✅ |
+| Host-side functional probes — `/health`, `/auth/login`, `/profile/me`, `/policies/me`, `/claims/me`; verify `caller=customer-portal` in SDA logs; `customer-portal-logs` volume populated | ✅ |
+| **Playwright E2E suite — 5 specs × 2 viewports (desktop-chromium + mobile-safari); 28 passing** | ✅ |
+| Bug fix during E2E: mount each protected endpoint at exact path so `/policies`, `/claims`, `/profile` fall through to the SPA fallback (not 401 from `requireAuth`) | ✅ |
+| Unlock SDA `/docs` + `/openapi.json` + `/redoc` for browser access (ADR-001 local-only threat model — JWT still required to invoke endpoints from Swagger) | ✅ |
+| Consolidate README healthcheck table — each app on one line with multiple links | ✅ |
+| Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps tests → commit → push → PR | ✅ |
 
 ---
 

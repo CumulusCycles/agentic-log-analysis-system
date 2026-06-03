@@ -32,7 +32,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | 2 | Docker infrastructure — all 8 containers, 6 volumes, networking, healthchecks | ✅ |
 | 3 | Shared Data API — sole data-access API (Mongo + Postgres), JWT auth, per-app API keys, background claim-status simulator, 7th log volume | ✅ |
 | 4 | FNOL — accident report submission (FastAPI proxy to SDA) + React frontend (Vite + TypeScript + Tailwind), Playwright E2E suite | ✅ |
-| 5 | Customer Portal — policy/claim views + React frontend + MongoDB | ⬜ |
+| 5 | Customer Portal — read-only policy/claim/profile views (Express proxy to SDA) + React frontend (Vite + TypeScript + Tailwind), Playwright E2E suite | ✅ |
 | 6 | Agent Portal — claim handler tool + React frontend | ⬜ |
 | ⛔ | **HARD STOP** — all 4 apps stable, all 3 log volumes populated | — |
 | 7 | Agentic Log Analysis Dashboard — LangChain + LangGraph + OpenAI + Chroma + React UI | ⬜ |
@@ -74,17 +74,20 @@ docker compose ps
 
 After `docker compose up -d`, click the link to verify the corresponding container is responding. Endpoints become live as their phase ships.
 
-| Container | Endpoint | Phase |
+| Container | Endpoints | Phase |
 |---|---|---|
-| Shared Data API | [`http://localhost:8002/health`](http://localhost:8002/health) | 3 ✅ |
-| FNOL — backend health | [`http://localhost:8001/health`](http://localhost:8001/health) | 4 ✅ |
-| FNOL — React UI (mobile-first) | [`http://localhost:8001/`](http://localhost:8001/) | 4 ✅ |
-| Customer Portal | `http://localhost:3001/health` | 5 — placeholder until phase ships |
-| Agent Portal | `http://localhost:8081/actuator/health` | 6 — placeholder until phase ships |
-| Agentic Log Analysis Dashboard | `http://localhost:4001/health` | 7 — placeholder until phase ships |
+| Shared Data API | [Health](http://localhost:8002/health) · [Swagger /docs](http://localhost:8002/docs) | 3 ✅ |
+| FNOL | [Health](http://localhost:8001/health) · [App UI](http://localhost:8001/) (mobile-first) | 4 ✅ |
+| Customer Portal | [Health](http://localhost:3001/health) · [App UI](http://localhost:3001/) | 5 ✅ |
+| Agent Portal | `http://localhost:8081/actuator/health` · `http://localhost:8081/` | 6 — placeholder |
+| Agentic Log Analysis Dashboard | `http://localhost:4001/health` · `http://localhost:4001/` | 7 — placeholder |
 | PostgreSQL | `pg_isready` via Docker on TCP `localhost:5433` (not HTTP) | 2 ✅ |
 | MongoDB | `mongosh` ping via Docker on TCP `localhost:27018` (not HTTP) | 2 ✅ |
 | Chroma | `bash + /dev/tcp` via Docker, internal port `8000` only (not host-exposed) | 2 ✅ |
+
+> The SDA Swagger UI at `/docs` is browser-accessible without an API key for local
+> dev (ADR-001). To **call** endpoints from `/docs` you still need a JWT — click
+> **Authorize** and paste a `Bearer <token>` from a login round-trip.
 
 > **Phase 2 note:** the DB tier (`postgres`, `mongodb`, `chroma`) is fully functional
 > and reports `(healthy)`. App containers whose phase has not shipped yet run

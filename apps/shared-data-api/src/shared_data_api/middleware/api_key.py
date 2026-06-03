@@ -7,11 +7,14 @@ from ..logging_setup import get_logger
 
 log = get_logger("api_key")
 
-# Only the Docker healthcheck endpoint is anonymous. /docs, /openapi.json, and
-# /redoc require X-API-Key — the OpenAPI schema is sensitive surface area and
-# leaving it unauthenticated leaks endpoint structure to anyone with network
-# reach.
-_PUBLIC_PATHS: frozenset[str] = frozenset({"/health"})
+# Public paths bypass the X-API-Key gate.
+#   /health  — Docker healthcheck
+#   /docs, /openapi.json, /redoc — Swagger UI + OpenAPI schema, browser-accessible
+#       for local dev (ADR-001 keeps this stack local-only, so the threat model
+#       does not include unauthenticated network reach). /docs still requires a
+#       JWT to invoke any endpoint via "Authorize"; only the schema view is
+#       anonymous.
+_PUBLIC_PATHS: frozenset[str] = frozenset({"/health", "/docs", "/openapi.json", "/redoc"})
 
 
 class APIKeyMiddleware(BaseHTTPMiddleware):
