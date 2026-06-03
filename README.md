@@ -30,7 +30,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 |---|---|---|
 | 1 | Project scaffold — repo structure, root config, Claude Code config, docs | ✅ |
 | 2 | Docker infrastructure — all 8 containers, 6 volumes, networking, healthchecks | ✅ |
-| 3 | Shared Data API — sole data-access API (Mongo + Postgres), JWT auth, per-app API keys, background claim-status simulator, 7th log volume | ⬜ |
+| 3 | Shared Data API — sole data-access API (Mongo + Postgres), JWT auth, per-app API keys, background claim-status simulator, 7th log volume | 🔄 |
 | 4 | FNOL — accident report submission + React frontend | ⬜ |
 | 5 | Customer Portal — policy/claim views + React frontend + MongoDB | ⬜ |
 | 6 | Agent Portal — claim handler tool + React frontend | ⬜ |

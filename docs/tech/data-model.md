@@ -117,3 +117,42 @@ Admin (dashboard) is env-supplied (`DASHBOARD_ADMIN_USERNAME` / `DASHBOARD_ADMIN
 | Shared Data API seed routine | Idempotent inserts into `users`, `policies` on empty DB |
 
 Customer Portal and Agent Portal never write to either database. They only consume read endpoints on the Shared Data API (see ADR-005).
+
+---
+
+## Schema enforcement
+
+### MongoDB indexes
+
+Applied at startup by `ensure_indexes()` (idempotent — `create_index` is a no-op if the index already exists).
+
+| Collection | Field(s) | Type | Name |
+|---|---|---|---|
+| `users` | `username` | unique | `users_username_unique` |
+| `policies` | `policy_number` | unique | `policies_policy_number_unique` |
+| `policies` | `customer_id` | non-unique | `policies_customer_id` |
+
+### PostgreSQL CHECK constraints
+
+Applied at table creation. The status enum is the same one used by the simulator (ADR-007); a runtime import-time guard cross-checks the two in `simulator.claim_status._validate_status_coverage()` so they cannot drift.
+
+| Table | Column(s) | Constraint name |
+|---|---|---|
+| `claims` | `current_status` | `claims_current_status_enum` |
+| `claim_status_history` | `to_status` | `claim_status_history_to_status_enum` |
+| `claim_status_history` | `from_status` | `claim_status_history_from_status_enum` (`NULL` allowed) |
+
+### Schema evolution
+
+Phase 3 uses `Base.metadata.create_all()` — no Alembic. See ADR-008 for the rationale and the migration path. **During Phase 3 development, changing a CHECK constraint or column requires wiping the `postgres-data` volume:**
+
+```bash
+docker compose down
+docker volume rm \
+  agentic-log-analysis-system_postgres-data \
+  agentic-log-analysis-system_mongodb-data \
+  agentic-log-analysis-system_shared-data-api-logs
+docker compose up -d
+```
+
+This is acceptable while no real user data exists. Alembic lands as a dedicated PR before Phase 4 (FNOL) begins writing persistent claims.

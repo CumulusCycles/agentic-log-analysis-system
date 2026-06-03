@@ -80,11 +80,33 @@ claims). Issues JWTs for FNOL/CP/AP, enforces per-app API keys, runs background
 claim-status simulator, writes logs to 7th volume `shared-data-api-logs`.
 Full scope in `.claude/rules/apps.md` and `docs/tech/data-model.md`.
 
-> **Enter Plan Mode before starting this phase.**
-
 | Task | Status |
 |---|---|
-| *(tasks to be defined in Plan Mode)* | ⬜ |
+| Create `feature/phase-3-shared-data-api` branch | ✅ |
+| Scaffold `apps/shared-data-api/` uv project (`pyproject.toml`, `.python-version`, `.dockerignore`) | ✅ |
+| Write `Dockerfile` (multi-stage uv build, ARM64, non-root, runs `uvicorn`) | ✅ |
+| Add `config.py` (pydantic-settings: JWT, API keys, DB URLs, simulator tick) | ✅ |
+| Add `logging_setup.py` (structlog JSON to stdout + `/app/logs/shared-data-api.log`) | ✅ |
+| Add Postgres async engine + SQLAlchemy models (`claims`, `claim_status_history`) | ✅ |
+| Add Mongo Motor client + `get_db()` | ✅ |
+| Add JWT (PyJWT HS256) + bcrypt password utilities | ✅ |
+| Add `APIKeyMiddleware` (validates `X-API-Key`, resolves `caller`) | ✅ |
+| Add `RequestLoggerMiddleware` (`caller`, `user`, `method`, `path`, `status`, `duration_ms`) | ✅ |
+| Add routers: health, auth, users, policies, claims (with FNOL-only `POST /claims`) | ✅ |
+| Add idempotent seed routine (10 customers, 5 agents, 15 policies, ~10 claims) | ✅ |
+| Add background claim-status simulator (asyncio lifespan task, ADR-007) | ✅ |
+| Wire FastAPI app + lifespan (init → seed → simulator → yield → teardown) | ✅ |
+| Add pytest suite (health, auth, api_key, claims read/write, policies, simulator) | ✅ |
+| Swap `shared-data-api` placeholder in `docker-compose.yml` (build, port 8002:8000, healthcheck, volume, depends_on conditions) | ✅ |
+| Upgrade FNOL / CP / AP `depends_on` to `shared-data-api: service_healthy` | ✅ |
+| Add `shared-data-api-logs` to top-level `volumes:` block | ✅ |
+| `docker compose config --quiet` passes; `docker compose up -d shared-data-api` reaches `healthy` | ✅ |
+| Verify `/app/logs/shared-data-api.log` contains structured JSON lines | ✅ |
+| End-to-end: login → token → `/auth/me` with `X-API-Key` works | ✅ |
+| Multi-pass review and fix — Critical (5), Medium (10), Low (5), Functional (3); 85 tests total | ✅ |
+| ADR-008 (defer Alembic to post-Phase-3 PR) | ✅ |
+| Documentation drift fixes — `.claude/rules/apps.md`, `docs/tech/data-model.md`, `docs/tech/logging-strategy.md`, `docs/README.md`, `README.md` | ✅ |
+| Run `/ship`: pre-ship doc check → self-review → security-review → lint → build → test → commit → push → PR | 🔄 |
 
 ---
 

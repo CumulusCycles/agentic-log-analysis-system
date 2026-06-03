@@ -27,7 +27,11 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **Data ownership:** `users`, `policies` (with embedded vehicles) in Mongo; `claims`, `claim_status_history` in Postgres. Full schemas in `docs/tech/data-model.md`.
 
-**Auth:** Issues JWT (HS256, `JWT_SECRET`) at `POST /auth/login`. Requires `X-API-Key` on every non-`/auth/login` non-`/health` request; logs `caller=<app> user=<id>` on every request.
+**Auth:** Issues JWT (HS256, `JWT_SECRET`) at `POST /auth/login`. Requires `X-API-Key` on every request **except** `/health` (the Docker healthcheck endpoint is the only anonymous path). `/auth/login`, `/auth/me`, `/docs`, `/openapi.json`, and `/redoc` all require `X-API-Key`. Logs `caller=<app> user=<id>` on every request.
+
+**JWT claims:** `{ iss, aud, user_id, role, app, iat, exp }`. `iss` = `"shared-data-api"`, `aud` = `"agentic-log-analysis-insurance-apps"` — constants defined in `apps/shared-data-api/src/shared_data_api/auth/jwt.py`. FNOL / Customer Portal / Agent Portal **MUST** validate `iss` and `aud` when decoding (`PyJWT.decode(..., issuer=..., audience=...)`). `POST /claims` additionally enforces `jwt.app == "fnol"` as defense-in-depth against cross-app token replay.
+
+**Schema enforcement:** Mongo unique indexes on `users.username` and `policies.policy_number`; Postgres CHECK constraints on `claims.current_status` and `claim_status_history.{from_status,to_status}` against the ADR-007 status enum. Both are applied on startup via `ensure_indexes()` and `Base.metadata.create_all()`. See `docs/tech/data-model.md` and ADR-008 (Alembic deferral).
 
 **Background task:** In-process asyncio claim-status simulator advances claim statuses on a tick — see ADR-007.
 

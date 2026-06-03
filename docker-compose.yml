@@ -88,13 +88,29 @@ services:
   # ============================================================================
 
   shared-data-api:
-    image: python:3.12-slim
+    build: ./apps/shared-data-api
     platform: linux/arm64
     restart: unless-stopped
     env_file: .env
-    command: ["tail", "-f", "/dev/null"]
+    ports:
+      - "8002:8000"
+    volumes:
+      - shared-data-api-logs:/app/logs
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
     networks:
       - insurance-net
 
@@ -107,8 +123,10 @@ services:
     volumes:
       - fnol-logs:/app/logs
     depends_on:
-      - postgres
-      - shared-data-api
+      postgres:
+        condition: service_healthy
+      shared-data-api:
+        condition: service_healthy
     networks:
       - insurance-net
 
@@ -121,7 +139,10 @@ services:
     volumes:
       - customer-portal-logs:/app/logs
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
+      shared-data-api:
+        condition: service_healthy
     networks:
       - insurance-net
 
@@ -134,7 +155,10 @@ services:
     volumes:
       - agent-portal-logs:/app/logs
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      shared-data-api:
+        condition: service_healthy
     networks:
       - insurance-net
 
@@ -157,6 +181,7 @@ services:
 volumes:
   postgres-data:
   mongodb-data:
+  shared-data-api-logs:
   fnol-logs:
   customer-portal-logs:
   agent-portal-logs:
