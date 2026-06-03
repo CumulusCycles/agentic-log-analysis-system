@@ -70,19 +70,19 @@ docker compose up -d
 docker compose ps
 ```
 
-### Healthcheck endpoints
+### Service endpoints
 
 After `docker compose up -d`, click the link to verify the corresponding container is responding. Endpoints become live as their phase ships.
 
 Each app row links the three conceptual endpoints where they apply:
-**`/health`** (Docker probe), **`/docs`** (Swagger UI — SDA only), **`/ux`** (browser UI).
+**`health`** (Docker probe), **`docs`** (Swagger UI — SDA only), **`ux`** (browser UI).
 
-| Container | `/health` | `/docs` | `/ux` | Phase |
+| Container | health | docs | ux | Phase |
 |---|---|---|---|---|
-| Shared Data API | [/health](http://localhost:8002/health) | [/docs](http://localhost:8002/docs) | — (API only) | 3 ✅ |
-| FNOL | [/health](http://localhost:8001/health) | — | [/ux](http://localhost:8001/) (mobile-first) | 4 ✅ |
-| Customer Portal | [/health](http://localhost:3001/health) | — | [/ux](http://localhost:3001/) | 5 ✅ |
-| Agent Portal | [/health](http://localhost:8081/actuator/health) | — | [/ux](http://localhost:8081/) | 6 ✅ |
+| Shared Data API | [health](http://localhost:8002/health) | [docs](http://localhost:8002/docs) | — (API only) | 3 ✅ |
+| FNOL | [health](http://localhost:8001/health) | — | [ux](http://localhost:8001/) (mobile-first) | 4 ✅ |
+| Customer Portal | [health](http://localhost:3001/health) | — | [ux](http://localhost:3001/) | 5 ✅ |
+| Agent Portal | [health](http://localhost:8081/actuator/health) | — | [ux](http://localhost:8081/) | 6 ✅ |
 | Agentic Log Analysis Dashboard | `http://localhost:4001/health` | — | `http://localhost:4001/` | 7 — placeholder |
 | PostgreSQL | `pg_isready` via Docker on TCP `localhost:5433` (not HTTP) | — | — | 2 ✅ |
 | MongoDB | `mongosh` ping via Docker on TCP `localhost:27018` (not HTTP) | — | — | 2 ✅ |
