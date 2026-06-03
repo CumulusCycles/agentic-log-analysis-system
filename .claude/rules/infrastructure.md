@@ -45,11 +45,14 @@ Local Docker Compose only. No cloud deployment, no AWS, no CDK, no Terraform.
 volumes:
   postgres-data:
   mongodb-data:
+  shared-data-api-logs:
   fnol-logs:
   customer-portal-logs:
   agent-portal-logs:
   chroma-data:
 ```
+
+The 7th volume `shared-data-api-logs` is introduced in Phase 3 alongside the Shared Data API real-server swap. See ADR-005 for the rationale (caller+user attribution makes SDA's log stream the richest data source the dashboard consumes).
 
 ## Healthchecks
 Every container must define a Docker healthcheck **once the real server is in place**.

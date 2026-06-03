@@ -1,6 +1,8 @@
 # ADR-004: Database Architecture
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-005](ADR-005-shared-data-api-as-sole-data-layer.md)
+
+> Retained for project history. The current data-ownership model — Shared Data API as the sole writer/reader of both PostgreSQL and MongoDB — is documented in ADR-005 and `docs/tech/data-model.md`.
 
 ## Decisions
 1. Shared Data API, FNOL, and Agent Portal share a single PostgreSQL instance.

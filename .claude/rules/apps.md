@@ -13,43 +13,63 @@ Keep UI minimal — just enough screens to look and feel real.
 
 ## Shared Data API (apps/shared-data-api/)
 
-**Stack:** Python 3.12 / FastAPI (API only, no frontend) · PostgreSQL · `uv`
+**Stack:** Python 3.12 / FastAPI (API only, no frontend) · PostgreSQL + MongoDB · `uv`
 
-**Routes:** `GET /customers/{id}`, `POST /customers`, `GET /policies/{number}`, `GET /health`
+**Role:** Sole data-access layer for the system. Owns both databases (see ADR-005 and `docs/tech/data-model.md`).
 
-**DB Tables:** `customers`, `policies` · **Seed:** 10 customers, 15 policies
+**Routes:**
+- `POST /auth/login`, `GET /auth/me`
+- `GET /users/{id}`
+- `GET /policies/{number}`, `GET /policies?customer_id=...`
+- `GET /claims?...`, `GET /claims/{id}`
+- `POST /claims` — FNOL only (enforced by `X-API-Key`)
+- `GET /health`
 
-**Note:** Pure DB CRUD service — no log volume. Logs to stdout only.
+**Data ownership:** `users`, `policies` (with embedded vehicles) in Mongo; `claims`, `claim_status_history` in Postgres. Full schemas in `docs/tech/data-model.md`.
+
+**Auth:** Issues JWT (HS256, `JWT_SECRET`) at `POST /auth/login`. Requires `X-API-Key` on every non-`/auth/login` non-`/health` request; logs `caller=<app> user=<id>` on every request.
+
+**Background task:** In-process asyncio claim-status simulator advances claim statuses on a tick — see ADR-007.
+
+**Seed:** 10 customers, 5 agents, 15 policies (with embedded vehicles), ~10 claims in mixed statuses.
+
+**Logs:** Writes to `/app/logs/shared-data-api.log` → volume: `shared-data-api-logs`. Also to stdout.
 
 ---
 
 ## FNOL (apps/fnol/)
 
-**Stack:** Python 3.12 / FastAPI + React 18 + Vite + TypeScript · PostgreSQL · `uv`
+**Stack:** Python 3.12 / FastAPI + React 18 + Vite + TypeScript · `uv`
 
-**Routes:** `POST /fnol/submit`, `GET /fnol/{claim_id}`, `GET /health`, `GET /`
+**Data:** Via Shared Data API (HTTP). No direct DB driver. Sole write path for `POST /claims`.
 
-**DB Tables:** `claims`, `vehicles` · **Seed:** 10 vehicles, 10 claims
+**Auth:** JWT via Shared Data API `POST /auth/login`. Inter-service header: `X-API-Key: $SHARED_DATA_API_KEY_FNOL`.
+
+**Routes:** `POST /fnol/submit` (calls SDA `POST /claims`), `GET /fnol/{claim_id}` (calls SDA `GET /claims/{id}`), `POST /auth/login` (proxies SDA), `GET /health`, `GET /`
 
 ---
 
 ## Customer Portal (apps/customer-portal/)
 
-**Stack:** Node.js 20 / Express + React 18 + Vite + TypeScript · MongoDB · `pnpm`
+**Stack:** Node.js 20 / Express + React 18 + Vite + TypeScript · `pnpm`
 
-**Routes:** `GET /policies/:userId`, `GET /claims/:userId`, `PUT /profile/:userId`, `GET /health`, `GET /`
+**Data:** Via Shared Data API (HTTP, **read-only**). No direct DB driver, no Mongoose.
 
-**DB Collections:** `users`, `policies`, `claims` · **Seed:** 5 users, 10 policies, 10 claims
+**Auth:** JWT via Shared Data API `POST /auth/login`. Inter-service header: `X-API-Key: $SHARED_DATA_API_KEY_CUSTOMER_PORTAL`.
+
+**Routes:** `GET /policies/me`, `GET /claims/me`, `GET /profile/me`, `POST /auth/login` (proxies SDA), `GET /health`, `GET /`
 
 ---
 
 ## Agent Portal (apps/agent-portal/)
 
-**Stack:** Java 21 / Spring Boot 3 + React 18 + Vite + TypeScript · PostgreSQL · Maven
+**Stack:** Java 21 / Spring Boot 3 + React 18 + Vite + TypeScript · Maven
 
-**Routes:** `GET /claims`, `PUT /claims/{id}/assign`, `PUT /claims/{id}/status`, `GET /actuator/health`, `GET /`
+**Data:** Via Shared Data API (HTTP, **read-only**). No direct DB driver, no Spring Data JPA. Status transitions are driven by the SDA simulator (ADR-007), not by agents.
 
-**DB Tables:** `adjusters`, `assignments` (reads FNOL's `claims` table — same PostgreSQL instance) · **Seed:** 5 adjusters, 5 assignments
+**Auth:** JWT via Shared Data API `POST /auth/login`. Inter-service header: `X-API-Key: $SHARED_DATA_API_KEY_AGENT_PORTAL`.
+
+**Routes:** `GET /claims`, `GET /claims/{id}`, `POST /auth/login` (proxies SDA), `GET /actuator/health`, `GET /`
 
 ---
 
@@ -57,11 +77,13 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **Stack:** Python 3.12 / FastAPI + React 18 + Vite + TypeScript · Chroma vector store · `uv` + `pnpm`
 
-**Routes:** Placeholder routes defined in `.claude/rules/dashboard.md`; full API surface implemented in Phase 7.
+**Auth:** **Standalone** — local JWT signed with `DASHBOARD_JWT_SECRET`; admin credentials from `DASHBOARD_ADMIN_USERNAME` / `DASHBOARD_ADMIN_PASSWORD`. Does **not** depend on the Shared Data API to authenticate (so the dashboard stays operational when the insurance apps are sick — see ADR-006).
+
+**Routes:** `POST /api/auth/login`, `GET /api/auth/me`, plus the Phase 7 routes in `.claude/rules/dashboard.md`.
 
 **Data:** Chroma persistent collection of log embeddings — no relational tables, no seed.
 
-**Note:** Primary deliverable. Reads from `fnol-logs`, `customer-portal-logs`, and `agent-portal-logs` volumes read-only. Full conventions in `.claude/rules/dashboard.md`.
+**Note:** Primary deliverable. Reads from `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, and `agent-portal-logs` volumes read-only (4 mounts). Full conventions in `.claude/rules/dashboard.md`.
 
 ---
 
@@ -69,7 +91,8 @@ Keep UI minimal — just enough screens to look and feel real.
 
 - Single container per app — apps with a UI serve both API and React frontend; Shared Data API is API-only
 - Each app exposes `/health` (Agent Portal: `/actuator/health`)
-- Shared Data API logs to stdout only; FNOL, Customer Portal, and Agent Portal write logs to `/app/logs/` (mapped to persistent volume); Agentic Log Analysis Dashboard logs to stdout and reads the three app log volumes read-only
+- All four log-volume writers (Shared Data API, FNOL, Customer Portal, Agent Portal) write logs to `/app/logs/` mapped to their own persistent volume. The Agentic Log Analysis Dashboard logs to stdout and reads all four log volumes read-only.
+- All four apps require login (no registration). Pre-seeded credentials documented in `.env.example`.
 - Environment variables via `.env` — never hardcoded
-- Seed data will load on startup if the DB is empty — idempotent
+- Seed data will load on startup if the DB is empty — idempotent (Shared Data API only — the other apps have no DB)
 - **TypeScript module naming (all React apps):** `kebab-case.ts` for non-component modules and utilities; React components use `PascalCase.tsx`

@@ -19,24 +19,30 @@ The insurance apps exist to generate meaningful, realistic logs. The dashboard i
 ## The Four Apps & Their Personas
 
 ### Shared Data API (Python / FastAPI)
-Backend API service for centralized customer and policy data. No UI. Used by FNOL and
-Agent Portal for customer/policy lookups.
-**Scope:** Customer CRUD, policy lookup endpoints.
+Backend API service. Sole data-access layer for the whole system — owns Mongo (`users`,
+`policies` with embedded vehicles) and Postgres (`claims`, `claim_status_history`). Every
+read goes through it; FNOL is the only write client. Issues JWTs for the three insurance
+apps and runs the background claim-status simulator.
+**Scope:** Auth, customer/policy/claim endpoints, claim-status simulator. See `docs/tech/data-model.md`.
 
 ### FNOL — First Notice of Loss (Python / FastAPI + React)
 A policyholder has just been in a car accident. On their phone, possibly shaken, trying to
 report the incident from the scene. Mobile-first, urgent, must be fast and forgiving.
+Authenticated via JWT issued by the Shared Data API. Sole write path for claims.
 **Scope:** Accident report form + submission confirmation.
 
-### Customer Portal (MERN)
-A policyholder at home on their laptop checking claim status, viewing active policies,
-or updating their profile. Desktop-focused, self-service.
-**Scope:** Policy list, claim status view, basic profile page.
+### Customer Portal (Node / Express + React)
+A policyholder at home on their laptop checking claim status, viewing active policies, or
+viewing their profile. Desktop-focused, self-service. **Read-only** client of the Shared
+Data API — authenticated via JWT.
+**Scope:** Policy list, claim status view, basic profile page (read-only).
 
 ### Agent Portal (Java / Spring Boot + React)
-An internal claim handler reviewing the day's FNOL submissions. Assigns adjusters,
-updates claim statuses. Power user interface — desktop only.
-**Scope:** Claim list with status filter, claim detail with status update.
+An internal claim handler reviewing the day's FNOL submissions and assigned claims.
+Power user interface — desktop only. **Read-only** client of the Shared Data API —
+authenticated via JWT. Claim statuses advance through the background simulator inside the
+Shared Data API, not through agent action (see ADR-007).
+**Scope:** Claim list with status filter, claim detail view.
 
 ---
 
@@ -53,6 +59,10 @@ The AI layer handles the heterogeneity.
 
 - **Polyglot stack** — Python, Node, Java, each generating structurally different logs
 - **Polyglot databases** — PostgreSQL (relational) + MongoDB (document)
+- **Single data-access layer** — Shared Data API is the only path to user/policy/claim data; CP and AP have no DB driver (see ADR-005)
+- **Read-only by design** — Customer Portal and Agent Portal only read; FNOL is the sole write path
+- **Auth on every app** — JWT for FNOL/CP/AP (issued by Shared Data API), standalone JWT for the Dashboard, per-app API keys between services (see ADR-006)
+- **Background claim-status simulator** — in-process task inside Shared Data API generates plausible dynamic activity (see ADR-007)
 - **No normalization at write time** — logs written natively; dashboard interprets them
 - **Persistent volumes** — logs survive container crashes, accumulate across dev sessions
 - **Local Docker only** — no AWS, CDK, or cloud deployment

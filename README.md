@@ -12,13 +12,15 @@ The supporting apps are the raw material. **The dashboard is the product.**
 
 | App | Stack | Purpose |
 |---|---|---|
-| **Shared Data API** | Python / FastAPI | Centralized customer and policy data (no UI) |
-| **FNOL** | Python / FastAPI + React | First Notice of Loss — accident reporting (mobile) |
-| **Customer Portal** | Node / Express + React | Policyholder self-service (desktop) |
-| **Agent Portal** | Java / Spring Boot + React | Internal claim handler tool (desktop) |
+| **Shared Data API** | Python / FastAPI | Sole data-access layer (Mongo + Postgres) — all customer/policy/claim reads, FNOL writes, issues JWTs, runs claim-status simulator (no UI) |
+| **FNOL** | Python / FastAPI + React | First Notice of Loss — sole write path for claims (mobile) |
+| **Customer Portal** | Node / Express + React | Policyholder self-service — **read-only** view (desktop) |
+| **Agent Portal** | Java / Spring Boot + React | Internal claim handler tool — **read-only** view (desktop) |
 | **Agentic Log Analysis Dashboard** | Python / FastAPI + React + LangGraph | Agentic log analysis — the primary deliverable |
 
 Infrastructure: PostgreSQL · MongoDB · Chroma vector store · Docker Compose · `insurance-net` bridge network
+
+Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; standalone JWT for the Dashboard. See ADR-006.
 
 ---
 
@@ -28,7 +30,7 @@ Infrastructure: PostgreSQL · MongoDB · Chroma vector store · Docker Compose �
 |---|---|---|
 | 1 | Project scaffold — repo structure, root config, Claude Code config, docs | ✅ |
 | 2 | Docker infrastructure — all 8 containers, 6 volumes, networking, healthchecks | ✅ |
-| 3 | Shared Data API — PostgreSQL schema, customer/policy endpoints | ⬜ |
+| 3 | Shared Data API — sole data-access API (Mongo + Postgres), JWT auth, per-app API keys, background claim-status simulator, 7th log volume | ⬜ |
 | 4 | FNOL — accident report submission + React frontend | ⬜ |
 | 5 | Customer Portal — policy/claim views + React frontend + MongoDB | ⬜ |
 | 6 | Agent Portal — claim handler tool + React frontend | ⬜ |
@@ -106,9 +108,10 @@ application logs, and the Chroma vector store are permanently lost**. Use plain
 | `docs/project-brief.md` | Narrative project overview with personas |
 | `docs/development-workflow.md` | Hooks, slash commands, review flow, phase checkpoints |
 | `docs/architecture/system-overview.md` | Container topology and log flow diagram |
-| `docs/decisions/` | ADR-001 through ADR-004 |
+| `docs/decisions/` | ADR-001 through ADR-007 |
 | `docs/tech/tech-stack.md` | Full technology reference |
 | `docs/tech/logging-strategy.md` | Per-stack logging formats and volume paths |
+| `docs/tech/data-model.md` | Mongo + Postgres schemas, status enum, seed counts |
 | `docs/tech/file-naming-convention.md` | File and path naming rules for the repo |
 
 ---
