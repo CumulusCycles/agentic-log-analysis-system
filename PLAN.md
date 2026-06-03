@@ -144,14 +144,34 @@ conftest bypass.
 
 ## Phase 4 — FNOL
 
-Mobile-first accident reporting app. FastAPI backend + React frontend.
-Depends on Shared Data API for customer/policy validation.
-
-> **Enter Plan Mode before starting this phase.**
+Mobile-first accident reporting app. FastAPI backend (claim submission proxy + JWT
+validation + login proxy) + React 18 + Vite + TypeScript + Tailwind frontend.
+No database — talks to the Shared Data API over HTTP. Sole write path for `POST /claims`
+in the system (SDA enforces via `caller=fnol` + `jwt.app=fnol`).
 
 | Task | Status |
 |---|---|
-| *(tasks to be defined in Plan Mode)* | ⬜ |
+| Create `feature/phase-4-fnol` branch | ✅ |
+| Scaffold `apps/fnol/` uv project (`pyproject.toml`, `.python-version`, `.dockerignore`) | ✅ |
+| Add backend modules — `config.py`, `logging_setup.py`, `auth/jwt.py` (decode-only), `middleware/request_logger.py`, `schemas.py` | ✅ |
+| Add `clients/shared_data_api.py` — async `httpx.AsyncClient` wrapper with `X-API-Key` on every call | ✅ |
+| Add routers — `health.py`, `auth.py` (proxies SDA), `claims.py` (verify JWT → call SDA) | ✅ |
+| Add `main.py` — FastAPI + lifespan + middleware + SPA-fallback static mount | ✅ |
+| Add backend pytest suite (20 tests: health, jwt validation, auth login, submit claim, get claim — SDA mocked via respx) | ✅ |
+| Backend lint + tests pass | ✅ |
+| Scaffold React frontend — pnpm, Vite 6, TypeScript, Tailwind 3, ESLint 9, Vitest 3 | ✅ |
+| Add frontend source — `types/api.ts`, `lib/{api,auth,auth-context}`, `components/RequireAuth.tsx`, three pages, `App.tsx` | ✅ |
+| Add Vitest unit tests (7 tests across 3 page components) + Node 25 localStorage polyfill | ✅ |
+| Frontend typecheck + ESLint + Vitest + production build (~174 kB) all pass | ✅ |
+| Multi-stage `Dockerfile` — `node:22-alpine` (React build) + `python:3.12-slim` (uv deps + runtime, non-root) | ✅ |
+| Swap `fnol-app` block in `docker-compose.yml` — build, port 8001:8000, healthcheck, drop `postgres` dep | ✅ |
+| Add `SHARED_DATA_API_BASE_URL=http://shared-data-api:8000` to `.env.example` | ✅ |
+| Cold-start verification — `docker compose down` + volume wipe of all 7 named volumes + `up -d`; all 8 containers come back healthy | ✅ |
+| Host-side functional probes — `/health`, `/auth/login`, `/fnol/submit`, `/fnol/{id}`; verify `caller=fnol` in SDA logs; `fnol-logs` volume populated | ✅ |
+| **Playwright E2E suite — 5 specs × 2 viewports (desktop-chromium + mobile-safari); 33 passing, 3 skipped (intentional mobile-only)** | ✅ |
+| Bug fix during E2E: FastAPI SPA fallback for unknown client-side routes (caught by `navigation.spec.ts`) | ✅ |
+| Extend `/ship` skill to run every app's test suite (backend + frontend unit + Playwright E2E) | ✅ |
+| Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps tests → commit → push → PR | ✅ |
 
 ---
 

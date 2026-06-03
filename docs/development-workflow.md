@@ -68,7 +68,7 @@ These are slash commands developers invoke explicitly.
 
 | Command | Purpose | When to Run |
 |---|---|---|
-| `/ship` | **Full pipeline:** doc check → `/self-review` → `/security-review` → lint → build → commit → push → open PR | When ready to submit code for review |
+| `/ship` | **Full pipeline:** doc check → `/self-review` → `/security-review` → lint → build → **every app's tests (backend + frontend unit + Playwright E2E)** → commit → push → open PR | When ready to submit code for review |
 | `/done` | Checkout main, pull latest, delete feature branch | After PR is merged |
 
 ---
@@ -105,8 +105,10 @@ When you run `/ship`, Claude Code executes this entire sequence:
 5. Production Build
    └─ Run full build, verify success
 
-6. Tests
-   └─ Run the affected app's test suite, verify all pass
+6. Tests (every app — not just the changed one)
+   ├─ Backend: pytest / mvn / pnpm test for each app's backend
+   ├─ Frontend unit: Vitest for each app's frontend
+   └─ Frontend E2E: Playwright for each app with frontend/e2e/ — requires live stack
 
 7. Git Workflow
    ├─ Create/update commit with conventional message

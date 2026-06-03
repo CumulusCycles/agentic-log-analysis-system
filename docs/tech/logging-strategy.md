@@ -45,22 +45,22 @@ Output: structured JSON events. Every request log line includes `caller=<app>` a
 
 ### FNOL (Python / structlog + logging)
 
+Same `structlog` ProcessorFormatter bridge pattern as the Shared Data API — JSON
+to `sys.stdout` and to a `RotatingFileHandler` writing `/app/logs/fnol-app.log`
+(volume `fnol-logs`, 10 MB × 5 rotations). Configured via
+`apps/fnol/src/fnol/logging_setup.py:configure_logging()` and must keep
+`cache_logger_on_first_use=False` — same trap as the SDA.
+
+Output: one JSON object per line. Every request emits a line from
+`RequestLoggerMiddleware` with `caller="-"` (FNOL is the edge — no upstream caller),
+`user=<jwt.user_id>`, `method`, `path`, `status`, `duration_ms`.
+
 ```python
-import structlog
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-    handlers=[
-        logging.FileHandler("/app/logs/fnol-app.log"),
-        logging.StreamHandler()
-    ]
-)
-logger = structlog.get_logger()
+from fnol.logging_setup import configure_logging, get_logger
+configure_logging("/app/logs/fnol-app.log")
+log = get_logger(__name__)
+log.info("startup_complete")
 ```
-
-Output: structured JSON events.
 
 ### Customer Portal (Node.js / winston)
 
