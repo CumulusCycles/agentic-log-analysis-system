@@ -251,9 +251,9 @@ PR 3 — upgrade CP from Express 4 to 5, collapse per-route try/catch.
 | PR 1 — CP backend: NEW `error-handler.ts` (`AppError` → status passthrough / `SyntaxError` → 400 / default → generic 500 with winston ERROR log), mounted as last middleware in `buildApp()`, +3 supertest tests | ✅ |
 | PR 1 — AP backend: `GlobalExceptionHandler` gains `@ExceptionHandler(Exception.class)` catch-all + `HttpMessageNotReadableException` handler, `JwtAuthenticationFilter` uses Jackson `ObjectMapper` for JSON body (replaces raw string concat), `WebConfig` wires the new constructor arg, +malformed-token test on `JwtAuthenticationFilterTest`, NEW `GlobalExceptionHandlerTest` (RuntimeException → 500 + malformed JSON → 400) | ✅ |
 | PR 1 — Docs: ADR-010 codifies "no security headers in local-only deployment"; CLAUDE.md Security bullet cross-refs ADR-010; PLAN/README add Phase 6.5 row | ✅ |
-| PR 1 — Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps unit tests → live-stack functional probes → E2E sweep → commit → push → PR | ⬜ |
-| PR 2 — Extract SDA `create_claim` into a service-layer module; controller shrinks to ~15 lines; +~6 service-layer unit tests | ⬜ |
-| PR 3 — CP Express 4 → 5 upgrade; collapse per-route `try/catch` wrappers; tighten `sda-client.ts` return types from `Promise<unknown>` to typed DTOs | ⬜ |
+| PR 1 — Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps unit tests → live-stack functional probes → E2E sweep → commit → push → PR | ✅ |
+| PR 2 — Extract SDA `create_claim` into a service-layer module; controller shrinks to ~12 lines; +13 service-layer unit tests | ✅ |
+| PR 3 — CP Express 4 → 5 upgrade; collapse per-route `try/catch` wrappers; tighten `sda-client.ts` return types from `Promise<unknown>` to typed DTOs | ✅ |
 
 ---
 
