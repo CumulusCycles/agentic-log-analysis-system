@@ -10,8 +10,6 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -25,9 +23,8 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Path-filter — determine which app jobs need to run.
-  # On `push` and `workflow_dispatch` every app job runs regardless (forced by
-  # the per-job `if:` condition below).
+  # Path-filter — determine which app jobs need to run on `pull_request`.
+  # `workflow_dispatch` runs every job regardless (forced by per-job `if:`).
   # ---------------------------------------------------------------------------
   changes:
     name: Detect changes
@@ -81,7 +78,6 @@ jobs:
     if: |
       needs.changes.outputs.shared_data_api == 'true' ||
       needs.changes.outputs.shared_infra == 'true' ||
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     defaults:
@@ -107,7 +103,6 @@ jobs:
     if: |
       needs.changes.outputs.fnol == 'true' ||
       needs.changes.outputs.shared_infra == 'true' ||
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -162,7 +157,6 @@ jobs:
     if: |
       needs.changes.outputs.customer_portal == 'true' ||
       needs.changes.outputs.shared_infra == 'true' ||
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -219,7 +213,6 @@ jobs:
     if: |
       needs.changes.outputs.agent_portal == 'true' ||
       needs.changes.outputs.shared_infra == 'true' ||
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
@@ -271,7 +264,6 @@ jobs:
     if: |
       (needs.changes.outputs.dashboard == 'true' ||
        needs.changes.outputs.shared_infra == 'true' ||
-       github.event_name == 'push' ||
        github.event_name == 'workflow_dispatch') &&
       needs.changes.outputs.dashboard_exists == 'true'
     runs-on: ubuntu-latest
