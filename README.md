@@ -1,5 +1,7 @@
 # Agentic Log Analysis System
 
+![License](https://img.shields.io/badge/license-MIT-yellow) ![Platform](https://img.shields.io/badge/platform-linux%2Farm64-blue)
+
 An AI-powered log management platform built on a realistic insurance application ecosystem.
 Four full-stack apps generate heterogeneous logs in their native formats; a LangGraph + OpenAI
 dashboard continuously monitors, correlates, and explains them.
