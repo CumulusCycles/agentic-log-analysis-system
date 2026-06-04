@@ -20,6 +20,9 @@ description: Inspect raw log volumes from Docker containers. Triggered when aske
 ## Log File Reference
 | App | Volume | Log File |
 |---|---|---|
+| Shared Data API | `shared-data-api-logs` | `shared-data-api.log` |
 | FNOL | `fnol-logs` | `fnol-app.log` |
 | Customer Portal | `customer-portal-logs` | `customer-portal.log` |
 | Agent Portal | `agent-portal-logs` | `agent-portal.log` |
+
+Shared Data API's log volume is the richest source per ADR-005 — every line carries `caller=<app>` and `user=<id>` attribution.
