@@ -1,6 +1,61 @@
 import axios, { type AxiosInstance } from "axios";
 
 import type { Config } from "../config.js";
+import { sdaErrorToHttp } from "../errors.js";
+
+/**
+ * Hand-authored TS mirror of the SDA response shapes Customer Portal consumes.
+ * Update by hand when shared-data-api/src/shared_data_api/schemas.py changes.
+ * Mirrors frontend/src/types/api.ts — keep in sync.
+ */
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+}
+
+export interface UserOut {
+  id: string;
+  username: string;
+  role: string;
+  display_name: string;
+}
+
+export interface VehicleOut {
+  vin: string;
+  make: string;
+  model: string;
+  year: number;
+}
+
+export interface PolicyOut {
+  policy_number: string;
+  customer_id: string;
+  effective_date: string;
+  expiration_date: string;
+  coverage_type: string;
+  premium_cents: number;
+  vehicles: VehicleOut[];
+}
+
+export interface VehicleSnapshot {
+  make: string;
+  model: string;
+  year: number;
+}
+
+export interface ClaimOut {
+  id: string;
+  policy_number: string;
+  customer_id: string;
+  vin: string;
+  vehicle_snapshot?: VehicleSnapshot | null;
+  incident_at: string;
+  description?: string | null;
+  current_status: string;
+  assigned_adjuster_id?: string | null;
+  created_at: string;
+}
 
 /**
  * Thin HTTP client around the Shared Data API.
@@ -9,6 +64,10 @@ import type { Config } from "../config.js";
  * process. The `X-API-Key` header is set once at construction so every
  * outgoing request includes it — per ADR-006 §1 the key is required on
  * every SDA call, including `/auth/login`.
+ *
+ * Every method translates AxiosError → AppError at the boundary so callers
+ * can just `throw` (or let the rejection propagate); Express 5 routes it
+ * to the central error middleware. See PR 3 of Phase 6.5.
  */
 export class SharedDataAPIClient {
   private readonly http: AxiosInstance;
@@ -21,31 +80,51 @@ export class SharedDataAPIClient {
     });
   }
 
-  async login(username: string, password: string): Promise<unknown> {
-    const r = await this.http.post("/auth/login", { username, password });
-    return r.data;
+  async login(username: string, password: string): Promise<TokenResponse> {
+    try {
+      const r = await this.http.post<TokenResponse>("/auth/login", {
+        username,
+        password,
+      });
+      return r.data;
+    } catch (err) {
+      throw sdaErrorToHttp(err);
+    }
   }
 
-  async getUser(userId: string, bearer: string): Promise<unknown> {
-    const r = await this.http.get(`/users/${encodeURIComponent(userId)}`, {
-      headers: { Authorization: `Bearer ${bearer}` },
-    });
-    return r.data;
+  async getUser(userId: string, bearer: string): Promise<UserOut> {
+    try {
+      const r = await this.http.get<UserOut>(
+        `/users/${encodeURIComponent(userId)}`,
+        { headers: { Authorization: `Bearer ${bearer}` } },
+      );
+      return r.data;
+    } catch (err) {
+      throw sdaErrorToHttp(err);
+    }
   }
 
-  async getPolicies(customerId: string, bearer: string): Promise<unknown> {
-    const r = await this.http.get("/policies", {
-      params: { customer_id: customerId },
-      headers: { Authorization: `Bearer ${bearer}` },
-    });
-    return r.data;
+  async getPolicies(customerId: string, bearer: string): Promise<PolicyOut[]> {
+    try {
+      const r = await this.http.get<PolicyOut[]>("/policies", {
+        params: { customer_id: customerId },
+        headers: { Authorization: `Bearer ${bearer}` },
+      });
+      return r.data;
+    } catch (err) {
+      throw sdaErrorToHttp(err);
+    }
   }
 
-  async getClaims(customerId: string, bearer: string): Promise<unknown> {
-    const r = await this.http.get("/claims", {
-      params: { customer_id: customerId },
-      headers: { Authorization: `Bearer ${bearer}` },
-    });
-    return r.data;
+  async getClaims(customerId: string, bearer: string): Promise<ClaimOut[]> {
+    try {
+      const r = await this.http.get<ClaimOut[]>("/claims", {
+        params: { customer_id: customerId },
+        headers: { Authorization: `Bearer ${bearer}` },
+      });
+      return r.data;
+    } catch (err) {
+      throw sdaErrorToHttp(err);
+    }
   }
 }

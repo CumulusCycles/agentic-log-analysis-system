@@ -63,7 +63,11 @@ export function buildApp({
       "/assets",
       express.static(path.join(distDir, "assets"), { fallthrough: false }),
     );
-    app.get("*", spaFallback(distDir));
+    // Express 5 / path-to-regexp 8 requires a named wildcard; "*" alone is
+    // a syntax error. "/*splat" matches /policies, /xyz, /a/b/c — but NOT
+    // the bare "/" root. Wrap the segment in braces ("{/*splat}") so the
+    // whole match becomes optional and "/" is included.
+    app.get("{/*splat}", spaFallback(distDir));
   } else {
     logger.warn("frontend_dist_missing", { expected: distDir });
   }

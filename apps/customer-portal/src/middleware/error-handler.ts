@@ -6,13 +6,13 @@ import type { Logger } from "../logger.js";
 /**
  * Central error middleware. Mounted as the LAST middleware in app.ts.
  *
- * In PR 1 (Phase 6.5) the per-route try/catch wrappers in routers/* still
- * translate SdaError via `sdaErrorToHttp` themselves, so this middleware
- * primarily catches what those don't:
- *   - express.json() body-parse failures → 400
- *   - any plain Error thrown by handler code → generic 500 (with stack logged)
- * PR 3 (Express 5 upgrade) removes the per-route try/catch and routes every
- * thrown SDA error through this handler.
+ * Handles:
+ *   - AppError (including SDA upstream errors translated by sda-client) → status + detail verbatim
+ *   - SyntaxError from express.json() body parsing → 400 "malformed request body"
+ *   - any plain Error thrown by handler code → generic 500 (with stack logged, no leak)
+ *
+ * Express 5's promise-aware router routes thrown async rejections here
+ * automatically — no per-route try/catch wrappers needed.
  */
 export function errorHandler(logger: Logger): ErrorRequestHandler {
   return (err, req, res, _next) => {

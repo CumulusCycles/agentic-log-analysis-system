@@ -1,7 +1,6 @@
 import { Router } from "express";
 
 import type { SharedDataAPIClient } from "../clients/sda-client.js";
-import { sdaErrorToHttp } from "../errors.js";
 
 interface LoginBody {
   username?: unknown;
@@ -23,13 +22,8 @@ export function authRouter(sda: SharedDataAPIClient): Router {
       res.status(422).json({ detail: "username and password are required" });
       return;
     }
-    try {
-      const tokenResponse = await sda.login(body.username, body.password);
-      res.json(tokenResponse);
-    } catch (err) {
-      const app = sdaErrorToHttp(err);
-      res.status(app.status).json({ detail: app.detail });
-    }
+    const tokenResponse = await sda.login(body.username, body.password);
+    res.json(tokenResponse);
   });
 
   return router;

@@ -38,7 +38,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | 4 | FNOL — accident report submission (FastAPI proxy to SDA) + React frontend (Vite + TypeScript + Tailwind), Playwright E2E suite | ✅ |
 | 5 | Customer Portal — read-only policy/claim/profile views (Express proxy to SDA) + React frontend (Vite + TypeScript + Tailwind), Playwright E2E suite | ✅ |
 | 6 | Agent Portal — claim handler tool (Spring Boot proxy to SDA) + React frontend (Vite + TypeScript + Tailwind), Playwright E2E suite | ✅ |
-| 6.5 | Pre-Phase-7 best-practices pass — central error handlers, settings caching, JWT correctness fixes, ADR-010 (no security headers, local-only), SDA service-layer extraction, CP Express 4 → 5 | ⬜ |
+| 6.5 | Pre-Phase-7 best-practices pass — central error handlers, settings caching, JWT correctness fixes, ADR-010 (no security headers, local-only), SDA service-layer extraction, CP Express 4 → 5 | ✅ |
 | ⛔ | **HARD STOP** — all 4 apps stable, all 3 log volumes populated | — |
 | 7 | Agentic Log Analysis Dashboard — LangChain + LangGraph + OpenAI + Chroma + React UI | ⬜ |
 
