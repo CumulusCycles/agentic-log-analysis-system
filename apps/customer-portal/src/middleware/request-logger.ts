@@ -15,6 +15,7 @@ export function requestLogger(logger: Logger) {
       logger.info("request", {
         event: "request",
         caller: "-",
+        source: (req.headers["x-source"] as string | undefined) ?? "prod",
         user: (res.locals.userId as string | undefined) ?? "-",
         method: req.method,
         // originalUrl preserves the full mount path (e.g. "/policies/me");

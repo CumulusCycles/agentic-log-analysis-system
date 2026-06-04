@@ -30,9 +30,16 @@ public class RequestLoggingFilter extends OncePerRequestFilter {
         } finally {
             double durationMs = (System.nanoTime() - start) / 1_000_000.0;
             Object userId = request.getAttribute(AuthAttributes.USER_ID);
-            log.info("request method={} path={} caller=- user={} status={} duration_ms={}",
+            String source = request.getHeader("X-Source");
+            if (source == null || source.isBlank()) {
+                source = "prod";
+            }
+            log.info(
+                    "request method={} path={} caller=- source={} "
+                            + "user={} status={} duration_ms={}",
                     request.getMethod(),
                     request.getRequestURI(),
+                    source,
                     userId != null ? userId : "-",
                     response.getStatus(),
                     String.format("%.2f", durationMs));

@@ -166,13 +166,24 @@ def test_structlog_regular_request_is_tagged_source_prod() -> None:
 
 
 def test_structlog_explicit_source_field_wins_over_path_inference() -> None:
-    # Forward-compat: when a future cross-app PR adds X-Source: test header
-    # propagation, log lines will carry an explicit `source` field. The
+    # When a non-request event carries an explicit `source` field (per
+    # ADR-011's X-Source convention or an app's business-logic logger), the
     # parser MUST honour it instead of defaulting to "prod".
     line = _structlog_line(event="claim_submitted", source="test")
     entry = parse_structlog_line(app="fnol", seq=0, line=line)
     assert entry is not None
     assert entry.source == "test"
+
+
+def test_health_path_request_overrides_explicit_source() -> None:
+    # ADR-011: each app's request-logger middleware emits `source=prod` by
+    # default. The parser MUST still tag healthcheck requests as `health` so
+    # heartbeat doesn't leak into Chroma — path is an immutable property the
+    # header cannot override.
+    line = _structlog_line(event="request", path="/health", status=200, source="prod")
+    entry = parse_structlog_line(app="shared-data-api", seq=0, line=line)
+    assert entry is not None
+    assert entry.source == "health"
 
 
 def test_winston_health_request_is_tagged_source_health() -> None:

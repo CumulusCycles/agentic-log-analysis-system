@@ -59,9 +59,10 @@ logging.basicConfig(
 logger = structlog.get_logger()
 ```
 
-Output: structured JSON events. Every request log line includes `caller=<app>` and
-`user=<id>` for dashboard correlation — caller comes from the `X-API-Key` header
-(see ADR-006), user from the JWT subject.
+Output: structured JSON events. Every request log line includes `caller=<app>`,
+`user=<id>`, and `source=<value>` for dashboard correlation — caller comes
+from the `X-API-Key` header (see ADR-006), user from the JWT subject, source
+from the `X-Source` header (default `prod`, see ADR-011).
 
 > **structlog configuration note:** the Shared Data API sets
 > `cache_logger_on_first_use=False`. Module-level `log = get_logger(__name__)`
@@ -82,6 +83,7 @@ to `sys.stdout` and to a `RotatingFileHandler` writing `/app/logs/fnol-app.log`
 
 Output: one JSON object per line. Every request emits a line from
 `RequestLoggerMiddleware` with `caller="-"` (FNOL is the edge — no upstream caller),
+`source=<value>` (from `X-Source` header, default `prod` per ADR-011),
 `user=<jwt.user_id>`, `method`, `path`, `status`, `duration_ms`.
 
 ```python
@@ -129,7 +131,30 @@ Actual config in `apps/agent-portal/src/main/resources/logback-spring.xml` uses 
 </appender>
 ```
 
-Output: `YYYY-MM-DD HH:mm:ss.SSS LEVEL --- [thread] class : message`. Per-request lines from `RequestLoggingFilter` follow the shape `request method=<m> path=<p> caller=- user=<jwt user_id|-> status=<s> duration_ms=<n>` so the dashboard's heterogeneous-format parser can correlate against SDA's structured JSON. Multi-line stack traces use Logback's native formatting.
+Output: `YYYY-MM-DD HH:mm:ss.SSS LEVEL --- [thread] class : message`. Per-request lines from `RequestLoggingFilter` follow the shape `request method=<m> path=<p> caller=- source=<value> user=<jwt user_id|-> status=<s> duration_ms=<n>` so the dashboard's heterogeneous-format parser can correlate against SDA's structured JSON. Multi-line stack traces use Logback's native formatting.
+
+---
+
+## X-Source Header Convention (Cross-App)
+
+Every app's request-logger middleware reads an optional `X-Source: <value>`
+HTTP header and emits a `source=<value>` field on the per-request log line.
+When absent, the apps default to `source=prod`. This lets the dashboard's
+ingest gate (`DASHBOARD_INGEST_SOURCES`) drop synthetic / test / health
+traffic from Chroma before any OpenAI embedding call.
+
+Allowed vocabulary:
+
+| Value       | Set by                                                  |
+|-------------|---------------------------------------------------------|
+| `prod`      | Header absent (app default)                             |
+| `synthetic` | Agitator (PR 3 of the agitator sequence)                |
+| `test`      | Playwright `extraHTTPHeaders` in each frontend config   |
+| `health`    | Parser-derived from healthcheck path                    |
+
+Parser precedence: health-path beats explicit (the header cannot override a
+healthcheck), then explicit, then default `prod`. Inter-service propagation
+through the SDA clients (FNOL/CP/AP → SDA) is deferred — see ADR-011.
 
 ---
 

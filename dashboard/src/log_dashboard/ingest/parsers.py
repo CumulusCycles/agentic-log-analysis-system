@@ -47,15 +47,18 @@ def _infer_source(
     """Derive the `source` tag for a parsed entry.
 
     Precedence:
-      1. If the log line itself already declared a `source` value (future
-         cross-app X-Source header PR), honour it.
-      2. If the line is a healthcheck request, tag `health`.
-      3. Otherwise tag `prod` (the default — real app traffic).
+      1. If the line is a healthcheck request, tag `health` — this is an
+         immutable property of the request that no header can override.
+         Required so PR 1's app-side default `source=prod` doesn't cause
+         healthcheck heartbeat to leak into Chroma.
+      2. Otherwise honour the explicit `source` value (set by each app's
+         request-logger middleware from `X-Source` per ADR-011).
+      3. Fall back to `prod` (the default — real app traffic).
     """
-    if isinstance(explicit, str) and explicit.strip():
-        return explicit.strip().lower()
     if event == "request" and isinstance(path, str) and path in _HEALTH_PATHS:
         return "health"
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip().lower()
     return "prod"
 
 

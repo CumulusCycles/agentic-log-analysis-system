@@ -117,6 +117,27 @@ class LoggingEnrichmentTest {
                     .contains("user_id=")
                     .doesNotContain(bearer);
         }
+
+        // ---------------------------------------------------------------
+        // request middleware: X-Source header propagation (ADR-011)
+        // ---------------------------------------------------------------
+
+        @Test
+        void requestEventEmitsSourceFromHeader(CapturedOutput output) throws Exception {
+            mvc.perform(get("/api/health").header("X-Source", "test"))
+                    .andExpect(status().isOk());
+            assertThat(output.getOut())
+                    .contains("path=/api/health")
+                    .contains("source=test");
+        }
+
+        @Test
+        void requestEventEmitsSourceProdWhenHeaderAbsent(CapturedOutput output) throws Exception {
+            mvc.perform(get("/api/health")).andExpect(status().isOk());
+            assertThat(output.getOut())
+                    .contains("path=/api/health")
+                    .contains("source=prod");
+        }
     }
 
     @Nested

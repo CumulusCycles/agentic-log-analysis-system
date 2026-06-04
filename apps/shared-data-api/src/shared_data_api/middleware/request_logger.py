@@ -16,6 +16,7 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         log.info(
             "request",
             caller=getattr(request.state, "caller", "-"),
+            source=request.headers.get("X-Source", "prod"),
             user=getattr(request.state, "user_id", "-"),
             method=request.method,
             path=request.url.path,
