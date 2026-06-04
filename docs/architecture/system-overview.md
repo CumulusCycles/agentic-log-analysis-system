@@ -91,8 +91,7 @@ in a valid order:
 | agent-portal | shared-data-api (healthy) |
 | log-dashboard | chroma (healthy) |
 
-> **Phase 2 state:** only `log-dashboard → chroma` currently uses
-> `condition: service_healthy` — chroma is the only dependency whose target has a
-> real healthcheck. The other rows above are the target end-state; their app-tier
-> dependencies use the short-form list in Phase 2 (no condition) and are upgraded
-> to `service_healthy` in the phase that adds the real server.
+> **Post-Phase-6 state:** every `depends_on` above uses `condition: service_healthy`.
+> The app-tier dependencies were upgraded as each phase landed a real server with a
+> healthcheck (Phase 3 SDA → postgres/mongodb, Phases 4–6 FNOL/CP/AP → SDA). The
+> `log-dashboard → chroma` link has used `service_healthy` since Phase 2.

@@ -8,7 +8,7 @@ Always use `uv` for package management — never pip directly. Commands: `uv add
 
 Write async FastAPI with Pydantic v2 models, SQLAlchemy async for PostgreSQL, and Python logging + structlog for logging.
 
-**Shared Data API** is a pure DB CRUD service — logs to stdout only, no log volume.
+**Shared Data API** is the sole data-access layer (Postgres + Mongo). Logs to both stdout and `/app/logs/shared-data-api.log` (mapped to the `shared-data-api-logs` volume) — the volume is the dashboard's richest data source per ADR-005, since every request line includes `caller=<app>` and `user=<id>` attribution.
 **FNOL** logs to `/app/logs/fnol-app.log` (mapped to the `fnol-logs` volume) and stdout.
 
 Dockerfile pattern uses `python:3.12-slim` base image.
