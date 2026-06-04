@@ -13,7 +13,7 @@ test.describe("Authentication", () => {
 
     await expect(page).toHaveURL(/\/$/);
     await expect(
-      page.getByRole("heading", { name: /scaffold ready/i }),
+      page.getByRole("heading", { name: /^overview$/i }),
     ).toBeVisible();
     const token = await page.evaluate(() =>
       localStorage.getItem("dashboard_token"),
@@ -71,7 +71,7 @@ test.describe("Authentication", () => {
     await page.reload();
     await expect(page).toHaveURL(/\/$/);
     await expect(
-      page.getByRole("heading", { name: /scaffold ready/i }),
+      page.getByRole("heading", { name: /^overview$/i }),
     ).toBeVisible();
   });
 });
