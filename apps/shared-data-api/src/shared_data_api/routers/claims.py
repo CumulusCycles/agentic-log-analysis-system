@@ -8,10 +8,12 @@ from sqlalchemy.orm import selectinload
 from ..auth.jwt import get_current_user
 from ..db import mongo, postgres
 from ..db.models import Claim
+from ..logging_setup import get_logger
 from ..schemas import ClaimCreate, ClaimDetail, ClaimOut
 from ..services import claims_service
 
 router = APIRouter(tags=["claims"])
+log = get_logger("claims")
 
 
 @router.get("", response_model=list[ClaimOut])
@@ -48,6 +50,7 @@ async def get_claim(
     claim = result.scalar_one_or_none()
     if claim is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="claim not found")
+    log.info("claim_fetched", claim_id=str(claim.id), current_status=claim.current_status)
     return ClaimDetail.model_validate(claim)
 
 
