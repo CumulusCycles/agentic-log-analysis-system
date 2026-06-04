@@ -1,5 +1,7 @@
 # Agentic Log Analysis System
 
+![shared-data-api](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-shared-data-api.yml?branch=main&label=shared-data-api) ![fnol](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-fnol.yml?branch=main&label=fnol) ![customer-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-customer-portal.yml?branch=main&label=customer-portal) ![agent-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-agent-portal.yml?branch=main&label=agent-portal)
+
 ![License](https://img.shields.io/badge/license-MIT-yellow) ![Platform](https://img.shields.io/badge/platform-linux%2Farm64-blue)
 
 An AI-powered log management platform built on a realistic insurance application ecosystem.
@@ -103,7 +105,27 @@ Each app row links the three conceptual endpoints where they apply:
 > Phases 3–7 replace each placeholder with the real server and add its `GET /health`
 > healthcheck.
 
-### Common Docker Commands
+---
+
+## Project Resources
+
+| Resource | What it contains |
+|---|---|
+| `PLAN.md` | Complete build task list — source of truth for progress |
+| `CLAUDE_RESOURCES.md` | All Claude Code agents, commands, hooks, and skills |
+| `.env.example` | All required environment variables |
+| `docs/project-brief.md` | Narrative project overview with personas |
+| `docs/development-workflow.md` | Hooks, slash commands, review flow, phase checkpoints |
+| `docs/architecture/system-overview.md` | Container topology and log flow diagram |
+| `docs/decisions/` | ADR-001 through ADR-007 |
+| `docs/tech/tech-stack.md` | Full technology reference |
+| `docs/tech/logging-strategy.md` | Per-stack logging formats and volume paths |
+| `docs/tech/data-model.md` | Mongo + Postgres schemas, status enum, seed counts |
+| `docs/tech/file-naming-convention.md` | File and path naming rules for the repo |
+
+---
+
+## Common Docker Commands
 
 | Command | Purpose |
 |---|---|
@@ -123,24 +145,6 @@ The `-v` flag deletes the persistent volumes (`postgres-data`, `mongodb-data`, t
 application logs, and the Chroma vector store are permanently lost**. Use plain
 `docker compose down` (without `-v`) to stop the stack while keeping that state. Only use
 `-v` when you intentionally want a clean slate and have nothing in the volumes worth keeping.
-
----
-
-## Project Resources
-
-| Resource | What it contains |
-|---|---|
-| `PLAN.md` | Complete build task list — source of truth for progress |
-| `CLAUDE_RESOURCES.md` | All Claude Code agents, commands, hooks, and skills |
-| `.env.example` | All required environment variables |
-| `docs/project-brief.md` | Narrative project overview with personas |
-| `docs/development-workflow.md` | Hooks, slash commands, review flow, phase checkpoints |
-| `docs/architecture/system-overview.md` | Container topology and log flow diagram |
-| `docs/decisions/` | ADR-001 through ADR-007 |
-| `docs/tech/tech-stack.md` | Full technology reference |
-| `docs/tech/logging-strategy.md` | Per-stack logging formats and volume paths |
-| `docs/tech/data-model.md` | Mongo + Postgres schemas, status enum, seed counts |
-| `docs/tech/file-naming-convention.md` | File and path naming rules for the repo |
 
 ---
 

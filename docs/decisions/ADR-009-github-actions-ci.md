@@ -1,41 +1,35 @@
-# ADR-009: Adopt GitHub Actions for CI (Lint + Unit Tests + Build)
+# ADR-009: Adopt GitHub Actions for CI (Per-App Workflows + README Badges)
 
 **Status:** Accepted
 
 ## Decisions
 
-1. CI runs on GitHub-hosted Ubuntu runners. Triggers: `pull_request` to `main` (the gate — every PR runs once), `workflow_dispatch` (manual rerun). No `push` trigger: PR-time validation is authoritative — the PR's `pull_request` run already targets the merge commit, so re-running after merge produces the same result.
-2. CI scope mirrors the `/ship` rule shipped in PR #10, with one addition: each app's job runs when its `apps/<name>/**` files changed, OR when shared-contract files changed (`apps/shared-data-api/**`, `docker-compose.yml`, `.env.example`, `.claude/rules/apps.md`), OR when **`.github/workflows/**`** changed. The workflow file itself is added to the CI trigger so changes to the CI pipeline get validated against every app on the same PR. This is intentionally absent from `/ship`'s shared-contract list (which is about *runtime* contracts that can break consumers); workflow files affect *CI behavior*, not runtime, so they belong here but not there. On `workflow_dispatch`, every job runs (manual override of the paths-filter).
-3. Each app's job runs lint + typecheck/build + unit tests against the current source. Pass/fail is reported as one PR check row per app.
+1. CI runs on GitHub-hosted Ubuntu runners. One workflow file per app under `.github/workflows/ci-<app>.yml` (`ci-shared-data-api.yml`, `ci-fnol.yml`, `ci-customer-portal.yml`, `ci-agent-portal.yml`; `ci-dashboard.yml` lands with Phase 7). Each workflow's triggers are: `pull_request` to `main` (the PR-time gate), `push` to `main` (so the per-app status badge tracks `main` HEAD after merge), `workflow_dispatch` (manual rerun).
+2. Each workflow scopes itself via `on.pull_request.paths` and `on.push.paths` — same path list mirrors the `/ship` shared-contract rule plus `.github/workflows/**`: that app's `apps/<app>/**`, `docker-compose.yml`, `.env.example`, `.claude/rules/apps.md`, `.github/workflows/**`. A workflow that doesn't trigger simply doesn't run; there's no skipped-job noise in the PR checks UI (this is the structural advantage over the v1 single-workflow + `dorny/paths-filter` design).
+3. Each workflow contains exactly one job (named for the app) that runs lint + typecheck/build + unit tests for that app. The job's pass/fail IS the per-app CI status — that's what shields.io reads to render the README badge.
 4. CI does **not** run: Playwright E2E (requires the live Docker stack — see decision 5), container image builds, image pushes, deployment. E2E remains local-only via `/ship`.
 5. E2E in CI was considered and deferred. The two viable paths are (a) skipping it (defeats the purpose) or (b) a self-hosted runner with Docker (ties CI to a maintained machine + ongoing infra burden). The scoped `/ship` rule already enforces E2E locally when the shared contract moves, and the PR test-plan discipline keeps the gate honest.
-6. Default `GITHUB_TOKEN` is used with least-privilege permissions (`contents: read`, `pull-requests: write`, `checks: write`). No fine-grained PAT, no organization-level secrets, no rotation maintenance.
-7. The dashboard job is defined now with a filesystem existence check in the `changes` job (`dashboard_exists` output testing for `dashboard/pyproject.toml`). The dashboard job's `if:` gates on that output, so the job activates automatically once Phase 7 scaffolds the directory — no follow-up CI PR required when Phase 7 lands.
-8. If the per-app jobs are ever wired in as branch-protection required checks on `main`, the workflow needs a small refactor first: the `dorny/paths-filter` design causes app jobs to report `skipped` on PRs that don't touch their code, and a `skipped` status does NOT satisfy a required check. Two patterns work:
-   - **(a) Umbrella job (recommended).** Add a `ci-summary` job that `needs:` every per-app job, runs `if: always()`, and aggregates `needs.<job>.result` — pass when every result is `success` or `skipped`, fail on `failure`/`cancelled`. Only `ci-summary` goes in the required-checks list.
-   - **(b) Drop CI's path scoping.** Run all unit tests on every PR. Simpler workflow; small CI cost with cache. Local `/ship` scoping unaffected.
+6. Default `GITHUB_TOKEN` is used with `permissions: contents: read` only. No fine-grained PAT, no organization-level secrets, no PR-comment or check-run permissions (no `dorny/test-reporter` or similar PR-side annotations — the badges + the workflow status are the surface).
+7. The dashboard workflow (`ci-dashboard.yml`) is added in the Phase 7 PR that scaffolds `dashboard/`. The dashboard badge in README appears at the same time. No empty workflow file or placeholder badge before then.
+8. README carries a per-app status badge for each per-app workflow, plus static License (MIT) and Platform (linux/arm64) badges. Each per-app badge URL: `https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-<app>.yml?branch=main&label=<app>`. The `branch=main` filter is why each workflow needs the `push: main` trigger — without it, `branch=main` has no run history and shields.io renders "no status."
 
 ## Rationale
 
-Reverses the over-broad rule in `CLAUDE.md` that conflated *app deployment* (still disallowed — local Docker Compose only) with *remote CI* (now permitted). They are independent decisions; the original rule's overreach blocked PR-time validation without justification.
+The original single-workflow architecture (v1, PRs #11–#15) used a matrix of per-app jobs gated by `dorny/paths-filter`. That gave us per-app PR checks but only one workflow-level CI signal — there was no way to render per-app badges in the README. Per-app *visibility on the README* was the original goal of adopting CI in the first place (see PR #11 thread); the v1 architecture buried it.
 
-GH Actions adds three things local `/ship` cannot:
+Per-app workflow files fix that directly. Each workflow has its own URL, its own status, its own badge. The PR-time check rows still show per-app status (just one check per app from one workflow, instead of one check per app from one matrix), and now the README does too.
 
-- **Independent verification on a clean checkout.** Local runs benefit from existing virtualenvs, cached node_modules, and accumulated state. CI proves the repo is buildable from zero — catches missing files, stale lockfiles, dependency drift, and "works on my machine" issues that `/ship` is structurally blind to.
-- **Machine-enforced merge gate.** Branch protection's required-check rules turn CI into a hard gate — a red PR cannot be merged regardless of developer discipline.
-- **Persistent run history.** Every PR and push leaves an artifact under the Actions tab — useful for triaging post-merge regressions.
+`push: main` triggers come back per workflow — but path-scoped, so only the workflow whose app actually changed re-runs after merge. For a typical PR that touches one app, that's one workflow running twice (PR + post-merge). Same total cost as the v1 single-workflow + `push: main` design, lower than v1-without-`push: main` would be once you account for the badge requirement. Trade is intentional: badge accuracy on `main` is the deliverable.
 
-The path-filter scoping is deliberate: it mirrors the `/ship` rule exactly so CI cost matches local cost. Small PRs trigger small CI. SDA / shared-infra PRs trigger the full sweep. There is no situation where CI runs *more* than `/ship` did locally — the two stay in lockstep.
-
-E2E is deferred for the cost/benefit reason in decision 5. Spinning up Docker on a GitHub-hosted runner for each PR is technically possible but slow (~3–5 min just for stack bring-up). Self-hosted is faster but introduces infra to maintain. Neither is justified while the manual `/ship` E2E gate works and the apps' wire format is stable.
+Path-filter at the trigger level (`on.pull_request.paths`) is structurally simpler than the v1 `dorny/paths-filter` job + per-job `if:` indirection: a workflow that doesn't match its path list never runs, never reports a "skipped" check, never adds noise. This also resolves the v1 §8 "skipped status does not satisfy a required check" problem — there's no skipped check to satisfy in the first place.
 
 ## Consequences
 
-- New file `.github/workflows/ci.yml` containing one matrix workflow with five per-app jobs (SDA, FNOL, CP, AP, dashboard) plus a paths-filter detection job.
-- `CLAUDE.md` Quick Reference's "No cloud deployment" bullet is rewritten to distinguish app runtime (still local-only) from CI (GH Actions, scoped to lint + unit + build).
-- Every PR shows 1–5 check rows (one per changed app, or all five when shared-infra changed). Click any check to see the build log; a failed test name appears in the log near the failure.
-- README carries static License + Platform badges (shields.io static endpoints, which work in private repos). A CI status badge is a small follow-up — shields.io's GH Actions endpoint requires public-API access to the workflow status, so it lands alongside the repo's future visibility change. `dorny/test-reporter`-style inline PR annotations are also a possible future enhancement.
-- When Phase 7 scaffolds the dashboard, its CI job activates automatically the next time `dashboard/pyproject.toml` exists on `main` — no workflow edit needed.
-- Local `/ship` workflow is unchanged. CI is the *additional*, post-push verification layer (PR-time only); the pre-push gate stays in place.
-- The workflow is structured so per-app jobs can serve as branch-protection required checks via the umbrella-job refactor in §8 when desired.
+- Four new workflow files: `ci-shared-data-api.yml`, `ci-fnol.yml`, `ci-customer-portal.yml`, `ci-agent-portal.yml`. The v1 `.github/workflows/ci.yml` is removed.
+- README gains four per-app status badges in addition to License + Platform.
+- `CLAUDE.md` Quick Reference's CI bullet is updated to reference `.github/workflows/ci-*.yml` (glob) instead of the now-deleted single file.
+- Every PR shows 1–4 check rows (one per affected app's workflow). PRs that don't touch any app code or shared infra trigger zero CI workflows.
+- Branch protection on `main` (when added) lists each per-app workflow's job name as a required check (`shared-data-api`, `fnol`, `customer-portal`, `agent-portal`, eventually `dashboard`). One nuance to handle at protection-enable time: a workflow that doesn't trigger (paths didn't match) doesn't produce a required check. Either (a) drop the path scoping at trigger level so every workflow runs on every PR (simpler, higher CI cost), or (b) configure required checks with the "Auto-merge with expected checks" semantics that don't require a check to run, only to succeed if it did. Decision deferred to the moment protection is enabled.
+- When Phase 7 scaffolds the dashboard, that PR adds `ci-dashboard.yml` + the dashboard badge to README in one shot.
+- Local `/ship` workflow is unchanged. CI is the *additional*, post-push verification layer (PR-time + post-merge for the affected app's workflow); the pre-push gate stays in place.
 - Future regressions of the "no remote CI/CD" line should be checked against this ADR. The line was right for app deployment; it was wrong for CI.

@@ -1,0 +1,49 @@
+name: shared-data-api
+
+# Per ADR-009 (per-app workflow architecture). Scoped via on.*.paths to fire only
+# when this app's code or shared-contract files change. Same path list mirrors the
+# /ship rule, plus .github/workflows/** so workflow changes get validated.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/shared-data-api/**'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.claude/rules/apps.md'
+      - '.github/workflows/**'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/shared-data-api/**'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.claude/rules/apps.md'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shared-data-api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shared-data-api:
+    name: shared-data-api
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/shared-data-api
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run black --check .
+      - run: uv run pytest -q
