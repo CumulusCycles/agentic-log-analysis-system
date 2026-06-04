@@ -42,6 +42,12 @@ class LogEntry(BaseModel):
     `fields` carries the heterogeneous structured payload (caller, user, method,
     path, status, duration_ms, claim_id, ...). `raw` preserves the original
     line so the future Error Detail screen (7e) can render it verbatim.
+
+    `source` tags the provenance of the line so the embedding pipeline can
+    skip noise. Today: "health" for /health requests, "prod" for everything
+    else. Future: "test" once a cross-app PR adds X-Source header propagation
+    through each app's request-logging middleware. Parsers default to "prod"
+    but honour an explicit `source` field already in the log line.
     """
 
     id: str
@@ -51,6 +57,7 @@ class LogEntry(BaseModel):
     event: str
     fields: dict[str, Any] = Field(default_factory=dict)
     raw: str
+    source: str = "prod"
 
 
 class LogsResponse(BaseModel):
@@ -80,3 +87,22 @@ class AppStatus(BaseModel):
 class StatusResponse(BaseModel):
     as_of: datetime
     apps: list[AppStatus]
+
+
+# --- Phase 7d: semantic search ---
+
+
+class LogsSearchRequest(BaseModel):
+    """Semantic search over the Chroma-backed log embeddings."""
+
+    query: str = Field(min_length=1, max_length=2000)
+    apps: list[str] | None = None
+    levels: list[LogLevel] | None = None
+    since: datetime | None = None
+    before: datetime | None = None
+    top_k: int = Field(default=20, ge=1, le=200)
+
+
+class LogsSearchResponse(BaseModel):
+    entries: list[LogEntry]
+    scores: list[float]

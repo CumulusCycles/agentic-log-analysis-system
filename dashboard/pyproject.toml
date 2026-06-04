@@ -12,6 +12,11 @@ dependencies = [
     "bcrypt==4.2.1",
     "structlog==24.4.0",
     "python-multipart==0.0.20",
+    "chromadb==1.5.9",
+    "langchain-chroma==1.1.0",
+    "langchain-openai==1.2.2",
+    "langsmith==0.8.9",
+    "watchdog==6.0.0",
 ]
 
 [dependency-groups]

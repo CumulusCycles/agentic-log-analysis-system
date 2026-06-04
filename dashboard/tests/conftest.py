@@ -73,6 +73,56 @@ def valid_token():
     return encode_token(username="admin", role="admin", settings=settings)
 
 
+class FakeEmbeddings:
+    """Deterministic stand-in for OpenAIEmbeddings — no network, no cost.
+
+    Maps each text to a tiny float vector derived from a SHA-256 hash so
+    identical text → identical vector (preserves Chroma's add-with-id
+    idempotency). The 8-dim shape is enough for similarity ordering tests.
+    """
+
+    def __init__(self, dim: int = 8) -> None:
+        self.dim = dim
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._vec(t) for t in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._vec(text)
+
+    def _vec(self, text: str) -> list[float]:
+        import hashlib
+
+        h = hashlib.sha256(text.encode("utf-8")).digest()
+        # Take `dim` bytes and normalize to [0, 1).
+        return [b / 255.0 for b in h[: self.dim]]
+
+
+@pytest.fixture
+def fake_embeddings():
+    return FakeEmbeddings()
+
+
+@pytest.fixture
+def fake_vectorstore(fake_embeddings):
+    """In-memory Chroma backed by chromadb.Client() + FakeEmbeddings.
+
+    Each test gets a fresh ephemeral chromadb client (no persistence between
+    tests) and a unique collection name to keep state isolated.
+    """
+    import uuid
+
+    import chromadb
+    from langchain_chroma import Chroma
+
+    client = chromadb.Client()
+    return Chroma(
+        client=client,
+        collection_name=f"test-{uuid.uuid4().hex[:8]}",
+        embedding_function=fake_embeddings,
+    )
+
+
 @pytest.fixture
 def log_volume(tmp_path_factory, monkeypatch):
     """Provide a writable log-volume root with the 4 expected file paths.

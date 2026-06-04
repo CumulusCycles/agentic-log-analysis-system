@@ -14,7 +14,6 @@ adjacent to a successfully parsed line) into the previous entry's
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from ..logging_setup import get_logger
@@ -135,6 +134,31 @@ def _fold_logback_continuations(
     return folded, orphans
 
 
+def parse_and_fold(app_log: AppLog, raw_lines: list[str]) -> list[LogEntry]:
+    """Parse a list of raw log lines into entries, folding Logback multi-line
+    stack traces into the previous entry. Returns entries in input order.
+
+    Shared by `read_recent_entries` (tail-from-end path) and the Phase 7d
+    `backfill` module (full-file scan path). For non-Logback formats the fold
+    step is a no-op.
+    """
+    entries: list[LogEntry] = []
+    for seq, raw in enumerate(raw_lines):
+        entry = parse_line(fmt=app_log.fmt, app=app_log.name, seq=seq, line=raw)
+        if entry is not None:
+            entries.append(entry)
+    if app_log.fmt is LogFormat.LOGBACK_TEXT:
+        entries, orphans = _fold_logback_continuations(raw_lines, entries)
+        if orphans:
+            # One aggregate WARN per call, not per orphan, to keep volume sane.
+            log.warning(
+                "log_tail_orphan_continuations",
+                app=app_log.name,
+                orphan_lines=orphans,
+            )
+    return entries
+
+
 def read_recent_entries(app_log: AppLog, *, volume_root: Path, limit: int) -> list[LogEntry]:
     """Read the last `limit` lines of `app_log` and parse them.
 
@@ -149,19 +173,4 @@ def read_recent_entries(app_log: AppLog, *, volume_root: Path, limit: int) -> li
     """
     path = app_log.absolute_path(volume_root)
     raw_lines = tail_lines(path, limit)
-    entries: list[LogEntry] = []
-    for seq, raw in enumerate(raw_lines):
-        entry = parse_line(fmt=app_log.fmt, app=app_log.name, seq=seq, line=raw)
-        if entry is not None:
-            entries.append(entry)
-    if app_log.fmt is LogFormat.LOGBACK_TEXT:
-        entries, orphans = _fold_logback_continuations(raw_lines, entries)
-        if orphans:
-            # One aggregate WARN per request, not per orphan, to keep volume sane.
-            log.warning(
-                "log_tail_orphan_continuations",
-                app=app_log.name,
-                orphan_lines=orphans,
-                tail_path=os.fspath(path),
-            )
-    return entries
+    return parse_and_fold(app_log, raw_lines)

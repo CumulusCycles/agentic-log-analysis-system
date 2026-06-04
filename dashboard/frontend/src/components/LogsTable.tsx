@@ -16,11 +16,11 @@ function formatTs(iso: string): string {
   });
 }
 
-function ExpandedRow({ entry }: { entry: LogEntry }) {
+function ExpandedRow({ entry, colSpan }: { entry: LogEntry; colSpan: number }) {
   const fieldEntries = Object.entries(entry.fields);
   return (
     <tr data-testid="log-row-expanded" className="bg-slate-50">
-      <td colSpan={5} className="px-4 py-3">
+      <td colSpan={colSpan} className="px-4 py-3">
         <div className="space-y-3 text-xs">
           {fieldEntries.length > 0 && (
             <div>
@@ -54,10 +54,20 @@ interface Props {
   loading: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
+  // 7d semantic-search scores, parallel to `entries`. Empty/absent in
+  // substring-filter mode (Phase 7b /api/logs path).
+  scores?: number[];
 }
 
-export function LogsTable({ entries, loading, hasMore, onLoadMore }: Props) {
+export function LogsTable({
+  entries,
+  loading,
+  hasMore,
+  onLoadMore,
+  scores,
+}: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const showScores = (scores?.length ?? 0) > 0;
 
   if (!loading && entries.length === 0) {
     return (
@@ -84,14 +94,24 @@ export function LogsTable({ entries, loading, hasMore, onLoadMore }: Props) {
             <th scope="col" className="px-4 py-2 text-left">
               Event
             </th>
+            {showScores && (
+              <th
+                scope="col"
+                className="px-4 py-2 text-right"
+                data-testid="score-header"
+              >
+                Score
+              </th>
+            )}
             <th scope="col" className="px-4 py-2 text-right">
               <span className="sr-only">Expand</span>
             </th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {entries.map((entry) => {
+          {entries.map((entry, idx) => {
             const isExpanded = expandedId === entry.id;
+            const score = scores?.[idx];
             return (
               <Fragment key={entry.id}>
                 <tr
@@ -113,11 +133,21 @@ export function LogsTable({ entries, loading, hasMore, onLoadMore }: Props) {
                   <td className="px-4 py-2 font-mono text-xs text-slate-800">
                     {entry.event}
                   </td>
+                  {showScores && (
+                    <td
+                      className="whitespace-nowrap px-4 py-2 text-right font-mono text-xs text-slate-500"
+                      data-testid="score-cell"
+                    >
+                      {score !== undefined ? score.toFixed(3) : "—"}
+                    </td>
+                  )}
                   <td className="px-4 py-2 text-right text-xs text-slate-400">
                     {isExpanded ? "▾" : "▸"}
                   </td>
                 </tr>
-                {isExpanded && <ExpandedRow entry={entry} />}
+                {isExpanded && (
+                  <ExpandedRow entry={entry} colSpan={showScores ? 6 : 5} />
+                )}
               </Fragment>
             );
           })}
