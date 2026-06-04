@@ -58,7 +58,9 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     settings: Settings = Depends(get_settings),
 ) -> dict[str, Any]:
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    # HTTPBearer enforces the "Bearer" scheme when credentials are present;
+    # auto_error=False just lets us return our own 401 body instead of 403.
+    if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="missing bearer token")
     payload = decode_token(credentials.credentials, settings=settings)
     request.state.user_id = payload.get("user_id", "-")

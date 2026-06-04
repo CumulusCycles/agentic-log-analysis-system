@@ -1,10 +1,17 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .config import get_settings
 from .db import mongo, postgres
 from .db.consistency import warn_on_volume_asymmetry
+from .exception_handlers import (
+    http_exception_handler,
+    unhandled_exception_handler,
+    validation_exception_handler,
+)
 from .logging_setup import configure_logging, get_logger
 from .middleware.api_key import APIKeyMiddleware
 from .middleware.request_logger import RequestLoggerMiddleware
@@ -37,6 +44,10 @@ def create_app() -> FastAPI:
             mongo.close()
 
     app = FastAPI(title="Shared Data API", version="0.1.0", lifespan=lifespan)
+
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(Exception, unhandled_exception_handler)
 
     # Last-added middleware is outermost — request logger wraps everything,
     # api-key check runs inside it so 401s are still logged.

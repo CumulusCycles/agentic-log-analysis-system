@@ -1,6 +1,7 @@
 package com.cumuluscycles.agentportal.auth;
 
 import com.cumuluscycles.agentportal.config.AppProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -11,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import javax.crypto.SecretKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,9 +24,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final SecretKey secretKey;
+    private final ObjectMapper objectMapper;
 
-    public JwtAuthenticationFilter(AppProperties props) {
+    public JwtAuthenticationFilter(AppProperties props, ObjectMapper objectMapper) {
         this.secretKey = Keys.hmacShaKeyFor(props.jwt().secret().getBytes(StandardCharsets.UTF_8));
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -64,9 +68,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
     }
 
-    private static void unauthorized(HttpServletResponse response, String detail) throws IOException {
+    private void unauthorized(HttpServletResponse response, String detail) throws IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.getWriter().write("{\"detail\":\"" + detail + "\"}");
+        // Jackson serializes the map so any embedded quotes/backslashes in
+        // `detail` are escaped correctly — replaces a raw string concat that
+        // would have produced broken JSON for non-trivial detail values.
+        response.getWriter().write(objectMapper.writeValueAsString(Map.of("detail", detail)));
     }
 }

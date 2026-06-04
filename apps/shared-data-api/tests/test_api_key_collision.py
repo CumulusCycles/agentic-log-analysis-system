@@ -11,6 +11,9 @@ def colliding_settings(monkeypatch):
     monkeypatch.setenv("SHARED_DATA_API_KEY_FNOL", "shared-secret")
     monkeypatch.setenv("SHARED_DATA_API_KEY_CUSTOMER_PORTAL", "shared-secret")
     monkeypatch.setenv("SHARED_DATA_API_KEY_AGENT_PORTAL", "unique-ap-secret")
+    # Defensive: get_settings() is @lru_cache'd; clear so the monkeypatched
+    # env vars are read fresh regardless of autouse-fixture ordering.
+    get_settings.cache_clear()
     return get_settings()
 
 

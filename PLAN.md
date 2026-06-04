@@ -236,6 +236,27 @@ Internal claim handler app. Java 21 / Spring Boot 3 backend + React 18 / Vite / 
 
 ---
 
+## Phase 6.5 — Pre-Phase-7 Best-Practices Pass
+
+Hygiene pass across all four supporting apps before Phase 7. Three concern-grouped PRs:
+PR 1 — central error handlers, settings cache, JWT correctness fixes, ADR-010, auth-test
+depth where missing. PR 2 — extract SDA `create_claim` into a service layer.
+PR 3 — upgrade CP from Express 4 to 5, collapse per-route try/catch.
+
+| Task | Status |
+|---|---|
+| PR 1 — SDA: `@lru_cache` on `get_settings()`, NEW `exception_handlers.py` (3 handlers: HTTPException / RequestValidationError / Exception), wired in `main.py`, removed redundant scheme re-check in `get_current_user`, +wrong-signature + malformed-token JWT tests, +3 exception-handler tests | ✅ |
+| PR 1 — FNOL backend: `@lru_cache` on `get_settings()`, NEW `exception_handlers.py` (3 handlers + `httpx.RequestError` → 502 classification), `auth/jwt.py` now uses `HTTPBearer` and stashes `bearer` on `request.state`, removed `_bearer_from` helper, +4 exception-handler tests | ✅ |
+| PR 1 — FNOL frontend: `base64urlDecode` helper re-pads to mod 4 before `atob`, `decodeJwt` also rejects non-3-segment tokens, +3 `auth.test.tsx` tests with a precondition-asserted padding regression | ✅ |
+| PR 1 — CP backend: NEW `error-handler.ts` (`AppError` → status passthrough / `SyntaxError` → 400 / default → generic 500 with winston ERROR log), mounted as last middleware in `buildApp()`, +3 supertest tests | ✅ |
+| PR 1 — AP backend: `GlobalExceptionHandler` gains `@ExceptionHandler(Exception.class)` catch-all + `HttpMessageNotReadableException` handler, `JwtAuthenticationFilter` uses Jackson `ObjectMapper` for JSON body (replaces raw string concat), `WebConfig` wires the new constructor arg, +malformed-token test on `JwtAuthenticationFilterTest`, NEW `GlobalExceptionHandlerTest` (RuntimeException → 500 + malformed JSON → 400) | ✅ |
+| PR 1 — Docs: ADR-010 codifies "no security headers in local-only deployment"; CLAUDE.md Security bullet cross-refs ADR-010; PLAN/README add Phase 6.5 row | ✅ |
+| PR 1 — Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps unit tests → live-stack functional probes → E2E sweep → commit → push → PR | ⬜ |
+| PR 2 — Extract SDA `create_claim` into a service-layer module; controller shrinks to ~15 lines; +~6 service-layer unit tests | ⬜ |
+| PR 3 — CP Express 4 → 5 upgrade; collapse per-route `try/catch` wrappers; tighten `sda-client.ts` return types from `Promise<unknown>` to typed DTOs | ⬜ |
+
+---
+
 ## ⛔ HARD STOP — Pre-Dashboard Checklist
 
 **Do not start Phase 7 until every item below is confirmed.**

@@ -42,6 +42,15 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    """get_settings() is @lru_cache'd; clear it around every test so any
+    monkeypatch.setenv done by a fixture or test body reaches Settings()."""
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_structlog():
     """Restore structlog defaults before each test so capture_logs() works.
 

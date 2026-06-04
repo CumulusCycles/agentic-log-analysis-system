@@ -23,16 +23,11 @@ def _passthrough_http_error(exc: httpx.HTTPStatusError) -> HTTPException:
     return HTTPException(status_code=exc.response.status_code, detail=detail)
 
 
-def _bearer_from(request: Request) -> str:
-    auth = request.headers.get("authorization", "")
-    return auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-
-
 @router.post("/submit", response_model=ClaimOut, status_code=201)
 async def submit(
     payload: ClaimCreate, request: Request, _claims: dict = Depends(get_current_user)
 ) -> dict:
-    bearer = _bearer_from(request)
+    bearer = request.state.bearer
     sda = request.app.state.sda
     try:
         return await sda.create_claim(payload.model_dump(mode="json"), bearer)
@@ -46,7 +41,7 @@ async def submit(
 async def get_claim(
     claim_id: str, request: Request, _claims: dict = Depends(get_current_user)
 ) -> dict:
-    bearer = _bearer_from(request)
+    bearer = request.state.bearer
     sda = request.app.state.sda
     try:
         return await sda.get_claim(claim_id, bearer)
