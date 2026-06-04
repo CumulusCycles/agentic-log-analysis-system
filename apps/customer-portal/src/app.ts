@@ -33,7 +33,7 @@ export function buildApp({
   logger,
   sda,
 }: BuildAppOptions): CustomerPortalApp {
-  const client = sda ?? new SharedDataAPIClient(cfg);
+  const client = sda ?? new SharedDataAPIClient(cfg, logger);
 
   const app = express();
   app.disable("x-powered-by");
@@ -42,15 +42,15 @@ export function buildApp({
 
   // Anonymous — health probe + login proxy.
   app.use("/", healthRouter());
-  app.use("/auth", authRouter(client));
+  app.use("/auth", authRouter(client, logger));
 
   // Protected — mount each handler at its exact path so paths like /policies
   // (without /me) fall through to the React SPA below instead of being
   // rejected by requireAuth as 401.
   const protect = requireAuth(cfg, logger);
-  app.use("/profile/me", protect, profileRouter(client));
-  app.use("/policies/me", protect, policiesRouter(client));
-  app.use("/claims/me", protect, claimsRouter(client));
+  app.use("/profile/me", protect, profileRouter(client, logger));
+  app.use("/policies/me", protect, policiesRouter(client, logger));
+  app.use("/claims/me", protect, claimsRouter(client, logger));
 
   // Static React build — mounted after API routes so they take precedence.
   // dist may be missing in tests; in production it's copied in by the Dockerfile.

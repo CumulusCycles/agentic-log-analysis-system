@@ -257,6 +257,25 @@ PR 3 — upgrade CP from Express 4 to 5, collapse per-route try/catch.
 
 ---
 
+## Phase 6.75 — Logging Enrichment (Pre-Dashboard Signal Boost)
+
+Enriches every app with success events at INFO, degraded paths at WARN, and a
+binding "NEVER log credentials" discipline (codified in PR #22). Single PR
+across all 4 apps. New event catalog at `docs/tech/log-events.md` is the
+authoritative inventory the dashboard agent will consume.
+
+| Task | Status |
+|---|---|
+| SDA: +`login_success` / `login_failed` (auth router); +`claim_created` / `claim_validation_rejected` (9 rule sites) (claims_service); +`policy_fetched` / `claim_fetched` / `user_fetched` (read routers); +9 unit tests | ✅ |
+| FNOL: +`login_proxied_success` (auth router); +`claim_submitted` (claims router); +`sda_upstream_rejected` / `sda_upstream_unreachable` (SDA client, 3 methods); +4 unit tests | ✅ |
+| CP: +`login_proxied_success` / `policies_fetched` / `claims_fetched` / `profile_fetched` (routers); +`sda_upstream_rejected` / `sda_upstream_unreachable` (sda-client); rename `unhandled_error` → `unhandled_exception` (cross-app parser consistency); +6 unit tests | ✅ |
+| AP: +`login_proxied_success` (AuthController); +`claims_fetched` / `claim_fetched` (ClaimsController); +`profile_fetched` (ProfileController); +`sda_upstream_rejected` / `sda_upstream_unreachable` (SdaClient); +6 unit tests | ✅ |
+| Docs: NEW `docs/tech/log-events.md` (authoritative event catalog: 24 SDA + 12 FNOL + 12 CP + 9 AP events with level/fields/trigger); cross-link from `logging-strategy.md` | ✅ |
+| Credential audit: zero hits across all 4 apps; live-stack probe confirms NO bearer / NO password / NO API key in any log volume | ✅ |
+| Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps unit tests (118 SDA + 30 FNOL + 34 CP + 33 AP) → live-stack functional probes → E2E sweep (33 FNOL + 28 CP + 30 AP) → commit → push → PR | ✅ |
+
+---
+
 ## ⛔ HARD STOP — Pre-Dashboard Checklist
 
 **Do not start Phase 7 until every item below is confirmed.**

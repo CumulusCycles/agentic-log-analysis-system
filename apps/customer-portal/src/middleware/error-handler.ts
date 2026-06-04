@@ -27,8 +27,8 @@ export function errorHandler(logger: Logger): ErrorRequestHandler {
       res.status(400).json({ detail: "malformed request body" });
       return;
     }
-    logger.error("unhandled_error", {
-      event: "unhandled_error",
+    logger.error("unhandled_exception", {
+      event: "unhandled_exception",
       error_class:
         (err as { constructor?: { name?: string } })?.constructor?.name ??
         "Unknown",

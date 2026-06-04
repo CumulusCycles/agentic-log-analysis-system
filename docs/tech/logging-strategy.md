@@ -6,6 +6,11 @@ Each app logs in its native format. No normalization at write time.
 The LangGraph agent in the dashboard handles heterogeneous formats via LLM understanding.
 See `docs/decisions/ADR-003-logging-strategy.md`.
 
+**Event catalog:** the authoritative inventory of every distinct log event each app
+emits — with level, fields, and trigger — lives in [`log-events.md`](./log-events.md).
+Every PR that adds, renames, or removes a log event MUST update that catalog in the
+same diff.
+
 ## Non-Negotiable Rules
 
 1. Every app MUST emit a parseable severity level and timestamp. Everything else is stack-native.

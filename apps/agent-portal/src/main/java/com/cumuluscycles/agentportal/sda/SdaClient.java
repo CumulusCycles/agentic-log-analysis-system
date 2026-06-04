@@ -9,6 +9,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRequest;
@@ -18,7 +20,15 @@ import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
+/**
+ * Every outbound call emits {@code sda_upstream_rejected} (WARN) on 4xx/5xx
+ * or {@code sda_upstream_unreachable} (WARN) on transport error, then
+ * propagates an {@link SdaException}. NEVER logs the bearer header, the API
+ * key, or any password — only target/status/parsed detail.
+ */
 public class SdaClient {
+
+    private static final Logger log = LoggerFactory.getLogger(SdaClient.class);
 
     private final RestClient http;
     private final ObjectMapper mapper;
@@ -29,7 +39,7 @@ public class SdaClient {
     }
 
     public TokenResponse login(LoginRequest req) {
-        return invoke(() -> http.post()
+        return invoke("/auth/login", () -> http.post()
                 .uri("/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(req)
@@ -39,7 +49,8 @@ public class SdaClient {
     }
 
     public UserOut getUser(String userId, String bearer) {
-        return invoke(() -> http.get()
+        String target = "/users/" + userId;
+        return invoke(target, () -> http.get()
                 .uri(uriBuilder -> uriBuilder.path("/users/{id}").build(userId))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
                 .retrieve()
@@ -48,7 +59,7 @@ public class SdaClient {
     }
 
     public List<ClaimOut> getClaims(String bearer) {
-        return invoke(() -> http.get()
+        return invoke("/claims", () -> http.get()
                 .uri("/claims")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
                 .retrieve()
@@ -57,7 +68,8 @@ public class SdaClient {
     }
 
     public ClaimDetail getClaim(String id, String bearer) {
-        return invoke(() -> http.get()
+        String target = "/claims/" + id;
+        return invoke(target, () -> http.get()
                 .uri(uriBuilder -> uriBuilder.path("/claims/{id}").build(id))
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer)
                 .retrieve()
@@ -65,12 +77,14 @@ public class SdaClient {
                 .body(ClaimDetail.class));
     }
 
-    private <T> T invoke(java.util.function.Supplier<T> call) {
+    private <T> T invoke(String target, java.util.function.Supplier<T> call) {
         try {
             return call.get();
         } catch (SdaException ex) {
             throw ex;
         } catch (ResourceAccessException ex) {
+            log.warn("sda_upstream_unreachable target={} error_class={}",
+                    target, ex.getClass().getSimpleName());
             throw new SdaException(502, "shared data api unreachable");
         }
     }
@@ -79,6 +93,8 @@ public class SdaClient {
         int status = resp.getStatusCode().value();
         String body = new String(resp.getBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         String detail = extractDetail(body);
+        String target = request.getURI().getPath();
+        log.warn("sda_upstream_rejected target={} status={} detail={}", target, status, detail);
         throw new SdaException(status, detail);
     }
 

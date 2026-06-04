@@ -68,14 +68,14 @@ See ADR-006 for the strategy. Library choices per stack:
 
 | App / Layer | Runner | Notes |
 |---|---|---|
-| Shared Data API (backend) | `pytest` + `pytest-asyncio` + `mongomock-motor` + `aiosqlite` + `asgi-lifespan` | 109 tests; SQLite + mongomock isolate from real DBs |
-| FNOL (backend) | `pytest` + `pytest-asyncio` + `respx` + `asgi-lifespan` | 26 tests; SDA calls mocked via respx |
+| Shared Data API (backend) | `pytest` + `pytest-asyncio` + `mongomock-motor` + `aiosqlite` + `asgi-lifespan` | 118 tests; SQLite + mongomock isolate from real DBs |
+| FNOL (backend) | `pytest` + `pytest-asyncio` + `respx` + `asgi-lifespan` | 30 tests; SDA calls mocked via respx |
 | FNOL (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 10 tests; mocks `fetch` via `vi.stubGlobal` |
 | FNOL (frontend E2E) | Playwright 1.60 — `desktop-chromium` + `mobile-safari` (iPhone 14) projects | 5 specs × 2 viewports = 33 tests + 3 intentional skips; runs against the live stack |
-| Customer Portal (backend) | Vitest 3 + Supertest + `nock` (SDA mock) + `jsonwebtoken` | 28 tests; node env; mounts each protected endpoint at its exact path so `/policies` falls through to the SPA |
+| Customer Portal (backend) | Vitest 3 + Supertest + `nock` (SDA mock) + `jsonwebtoken` | 34 tests; node env; mounts each protected endpoint at its exact path so `/policies` falls through to the SPA |
 | Customer Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
 | Customer Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 28 tests; runs against the live stack |
-| Agent Portal (backend) | JUnit 5 + Spring Boot Test + Mockito (`@MockitoBean SdaClient`) | 27 tests; `@SpringBootTest` + `@AutoConfigureMockMvc` for controller + filter coverage; `MockMvc.forwardedUrl(...)` for SPA welcome-page checks |
+| Agent Portal (backend) | JUnit 5 + Spring Boot Test + Mockito (`@MockitoBean SdaClient`) + Spring `OutputCaptureExtension` + `MockRestServiceServer` | 33 tests; `@SpringBootTest` + `@AutoConfigureMockMvc` for controller + filter coverage; `MockMvc.forwardedUrl(...)` for SPA welcome-page checks |
 | Agent Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
 | Agent Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 30 tests; runs against the live stack |
 | Dashboard | Stack-equivalents (TBD per phase) | Inherits the same Tailwind / Vitest / Playwright conventions |

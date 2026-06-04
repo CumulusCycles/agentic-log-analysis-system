@@ -2,9 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from ..auth.jwt import get_current_user
 from ..db import mongo
+from ..logging_setup import get_logger
 from ..schemas import PolicyOut, VehicleOut
 
 router = APIRouter(tags=["policies"])
+log = get_logger("policies")
 
 
 def _to_policy_out(doc: dict) -> PolicyOut:
@@ -30,6 +32,7 @@ async def list_policies(
         query["customer_id"] = customer_id
     cursor = db.policies.find(query)
     docs = await cursor.to_list(length=500)
+    log.info("policy_fetched", count=len(docs), customer_id=customer_id)
     return [_to_policy_out(d) for d in docs]
 
 
@@ -39,4 +42,5 @@ async def get_policy(policy_number: str, _: dict = Depends(get_current_user)) ->
     doc = await db.policies.find_one({"policy_number": policy_number})
     if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="policy not found")
+    log.info("policy_fetched", policy_number=policy_number, customer_id=doc["customer_id"])
     return _to_policy_out(doc)
