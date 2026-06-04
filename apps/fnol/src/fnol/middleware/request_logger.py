@@ -18,6 +18,7 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
             # FNOL is the edge — no upstream caller. user_id is set by the
             # JWT dependency when one is required.
             caller="-",
+            source=request.headers.get("X-Source", "prod"),
             user=getattr(request.state, "user_id", "-"),
             method=request.method,
             path=request.url.path,

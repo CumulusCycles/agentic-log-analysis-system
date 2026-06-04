@@ -36,13 +36,11 @@ function eventOf(spy: ReturnType<typeof vi.spyOn>, name: string) {
 describe("CP enrichment — auth", () => {
   it("emits login_proxied_success on successful proxy", async () => {
     const { app, infoSpy } = buildSpyApp();
-    nock(TEST_CONFIG.SHARED_DATA_API_BASE_URL)
-      .post("/auth/login")
-      .reply(200, {
-        access_token: "tok-x",
-        token_type: "bearer",
-        expires_in: 60,
-      });
+    nock(TEST_CONFIG.SHARED_DATA_API_BASE_URL).post("/auth/login").reply(200, {
+      access_token: "tok-x",
+      token_type: "bearer",
+      expires_in: 60,
+    });
 
     await request(app)
       .post("/auth/login")
@@ -188,5 +186,37 @@ describe("CP enrichment — SDA upstream errors", () => {
       target: "/policies",
     });
     expect(call?.[1]).toHaveProperty("error_class");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// request middleware: X-Source header propagation (ADR-011)
+// ---------------------------------------------------------------------------
+
+describe("CP enrichment — X-Source header", () => {
+  it("emits source from X-Source header when present", async () => {
+    const { app, infoSpy } = buildSpyApp();
+
+    await request(app).get("/health").set("X-Source", "test");
+
+    const call = eventOf(infoSpy, "request");
+    expect(call).toBeTruthy();
+    expect(call?.[1]).toMatchObject({
+      event: "request",
+      source: "test",
+    });
+  });
+
+  it("emits source=prod when X-Source header is absent", async () => {
+    const { app, infoSpy } = buildSpyApp();
+
+    await request(app).get("/health");
+
+    const call = eventOf(infoSpy, "request");
+    expect(call).toBeTruthy();
+    expect(call?.[1]).toMatchObject({
+      event: "request",
+      source: "prod",
+    });
   });
 });

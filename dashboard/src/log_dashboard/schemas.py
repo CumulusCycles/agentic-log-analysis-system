@@ -44,10 +44,11 @@ class LogEntry(BaseModel):
     line so the future Error Detail screen (7e) can render it verbatim.
 
     `source` tags the provenance of the line so the embedding pipeline can
-    skip noise. Today: "health" for /health requests, "prod" for everything
-    else. Future: "test" once a cross-app PR adds X-Source header propagation
-    through each app's request-logging middleware. Parsers default to "prod"
-    but honour an explicit `source` field already in the log line.
+    skip noise. Set by each app's request-logger middleware from the
+    `X-Source` HTTP header per ADR-011 (default `prod`). The parser's
+    `_infer_source` tags health-path requests as `health` first (an
+    immutable property of the request that no header can override), then
+    honours the explicit value, then defaults to `prod`.
     """
 
     id: str

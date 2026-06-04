@@ -68,16 +68,16 @@ See ADR-006 for the strategy. Library choices per stack:
 
 | App / Layer | Runner | Notes |
 |---|---|---|
-| Shared Data API (backend) | `pytest` + `pytest-asyncio` + `mongomock-motor` + `aiosqlite` + `asgi-lifespan` | 118 tests; SQLite + mongomock isolate from real DBs |
-| FNOL (backend) | `pytest` + `pytest-asyncio` + `respx` + `asgi-lifespan` | 30 tests; SDA calls mocked via respx |
+| Shared Data API (backend) | `pytest` + `pytest-asyncio` + `mongomock-motor` + `aiosqlite` + `asgi-lifespan` | 120 tests; SQLite + mongomock isolate from real DBs |
+| FNOL (backend) | `pytest` + `pytest-asyncio` + `respx` + `asgi-lifespan` | 32 tests; SDA calls mocked via respx |
 | FNOL (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 10 tests; mocks `fetch` via `vi.stubGlobal` |
 | FNOL (frontend E2E) | Playwright 1.60 — `desktop-chromium` + `mobile-safari` (iPhone 14) projects | 5 specs × 2 viewports = 33 tests + 3 intentional skips; runs against the live stack |
-| Customer Portal (backend) | Vitest 3 + Supertest + `nock` (SDA mock) + `jsonwebtoken` | 34 tests; node env; mounts each protected endpoint at its exact path so `/policies` falls through to the SPA |
+| Customer Portal (backend) | Vitest 3 + Supertest + `nock` (SDA mock) + `jsonwebtoken` | 36 tests; node env; mounts each protected endpoint at its exact path so `/policies` falls through to the SPA |
 | Customer Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
 | Customer Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 28 tests; runs against the live stack |
-| Agent Portal (backend) | JUnit 5 + Spring Boot Test + Mockito (`@MockitoBean SdaClient`) + Spring `OutputCaptureExtension` + `MockRestServiceServer` | 33 tests; `@SpringBootTest` + `@AutoConfigureMockMvc` for controller + filter coverage; `MockMvc.forwardedUrl(...)` for SPA welcome-page checks |
+| Agent Portal (backend) | JUnit 5 + Spring Boot Test + Mockito (`@MockitoBean SdaClient`) + Spring `OutputCaptureExtension` + `MockRestServiceServer` | 35 tests; `@SpringBootTest` + `@AutoConfigureMockMvc` for controller + filter coverage; `MockMvc.forwardedUrl(...)` for SPA welcome-page checks |
 | Agent Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
 | Agent Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 30 tests; runs against the live stack |
-| Dashboard (backend) | `pytest` + `pytest-asyncio` + `httpx` + `asgi-lifespan` + `chromadb.Client()` (in-memory) | 84 tests; standalone JWT auth + log ingestion (4 parsers, tail reader, rollup, /api/logs + /api/status) + Phase 7d embeddings (vectorstore factory, backfill, watchdog watcher, dedup gate, dry-run mode, WARN+ERROR/source=prod ingest filter, /api/logs/search with 503 degraded mode); structlog stdout-only |
+| Dashboard (backend) | `pytest` + `pytest-asyncio` + `httpx` + `asgi-lifespan` + `chromadb.Client()` (in-memory) | 85 tests; standalone JWT auth + log ingestion (4 parsers, tail reader, rollup, /api/logs + /api/status) + Phase 7d embeddings (vectorstore factory, backfill, watchdog watcher, dedup gate, dry-run mode, WARN+ERROR/source=prod ingest filter, /api/logs/search with 503 degraded mode) + ADR-011 health-path overrides explicit source; structlog stdout-only |
 | Dashboard (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 20 tests across LoginPage, StatusBadge, StatusCard, Overview, LogExplorer, LogExplorer search-mode, usePolling; mocks `fetch` via `vi.stubGlobal` |
 | Dashboard (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 18 specs × 2 viewports = 36 tests; runs against the live stack |

@@ -308,3 +308,19 @@ entry.
 | **7c** | UI for the two non-AI screens — Overview Dashboard + Log Explorer wired to 7b's endpoints | ✅ |
 | **7d** | Chroma + embeddings pipeline — vector-store-backed semantic search via `POST /api/logs/search`. WARN+ERROR / source=prod ingest filter, content-hash dedup, `DASHBOARD_INGEST_DRY_RUN` cost kill-switch, watcher + backfill respect both. | ✅ |
 | **7e** | LangGraph agent (StateGraph: ingest → analyze → correlate → predict → respond) + AI Chat + Error Detail analysis panel | ⬜ |
+
+---
+
+## Phase 7 — Agitator Sequence (lead-in to 7e)
+
+Four PRs that wire a programmatic load driver into the dashboard so it can
+exercise the four apps and produce a representative WARN/ERROR corpus
+without manual clicking. Designed 2026-06-04 (memory:
+`project_agitator_design`).
+
+| PR | Scope | Status |
+|---|---|---|
+| **PR 1** | Cross-app `X-Source` header convention — each app's request-logger middleware reads `X-Source` (default `prod`); Playwright configs set `X-Source: test`; ADR-011; parser precedence updated so health-path beats explicit. | ✅ |
+| **PR 2** | Chaos middleware — each app gains a thin `X-Chaos: <directive>` middleware gated by `ENABLE_CHAOS=true` (default off). Enables cross-app cascade scenarios. | ⬜ |
+| **PR 3** | Agitator — bundled INTO the dashboard at `dashboard/src/log_dashboard/agitator/` + new screen `LogGenerator.tsx`. Operator-button-only bounded scenarios (auth-spike, payload-fuzz, policy-not-found, claim-burst, sda-degraded). `DASHBOARD_INGEST_SOURCES` default widens to `prod,synthetic`. | ⬜ |
+| **PR 4** | Phase 7e — LangGraph agent + AI Chat + Error Detail (the LLM slice that closes Phase 7). | ⬜ |

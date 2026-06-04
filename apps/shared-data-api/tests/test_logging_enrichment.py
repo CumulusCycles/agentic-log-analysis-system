@@ -215,3 +215,28 @@ async def test_user_fetched_emits_info(client, fnol_key, seeded_users):
     assert len(events) == 1
     assert events[0]["user_id"] == seeded_users["customer_id"]
     assert events[0]["role"] == "customer"
+
+
+# ---------------------------------------------------------------------------
+# request middleware: X-Source header propagation (ADR-011)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_request_event_emits_source_from_header(client):
+    with structlog.testing.capture_logs() as captured:
+        resp = await client.get("/health", headers={"X-Source": "test"})
+    assert resp.status_code == 200
+    events = [e for e in captured if e.get("event") == "request"]
+    assert len(events) == 1
+    assert events[0]["source"] == "test"
+
+
+@pytest.mark.asyncio
+async def test_request_event_emits_source_prod_when_header_absent(client):
+    with structlog.testing.capture_logs() as captured:
+        resp = await client.get("/health")
+    assert resp.status_code == 200
+    events = [e for e in captured if e.get("event") == "request"]
+    assert len(events) == 1
+    assert events[0]["source"] == "prod"

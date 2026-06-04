@@ -15,6 +15,9 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // Tag every E2E request so the dashboard ingest gate drops it from
+    // Chroma — see docs/decisions/ADR-011-x-source-header-convention.md.
+    extraHTTPHeaders: { "X-Source": "test" },
   },
   projects: [
     {

@@ -116,12 +116,16 @@ The operator-facing `/api/logs` view reads volumes directly and is UNAFFECTED.
 | `DASHBOARD_INGEST_SOURCES` | `prod` | `.env` (CSV) |
 | `DASHBOARD_INGEST_DRY_RUN` | `false` | `.env` (bool) |
 
-`source` is derived by the parser:
-- `event=request` with path in `(/health, /api/health, /actuator/health)` → `source="health"`
-- Explicit `source=<value>` in the log line → honored (forward-compat for a future cross-app `X-Source` header PR that adds `test` tagging)
+`source` is set by the apps' request-logger middleware from the `X-Source`
+header (default `prod`) per ADR-011. The parser's `_infer_source` precedence:
+- `event=request` with path in `(/health, /api/health, /actuator/health)` → `source="health"` (beats explicit — path cannot be overridden by a header)
+- Explicit `source=<value>` in the log line → honored
 - Otherwise → `source="prod"`
 
-The default `(level ∈ {WARN, ERROR}) AND (source = prod)` predicate keeps healthcheck heartbeat, INFO business events, and (post-X-Source-PR) test traffic out of Chroma — sharp signal, ~$0 ongoing cost.
+Allowed vocabulary: `prod` (default), `synthetic` (Agitator, PR 3), `test`
+(Playwright `extraHTTPHeaders`), `health` (parser-derived).
+
+The default `(level ∈ {WARN, ERROR}) AND (source = prod)` predicate keeps healthcheck heartbeat, INFO business events, and Playwright E2E traffic out of Chroma — sharp signal, ~$0 ongoing cost.
 
 `DASHBOARD_INGEST_DRY_RUN=true` makes `upsert_entries` short-circuit before any embedder call — operator-safe preview of what the filter would pass without spending tokens. Backfill + watcher still log `parsed`, `passed_filter`, `embedded` so the filter behavior is visible.
 

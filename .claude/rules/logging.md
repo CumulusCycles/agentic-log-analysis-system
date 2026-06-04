@@ -12,6 +12,9 @@ The LangGraph agent handles heterogeneous formats. See docs/decisions/ADR-003-lo
 
 1. Every app MUST log a parseable **severity level** and **timestamp**. Everything else is stack-native.
 
+   Every per-request log line MUST also include a `source=<value>` field
+   read from the `X-Source` HTTP header (default `prod`) — see ADR-011.
+
 2. **NEVER LOG CREDENTIALS — ABSOLUTE PROHIBITION.** The following values MUST NEVER appear in any log line, structured field, error message, exception trace, response body, or debug output across any app:
    - Passwords (plain, hashed, or any intermediate form)
    - JWT secrets / signing keys (`JWT_SECRET`, `DASHBOARD_JWT_SECRET`)
