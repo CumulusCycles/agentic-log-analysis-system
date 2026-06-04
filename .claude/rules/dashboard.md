@@ -89,8 +89,8 @@ Routes land incrementally:
 | `GET` | `/health` | Container healthcheck | 7a ✅ |
 | `POST` | `/api/auth/login` | Admin login → JWT (standalone, independent of SDA) | 7a ✅ |
 | `GET` | `/api/auth/me` | Current admin from JWT | 7a ✅ |
-| `GET` | `/api/status` | Per-app status cards for Overview Dashboard | 7b |
-| `GET` | `/api/logs` | Paginated log entries for Log Explorer | 7b |
+| `GET` | `/api/status` | Per-app status cards for Overview Dashboard | 7b ✅ |
+| `GET` | `/api/logs` | Paginated log entries for Log Explorer | 7b ✅ |
 | `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response | 7e |
 | `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis | 7e |
 
