@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -14,8 +15,15 @@ from .exception_handlers import (
     unhandled_exception_handler,
     validation_exception_handler,
 )
+from .ingest.backfill import run_initial_backfill
+from .ingest.vectorstore import (
+    build_vectorstore,
+    configure_langsmith,
+    is_embeddings_disabled,
+)
+from .ingest.watcher import LogVolumeWatcher
 from .logging_setup import configure_logging, get_logger
-from .routers import auth, health, logs, status
+from .routers import auth, health, logs, search, status
 
 # Paths FastAPI auto-mounts that the SPA catch-all MUST NOT intercept.
 # Swagger UI is intentionally exposed per ADR-001 — the dashboard's audience
@@ -29,14 +37,69 @@ def create_app() -> FastAPI:
     configure_logging(log_file_path=None)
     log = get_logger(__name__)
 
+    async def _backfill_and_start_watcher(app: FastAPI) -> None:
+        """Run initial backfill in a thread, then start the watcher with the
+        offsets it returns. Scheduled as a background asyncio task so the
+        lifespan can yield immediately (cold-start backfill takes ~2 min on
+        ~20K log lines and would otherwise hold the healthcheck off too long).
+        """
+        try:
+            store = app.state.vectorstore
+            log.info("backfill_started")
+            backfill_results = await asyncio.to_thread(run_initial_backfill, settings, store)
+            log.info(
+                "backfill_complete",
+                totals={r.app: r.embedded for r in backfill_results},
+            )
+            initial_offsets = {r.app: r.active_size_bytes for r in backfill_results}
+            if settings.watcher_enabled:
+                watcher = LogVolumeWatcher(settings, store, initial_offsets=initial_offsets)
+                watcher.start()
+                app.state.watcher = watcher
+            app.state.backfill_complete = True
+        except Exception as exc:  # noqa: BLE001 — must surface but never crash startup
+            log.warning(
+                "backfill_failed",
+                error_class=type(exc).__name__,
+            )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Bcrypt-hash the admin password once at startup and drop the
         # plaintext reference. The hash lives on app.state for the lifetime
         # of the process; the plaintext is never persisted or logged.
         app.state.admin_password_hash = hash_password(settings.admin_password)
+
+        # Phase 7d: Chroma + embeddings + watcher. Degrades cleanly when the
+        # OpenAI key is missing — /api/logs and /api/status keep working,
+        # /api/logs/search returns 503.
+        app.state.vectorstore = None
+        app.state.watcher = None
+        app.state.backfill_complete = False
+        backfill_task: asyncio.Task[None] | None = None
+
+        if is_embeddings_disabled(settings):
+            log.info(
+                "embeddings_disabled",
+                reason="missing_or_placeholder_openai_key",
+            )
+            app.state.backfill_complete = True
+        else:
+            configure_langsmith(settings)
+            # Build the vectorstore immediately so the search endpoint becomes
+            # queryable as soon as lifespan yields. The collection may be
+            # empty (or partial) until backfill completes; results land
+            # incrementally as the background task fills it in.
+            app.state.vectorstore = build_vectorstore(settings)
+            backfill_task = asyncio.create_task(_backfill_and_start_watcher(app))
+
         log.info("startup_complete")
         yield
+
+        if backfill_task is not None and not backfill_task.done():
+            backfill_task.cancel()
+        if app.state.watcher is not None:
+            app.state.watcher.stop()
 
     app = FastAPI(
         title="Agentic Log Analysis Dashboard",
@@ -52,6 +115,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api/auth")
     app.include_router(logs.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
+    app.include_router(search.router, prefix="/api")
 
     # Static React build — mounted under /assets/ for hashed bundles, with a
     # catch-all GET that serves index.html for every other unknown path so the

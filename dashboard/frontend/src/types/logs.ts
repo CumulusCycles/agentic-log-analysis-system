@@ -71,3 +71,18 @@ export interface LogsFilters {
   before: string | null;
   limit: number;
 }
+
+// Phase 7d — POST /api/logs/search
+export interface LogsSearchRequest {
+  query: string;
+  apps?: AppName[];
+  levels?: LogLevel[];
+  since?: string | null;
+  before?: string | null;
+  top_k?: number;
+}
+
+export interface LogsSearchResponse {
+  entries: LogEntry[];
+  scores: number[];
+}

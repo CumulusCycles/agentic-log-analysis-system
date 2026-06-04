@@ -7,7 +7,13 @@ import type {
   LoginRequest,
   TokenResponse,
 } from "../types/api";
-import type { LogsFilters, LogsResponse, StatusResponse } from "../types/logs";
+import type {
+  LogsFilters,
+  LogsResponse,
+  LogsSearchRequest,
+  LogsSearchResponse,
+  StatusResponse,
+} from "../types/logs";
 
 const BASE_URL = import.meta.env.VITE_DASHBOARD_API_BASE_URL ?? "";
 
@@ -75,4 +81,15 @@ export async function getLogs(
 ): Promise<LogsResponse> {
   const qs = buildLogsQuery(filters);
   return request<LogsResponse>(`/api/logs?${qs}`, {}, token);
+}
+
+export async function searchLogs(
+  token: string,
+  body: LogsSearchRequest,
+): Promise<LogsSearchResponse> {
+  return request<LogsSearchResponse>(
+    "/api/logs/search",
+    { method: "POST", body: JSON.stringify(body) },
+    token,
+  );
 }

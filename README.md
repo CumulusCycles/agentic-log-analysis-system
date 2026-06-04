@@ -44,7 +44,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | 7a | Agentic Log Analysis Dashboard — scaffold + standalone JWT auth (FastAPI + React + Tailwind), Swagger exposed, Playwright E2E suite | ✅ |
 | 7b | Dashboard log ingestion — read 4 log volumes, parse native formats, `/api/logs` + `/api/status` | ✅ |
 | 7c | Dashboard UI — Overview + Log Explorer screens | ✅ |
-| 7d | Dashboard semantic search — Chroma + embeddings pipeline | ⬜ |
+| 7d | Dashboard semantic search — Chroma + embeddings pipeline + ingest filter (WARN/ERROR/prod by default) + `POST /api/logs/search` | ✅ |
 | 7e | Dashboard LangGraph agent — AI Chat + Error Detail analysis (the LLM work) | ⬜ |
 
 **Status:** ✅ Done · ⬜ Todo · 🔄 In Progress

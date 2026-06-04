@@ -91,6 +91,7 @@ Routes land incrementally:
 | `GET` | `/api/auth/me` | Current admin from JWT | 7a ✅ |
 | `GET` | `/api/status` | Per-app status cards for Overview Dashboard | 7b ✅ |
 | `GET` | `/api/logs` | Paginated log entries for Log Explorer | 7b ✅ |
+| `POST` | `/api/logs/search` | Semantic search over Chroma — body: query + filter clauses; returns LogEntry[] + scores | 7d ✅ |
 | `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response | 7e |
 | `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis | 7e |
 
@@ -101,6 +102,30 @@ the Authorize button. ADR-001 local-only threat model applies.
 
 > Dashboard auth does NOT depend on the Shared Data API being healthy — by design.
 > Local-only JWT keeps the diagnostic tool usable when the apps it observes are sick.
+
+---
+
+## Ingest Gate (Phase 7d)
+
+Backfill + watcher both apply a 3-knob filter BEFORE any OpenAI embedding call.
+The operator-facing `/api/logs` view reads volumes directly and is UNAFFECTED.
+
+| Knob | Default | Where set |
+|---|---|---|
+| `DASHBOARD_INGEST_LEVELS` | `WARN,ERROR` | `.env` (CSV) |
+| `DASHBOARD_INGEST_SOURCES` | `prod` | `.env` (CSV) |
+| `DASHBOARD_INGEST_DRY_RUN` | `false` | `.env` (bool) |
+
+`source` is derived by the parser:
+- `event=request` with path in `(/health, /api/health, /actuator/health)` → `source="health"`
+- Explicit `source=<value>` in the log line → honored (forward-compat for a future cross-app `X-Source` header PR that adds `test` tagging)
+- Otherwise → `source="prod"`
+
+The default `(level ∈ {WARN, ERROR}) AND (source = prod)` predicate keeps healthcheck heartbeat, INFO business events, and (post-X-Source-PR) test traffic out of Chroma — sharp signal, ~$0 ongoing cost.
+
+`DASHBOARD_INGEST_DRY_RUN=true` makes `upsert_entries` short-circuit before any embedder call — operator-safe preview of what the filter would pass without spending tokens. Backfill + watcher still log `parsed`, `passed_filter`, `embedded` so the filter behavior is visible.
+
+Cost-saver gate: `upsert_entries` queries Chroma for existing IDs (`store._collection.get(ids=..., include=[])`) BEFORE the embedder is called. Content-hash IDs (`{app}:{sha1(raw)[:16]}`) make restarts against a populated Chroma volume cost $0.
 
 ---
 

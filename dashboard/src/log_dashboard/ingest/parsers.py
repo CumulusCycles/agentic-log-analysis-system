@@ -31,6 +31,33 @@ _LOGBACK_RE = re.compile(
 # or end-of-line, so `detail=invalid credentials` works.
 _KV_RE = re.compile(r"(\w+)=(.*?)(?=\s+\w+=|$)")
 
+# Paths that the Docker healthcheck or operational probes hit.
+# Any `event=request path=<HEALTH_PATH>` line gets tagged `source=health`
+# and is excluded from the embedding gate by default. Operator view
+# (`/api/logs`) is unaffected.
+_HEALTH_PATHS = frozenset({"/health", "/api/health", "/actuator/health"})
+
+
+def _infer_source(
+    *,
+    explicit: object | None,
+    event: str,
+    path: object | None,
+) -> str:
+    """Derive the `source` tag for a parsed entry.
+
+    Precedence:
+      1. If the log line itself already declared a `source` value (future
+         cross-app X-Source header PR), honour it.
+      2. If the line is a healthcheck request, tag `health`.
+      3. Otherwise tag `prod` (the default — real app traffic).
+    """
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip().lower()
+    if event == "request" and isinstance(path, str) and path in _HEALTH_PATHS:
+        return "health"
+    return "prod"
+
 
 def _normalize_level(raw: str | None) -> LogLevel | None:
     if not raw:
@@ -75,6 +102,7 @@ def _make_entry(
     event: str,
     fields: dict[str, Any],
     raw: str,
+    source: str,
 ) -> LogEntry:
     return LogEntry(
         id=f"{app}:{seq}",
@@ -84,6 +112,7 @@ def _make_entry(
         event=event,
         fields=fields,
         raw=raw,
+        source=source,
     )
 
 
@@ -103,9 +132,19 @@ def parse_structlog_line(*, app: str, seq: int, line: str) -> LogEntry | None:
     event = payload.get("event")
     if level is None or timestamp is None or not isinstance(event, str):
         return None
-    fields = {k: v for k, v in payload.items() if k not in ("level", "timestamp", "event")}
+    fields = {
+        k: v for k, v in payload.items() if k not in ("level", "timestamp", "event", "source")
+    }
+    source = _infer_source(explicit=payload.get("source"), event=event, path=payload.get("path"))
     return _make_entry(
-        app=app, seq=seq, timestamp=timestamp, level=level, event=event, fields=fields, raw=line
+        app=app,
+        seq=seq,
+        timestamp=timestamp,
+        level=level,
+        event=event,
+        fields=fields,
+        raw=line,
+        source=source,
     )
 
 
@@ -130,10 +169,20 @@ def parse_winston_line(*, app: str, seq: int, line: str) -> LogEntry | None:
     if level is None or timestamp is None or not isinstance(event, str):
         return None
     fields = {
-        k: v for k, v in payload.items() if k not in ("level", "timestamp", "event", "message")
+        k: v
+        for k, v in payload.items()
+        if k not in ("level", "timestamp", "event", "message", "source")
     }
+    source = _infer_source(explicit=payload.get("source"), event=event, path=payload.get("path"))
     return _make_entry(
-        app=app, seq=seq, timestamp=timestamp, level=level, event=event, fields=fields, raw=line
+        app=app,
+        seq=seq,
+        timestamp=timestamp,
+        level=level,
+        event=event,
+        fields=fields,
+        raw=line,
+        source=source,
     )
 
 
@@ -176,8 +225,19 @@ def parse_logback_line(*, app: str, seq: int, line: str) -> LogEntry | None:
     # event token doesn't lose context.
     if not _KV_RE.search(message) and len(first_token) > 1:
         fields["message"] = message
+    # `source` is parsed into fields via the kv loop above. Move it out — it
+    # belongs on the LogEntry itself, not in the heterogeneous `fields` bag.
+    explicit_source = fields.pop("source", None)
+    source = _infer_source(explicit=explicit_source, event=event, path=fields.get("path"))
     return _make_entry(
-        app=app, seq=seq, timestamp=timestamp, level=level, event=event, fields=fields, raw=line
+        app=app,
+        seq=seq,
+        timestamp=timestamp,
+        level=level,
+        event=event,
+        fields=fields,
+        raw=line,
+        source=source,
     )
 
 
