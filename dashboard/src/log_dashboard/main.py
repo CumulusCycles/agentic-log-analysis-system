@@ -15,7 +15,7 @@ from .exception_handlers import (
     validation_exception_handler,
 )
 from .logging_setup import configure_logging, get_logger
-from .routers import auth, health
+from .routers import auth, health, logs, status
 
 # Paths FastAPI auto-mounts that the SPA catch-all MUST NOT intercept.
 # Swagger UI is intentionally exposed per ADR-001 — the dashboard's audience
@@ -50,6 +50,8 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router, prefix="/api/auth")
+    app.include_router(logs.router, prefix="/api")
+    app.include_router(status.router, prefix="/api")
 
     # Static React build — mounted under /assets/ for hashed bundles, with a
     # catch-all GET that serves index.html for every other unknown path so the

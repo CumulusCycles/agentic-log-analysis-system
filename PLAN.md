@@ -304,7 +304,7 @@ entry.
 | Sub-PR | Scope | Status |
 |---|---|---|
 | **7a** | Scaffold (FastAPI + React + container) + standalone JWT auth (login + /me); fixes the placeholder log-dashboard service; adds the missing `shared-data-api-logs:/mnt/logs/shared-data-api:ro` mount; Swagger exposed for operator diagnostics | ✅ |
-| **7b** | Log ingestion — read the 4 mounted volumes, parse each native format to a common shape, expose paginated/filterable `/api/logs` + `/api/status` | ⬜ |
+| **7b** | Log ingestion — read the 4 mounted volumes, parse each native format to a common shape, expose paginated/filterable `/api/logs` + `/api/status` | ✅ |
 | **7c** | UI for the two non-AI screens — Overview Dashboard + Log Explorer wired to 7b's endpoints | ⬜ |
 | **7d** | Chroma + embeddings pipeline — augment 7b's plain reader with vector-store-backed semantic search | ⬜ |
 | **7e** | LangGraph agent (StateGraph: ingest → analyze → correlate → predict → respond) + AI Chat + Error Detail analysis panel | ⬜ |

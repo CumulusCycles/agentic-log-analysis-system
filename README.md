@@ -42,7 +42,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | 6.75 | Logging enrichment — success events (INFO), business-rule rejections (WARN), SDA-upstream failure logs (WARN), authoritative event catalog at `docs/tech/log-events.md`; +25 unit tests across 4 apps; "NEVER log credentials" rule codified | ✅ |
 | ⛔ | **HARD STOP** — all 4 apps stable, all 4 log volumes populated | — |
 | 7a | Agentic Log Analysis Dashboard — scaffold + standalone JWT auth (FastAPI + React + Tailwind), Swagger exposed, Playwright E2E suite | ✅ |
-| 7b | Dashboard log ingestion — read 4 log volumes, parse native formats, `/api/logs` + `/api/status` | ⬜ |
+| 7b | Dashboard log ingestion — read 4 log volumes, parse native formats, `/api/logs` + `/api/status` | ✅ |
 | 7c | Dashboard UI — Overview + Log Explorer screens | ⬜ |
 | 7d | Dashboard semantic search — Chroma + embeddings pipeline | ⬜ |
 | 7e | Dashboard LangGraph agent — AI Chat + Error Detail analysis (the LLM work) | ⬜ |

@@ -71,3 +71,27 @@ async def client(app_instance):
 def valid_token():
     settings = get_settings()
     return encode_token(username="admin", role="admin", settings=settings)
+
+
+@pytest.fixture
+def log_volume(tmp_path_factory, monkeypatch):
+    """Provide a writable log-volume root with the 4 expected file paths.
+
+    Tests write fixture log lines into these files; the dashboard reads them
+    via the patched `DASHBOARD_LOG_VOLUME_ROOT` env var. Returns a dict of
+    `{app_name: Path}` so tests can append entries directly.
+    """
+    root = tmp_path_factory.mktemp("logs")
+    paths = {
+        "shared-data-api": root / "shared-data-api" / "shared-data-api.log",
+        "fnol": root / "fnol" / "fnol-app.log",
+        "customer-portal": root / "customer-portal" / "customer-portal.log",
+        "agent-portal": root / "agent-portal" / "agent-portal.log",
+    }
+    for p in paths.values():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.touch()
+    monkeypatch.setenv("DASHBOARD_LOG_VOLUME_ROOT", str(root))
+    get_settings.cache_clear()
+    yield paths
+    get_settings.cache_clear()
