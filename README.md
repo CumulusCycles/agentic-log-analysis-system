@@ -1,6 +1,6 @@
 # Agentic Log Analysis System
 
-![shared-data-api](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-shared-data-api.yml?branch=main&label=shared-data-api) ![fnol](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-fnol.yml?branch=main&label=fnol) ![customer-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-customer-portal.yml?branch=main&label=customer-portal) ![agent-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-agent-portal.yml?branch=main&label=agent-portal)
+![shared-data-api](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-shared-data-api.yml?branch=main&label=shared-data-api) ![fnol](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-fnol.yml?branch=main&label=fnol) ![customer-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-customer-portal.yml?branch=main&label=customer-portal) ![agent-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-agent-portal.yml?branch=main&label=agent-portal) ![dashboard](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-dashboard.yml?branch=main&label=dashboard)
 
 ![License](https://img.shields.io/badge/license-MIT-yellow) ![Platform](https://img.shields.io/badge/platform-linux%2Farm64-blue)
 
@@ -40,8 +40,12 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | 6 | Agent Portal — claim handler tool (Spring Boot proxy to SDA) + React frontend (Vite + TypeScript + Tailwind), Playwright E2E suite | ✅ |
 | 6.5 | Pre-Phase-7 best-practices pass — central error handlers, settings caching, JWT correctness fixes, ADR-010 (no security headers, local-only), SDA service-layer extraction, CP Express 4 → 5 | ✅ |
 | 6.75 | Logging enrichment — success events (INFO), business-rule rejections (WARN), SDA-upstream failure logs (WARN), authoritative event catalog at `docs/tech/log-events.md`; +25 unit tests across 4 apps; "NEVER log credentials" rule codified | ✅ |
-| ⛔ | **HARD STOP** — all 4 apps stable, all 3 log volumes populated | — |
-| 7 | Agentic Log Analysis Dashboard — LangChain + LangGraph + OpenAI + Chroma + React UI | ⬜ |
+| ⛔ | **HARD STOP** — all 4 apps stable, all 4 log volumes populated | — |
+| 7a | Agentic Log Analysis Dashboard — scaffold + standalone JWT auth (FastAPI + React + Tailwind), Swagger exposed, Playwright E2E suite | ✅ |
+| 7b | Dashboard log ingestion — read 4 log volumes, parse native formats, `/api/logs` + `/api/status` | ⬜ |
+| 7c | Dashboard UI — Overview + Log Explorer screens | ⬜ |
+| 7d | Dashboard semantic search — Chroma + embeddings pipeline | ⬜ |
+| 7e | Dashboard LangGraph agent — AI Chat + Error Detail analysis (the LLM work) | ⬜ |
 
 **Status:** ✅ Done · ⬜ Todo · 🔄 In Progress
 
@@ -81,7 +85,7 @@ docker compose ps
 After `docker compose up -d`, click the link to verify the corresponding container is responding. Endpoints become live as their phase ships.
 
 Each app row links the three conceptual endpoints where they apply:
-**`health`** (Docker probe), **`docs`** (Swagger UI — SDA only), **`ux`** (browser UI).
+**`health`** (Docker probe), **`docs`** (Swagger UI — SDA + Dashboard), **`ux`** (browser UI).
 
 | Container | health | docs | ux | Phase |
 |---|---|---|---|---|
@@ -89,7 +93,7 @@ Each app row links the three conceptual endpoints where they apply:
 | FNOL | [health](http://localhost:8001/health) | — | [ux](http://localhost:8001/) (mobile-first) | 4 ✅ |
 | Customer Portal | [health](http://localhost:3001/health) | — | [ux](http://localhost:3001/) | 5 ✅ |
 | Agent Portal | [health](http://localhost:8081/actuator/health) | — | [ux](http://localhost:8081/) | 6 ✅ |
-| Agentic Log Analysis Dashboard | `http://localhost:4001/health` | — | `http://localhost:4001/` | 7 — placeholder |
+| Agentic Log Analysis Dashboard | [health](http://localhost:4001/health) | [docs](http://localhost:4001/docs) | [ux](http://localhost:4001/) | 7a ✅ |
 | PostgreSQL | `pg_isready` via Docker on TCP `localhost:5433` (not HTTP) | — | — | 2 ✅ |
 | MongoDB | `mongosh` ping via Docker on TCP `localhost:27018` (not HTTP) | — | — | 2 ✅ |
 | Chroma | `bash + /dev/tcp` via Docker, internal port `8000` only (not host-exposed) | — | — | 2 ✅ |

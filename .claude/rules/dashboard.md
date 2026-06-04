@@ -79,20 +79,25 @@ Frontend (`pnpm test`) runs from `dashboard/frontend/`.
 
 ---
 
-## Routes (Phase 7 — placeholder)
+## Routes
 
-Backend API routes will be defined when the dashboard is scaffolded in Phase 7.
-Required endpoints (derived from 4 UI screens):
+Phase 7 is sub-PR'd into 5 slices (memory: `project_phase_7_subpr_sequence`).
+Routes land incrementally:
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/health` | Container healthcheck |
-| `POST` | `/api/auth/login` | Admin login → JWT (standalone, independent of SDA) |
-| `GET` | `/api/auth/me` | Current admin from JWT |
-| `GET` | `/api/status` | Per-app status cards for Overview Dashboard |
-| `GET` | `/api/logs` | Paginated log entries for Log Explorer |
-| `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response |
-| `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis |
+| Method | Path | Purpose | Phase |
+|---|---|---|---|
+| `GET` | `/health` | Container healthcheck | 7a ✅ |
+| `POST` | `/api/auth/login` | Admin login → JWT (standalone, independent of SDA) | 7a ✅ |
+| `GET` | `/api/auth/me` | Current admin from JWT | 7a ✅ |
+| `GET` | `/api/status` | Per-app status cards for Overview Dashboard | 7b |
+| `GET` | `/api/logs` | Paginated log entries for Log Explorer | 7b |
+| `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response | 7e |
+| `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis | 7e |
+
+Swagger UI (`/docs`, `/redoc`, `/openapi.json`) is exposed — the dashboard's
+audience is the admin/operator, and Swagger is a strict diagnostic win.
+Anonymous browser load mirrors SDA; calling endpoints still requires JWT via
+the Authorize button. ADR-001 local-only threat model applies.
 
 > Dashboard auth does NOT depend on the Shared Data API being healthy — by design.
 > Local-only JWT keeps the diagnostic tool usable when the apps it observes are sick.

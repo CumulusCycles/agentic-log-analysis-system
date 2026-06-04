@@ -78,4 +78,6 @@ See ADR-006 for the strategy. Library choices per stack:
 | Agent Portal (backend) | JUnit 5 + Spring Boot Test + Mockito (`@MockitoBean SdaClient`) + Spring `OutputCaptureExtension` + `MockRestServiceServer` | 33 tests; `@SpringBootTest` + `@AutoConfigureMockMvc` for controller + filter coverage; `MockMvc.forwardedUrl(...)` for SPA welcome-page checks |
 | Agent Portal (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 8 tests; mocks `fetch` via `vi.stubGlobal` |
 | Agent Portal (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 30 tests; runs against the live stack |
-| Dashboard | Stack-equivalents (TBD per phase) | Inherits the same Tailwind / Vitest / Playwright conventions |
+| Dashboard (backend) | `pytest` + `pytest-asyncio` + `httpx` + `asgi-lifespan` | 10 tests; standalone JWT auth; structlog stdout-only |
+| Dashboard (frontend unit) | Vitest 3 + jsdom + `@testing-library/react` + `@testing-library/user-event` + `@testing-library/jest-dom` | 3 tests; mocks `fetch` via `vi.stubGlobal` |
+| Dashboard (frontend E2E) | Playwright 1.60 — same `desktop-chromium` + `mobile-safari` projects | 5 specs × 2 viewports = 10 tests; runs against the live stack |

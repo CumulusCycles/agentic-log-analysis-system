@@ -114,7 +114,10 @@ All four apps require login. Dashboard auth is standalone (env-supplied admin); 
 - Natural log generation from normal app operation
 
 ### Phase 7 — Agentic Log Analysis Dashboard
-- LangChain + LangGraph + OpenAI integration
-- Continuous log ingestion into Chroma vector store
-- LangGraph agent: analyze → correlate → predict → remediate
-- Proactive anomaly detection and conversational UI
+Decomposed into 5 sub-PRs with the LLM work deferred (memory:
+`project_phase_7_subpr_sequence`):
+- **7a** — Scaffold + standalone JWT auth (FastAPI + React + container)
+- **7b** — Log ingestion (read 4 volumes, parse native formats, `/api/logs` + `/api/status`)
+- **7c** — UI for Overview + Log Explorer (no LLM)
+- **7d** — Chroma + embeddings pipeline (semantic search; no LLM analysis yet)
+- **7e** — LangGraph agent (analyze → correlate → predict → respond) + AI Chat + Error Detail

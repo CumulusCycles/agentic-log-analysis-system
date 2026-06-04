@@ -45,12 +45,16 @@ cd apps/agent-portal && ./mvnw test
 # Frontend unit + E2E — same pattern as FNOL once it lands
 ```
 
-### Agentic Log Analysis Dashboard (`dashboard/`) — Phase 7
+### Agentic Log Analysis Dashboard (`dashboard/`) — Phase 7a ✅
 ```bash
-# Backend
-cd dashboard && uv run pytest -v
+# Backend (standalone JWT auth, structlog stdout-only)
+cd dashboard && uv run pytest -q
 
-# Frontend unit + E2E — same pattern as FNOL once it lands
+# Frontend unit
+cd dashboard/frontend && pnpm test
+
+# Frontend E2E (requires live stack — host port 4001)
+cd dashboard/frontend && pnpm exec playwright test --reporter=line
 ```
 
 ## Steps
