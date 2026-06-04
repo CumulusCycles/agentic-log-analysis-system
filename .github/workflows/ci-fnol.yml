@@ -1,0 +1,78 @@
+name: fnol
+
+# Per ADR-009 (per-app workflow architecture). Python backend + Node frontend.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/fnol/**'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.claude/rules/apps.md'
+      - '.github/workflows/**'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/fnol/**'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.claude/rules/apps.md'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fnol-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fnol:
+    name: fnol
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # Backend (Python / uv)
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: backend — install
+        working-directory: apps/fnol
+        run: uv sync --frozen
+      - name: backend — lint
+        working-directory: apps/fnol
+        run: |
+          uv run ruff check .
+          uv run black --check .
+      - name: backend — tests
+        working-directory: apps/fnol
+        run: uv run pytest -q
+
+      # Frontend (Node / pnpm)
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/fnol/frontend/pnpm-lock.yaml
+      - name: frontend — install
+        working-directory: apps/fnol/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: apps/fnol/frontend
+        run: pnpm lint
+      - name: frontend — typecheck
+        working-directory: apps/fnol/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: apps/fnol/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: apps/fnol/frontend
+        run: pnpm test
