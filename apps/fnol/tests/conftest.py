@@ -25,6 +25,15 @@ from fnol.config import get_settings  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
+def _clear_settings_cache():
+    """get_settings() is @lru_cache'd; clear around every test so any
+    monkeypatch.setenv done by a fixture or test body reaches Settings()."""
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
 def _reset_structlog():
     """Restore structlog defaults before each test so capture_logs() works."""
     structlog.reset_defaults()

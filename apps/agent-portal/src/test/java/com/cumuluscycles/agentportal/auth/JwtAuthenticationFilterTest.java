@@ -64,6 +64,17 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
+    void malformedTokenReturns401WithParseableJsonBody() throws Exception {
+        // Regression: the filter's unauthorized() path used raw string concat
+        // to build the JSON body. Anything but a single ASCII detail would
+        // have broken it. jsonPath() only matches a properly-parsed JSON body,
+        // so its success proves the body is well-formed.
+        mvc.perform(get("/api/profile/me").header("Authorization", "Bearer notathreesegmenttoken"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("invalid token"));
+    }
+
+    @Test
     void validTokenPassesThroughToController() throws Exception {
         when(sdaClient.getUser(anyString(), anyString()))
                 .thenReturn(new UserOut(TestTokens.USER_ID, "agent1", "agent", "Agent One"));

@@ -15,6 +15,7 @@ The complete build task list is in `PLAN.md` — update it before every `/ship`.
 - **NEVER READ FROM OR WRITE TO `.env` FILES** — Only read/write `.env.example` templates
 - Never commit `.env` files — use `.env.example` only
 - API keys live in `.env` — never reference them directly in code
+- Security-header middleware (`helmet` / Spring Security defaults / FastAPI middleware) intentionally skipped per ADR-010 — local-only deployment. Backfill required before any non-localhost exposure.
 
 ---
 

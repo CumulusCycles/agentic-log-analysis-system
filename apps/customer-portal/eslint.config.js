@@ -13,5 +13,14 @@ export default tseslint.config(
       ecmaVersion: 2022,
       globals: { ...globals.node },
     },
+    rules: {
+      // Express error middleware requires the 4-arg signature even when
+      // `next` is unused — `_`-prefixed args are the standard "intentionally
+      // unused" marker.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
   },
 );

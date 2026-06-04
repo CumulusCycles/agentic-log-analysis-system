@@ -7,6 +7,7 @@ import express, { type Express } from "express";
 import { SharedDataAPIClient } from "./clients/sda-client.js";
 import type { Config } from "./config.js";
 import type { Logger } from "./logger.js";
+import { errorHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { requireAuth } from "./middleware/require-auth.js";
 import { authRouter } from "./routers/auth.js";
@@ -66,6 +67,10 @@ export function buildApp({
   } else {
     logger.warn("frontend_dist_missing", { expected: distDir });
   }
+
+  // Last — error middleware must be after all routes (and after the SPA
+  // fallback) so thrown errors and body-parse failures funnel through here.
+  app.use(errorHandler(logger));
 
   return { express: app, sda: client };
 }

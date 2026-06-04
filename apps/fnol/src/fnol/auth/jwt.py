@@ -11,6 +11,7 @@ Constants `JWT_ISSUER` and `JWT_AUDIENCE` MUST stay in sync with SDA's
 
 import jwt as pyjwt
 from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..config import Settings, get_settings
 from ..logging_setup import get_logger
@@ -19,6 +20,8 @@ log = get_logger(__name__)
 
 JWT_ISSUER = "shared-data-api"
 JWT_AUDIENCE = "agentic-log-analysis-insurance-apps"
+
+_bearer = HTTPBearer(auto_error=False)
 
 
 def decode_token(token: str, settings: Settings) -> dict:
@@ -40,16 +43,19 @@ def decode_token(token: str, settings: Settings) -> dict:
         ) from exc
 
 
-async def get_current_user(request: Request, settings: Settings = Depends(get_settings)) -> dict:
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
+async def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="missing bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    token = auth[7:].strip()
-    claims = decode_token(token, settings)
-    # Stash for request_logger middleware.
+    claims = decode_token(credentials.credentials, settings)
+    # Stash for request_logger middleware + downstream SDA forwarding.
     request.state.user_id = claims.get("user_id", "-")
+    request.state.bearer = credentials.credentials
     return claims

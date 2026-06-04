@@ -95,6 +95,44 @@ def test_decode_rejects_expired_token():
     assert exc.value.detail == "invalid token"
 
 
+def test_decode_rejects_wrong_signature():
+    """A token signed with the wrong secret must fail decode."""
+    from fastapi import HTTPException
+
+    settings = get_settings()
+    bad = pyjwt.encode(
+        {
+            "iss": JWT_ISSUER,
+            "aud": JWT_AUDIENCE,
+            "user_id": "u1",
+            "role": "customer",
+            "exp": 9999999999,
+        },
+        "completely-different-secret",
+        algorithm=settings.jwt_algorithm,
+    )
+    with pytest.raises(HTTPException) as exc:
+        decode_token(bad, settings=settings)
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "invalid token"
+
+
+def test_decode_rejects_malformed_token():
+    """A non-three-segment string must fail decode (not raise some other type)."""
+    from fastapi import HTTPException
+
+    settings = get_settings()
+    with pytest.raises(HTTPException) as exc:
+        decode_token("not.a.real.jwt.token", settings=settings)
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "invalid token"
+
+    # Two-segment string — PyJWT raises DecodeError (subclass of PyJWTError).
+    with pytest.raises(HTTPException) as exc2:
+        decode_token("only.twosegments", settings=settings)
+    assert exc2.value.status_code == 401
+
+
 def test_decode_accepts_token_just_before_expiry():
     """Boundary: a token expiring 30s in the future is still valid."""
     import time
