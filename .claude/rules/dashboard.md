@@ -29,10 +29,10 @@ suggest remediation, and proactively predict problems before they escalate.
 ---
 
 ## UI Screens
-- **Overview Dashboard**: per-app status cards, error counts (1h/24h/7d), recent anomalies
-- **Log Explorer**: filter by app/severity/time, semantic search, paginated entries
-- **AI Chat**: conversational interface for root cause + remediation
-- **Error Detail**: full raw log, stack trace, LangGraph analysis panel, suggested fix
+- **Overview Dashboard** (7c ✅): per-app status cards (ok / degraded / error), 1h/24h/7d INFO/WARN/ERROR counts, polled every 15 s; click a card to drill down to the Log Explorer pre-filtered to that app.
+- **Log Explorer** (7c ✅): paginated/filterable log table (app, level, time-window preset 1h/24h/7d), row click expands `fields` + raw line inline, `next_before` cursor pagination. Semantic search is deferred to 7d.
+- **AI Chat** (7e): conversational interface for root cause + remediation
+- **Error Detail** (7e): full raw log, stack trace, LangGraph analysis panel, suggested fix
 
 ---
 

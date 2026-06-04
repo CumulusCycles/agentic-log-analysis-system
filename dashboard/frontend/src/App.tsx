@@ -1,10 +1,12 @@
-import { Navigate, Route, BrowserRouter, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 
+import { Layout } from "./components/Layout";
 import { RequireAuth } from "./components/RequireAuth";
 import { useAuth } from "./lib/auth";
 import { AuthProvider } from "./lib/auth-context";
-import { DashboardHome } from "./pages/DashboardHome";
 import { LoginPage } from "./pages/LoginPage";
+import { LogExplorer } from "./pages/LogExplorer";
+import { Overview } from "./pages/Overview";
 
 function HomeRedirect() {
   const { token } = useAuth();
@@ -20,7 +22,19 @@ export function App() {
             path="/"
             element={
               <RequireAuth>
-                <DashboardHome />
+                <Layout>
+                  <Overview />
+                </Layout>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/logs"
+            element={
+              <RequireAuth>
+                <Layout>
+                  <LogExplorer />
+                </Layout>
               </RequireAuth>
             }
           />

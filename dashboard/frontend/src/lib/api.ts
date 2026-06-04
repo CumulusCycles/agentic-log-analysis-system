@@ -7,6 +7,7 @@ import type {
   LoginRequest,
   TokenResponse,
 } from "../types/api";
+import type { LogsFilters, LogsResponse, StatusResponse } from "../types/logs";
 
 const BASE_URL = import.meta.env.VITE_DASHBOARD_API_BASE_URL ?? "";
 
@@ -52,4 +53,26 @@ export async function login(payload: LoginRequest): Promise<TokenResponse> {
 
 export async function getMe(token: string): Promise<AdminOut> {
   return request<AdminOut>("/api/auth/me", {}, token);
+}
+
+export async function getStatus(token: string): Promise<StatusResponse> {
+  return request<StatusResponse>("/api/status", {}, token);
+}
+
+function buildLogsQuery(filters: LogsFilters): string {
+  const params = new URLSearchParams();
+  if (filters.apps.length > 0) params.set("app", filters.apps.join(","));
+  if (filters.levels.length > 0) params.set("level", filters.levels.join(","));
+  if (filters.since) params.set("since", filters.since);
+  if (filters.before) params.set("before", filters.before);
+  params.set("limit", String(filters.limit));
+  return params.toString();
+}
+
+export async function getLogs(
+  token: string,
+  filters: LogsFilters,
+): Promise<LogsResponse> {
+  const qs = buildLogsQuery(filters);
+  return request<LogsResponse>(`/api/logs?${qs}`, {}, token);
 }

@@ -1,0 +1,132 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+
+import { LogsFilterBar, type FilterState } from "../components/LogsFilterBar";
+import { LogsTable } from "../components/LogsTable";
+import { getLogs, HttpError } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import {
+  APP_NAMES,
+  LOG_LEVELS,
+  type AppName,
+  type LogEntry,
+  type TimeWindow,
+} from "../types/logs";
+
+const PAGE_LIMIT = 100;
+
+function windowToSince(window: TimeWindow, now: Date = new Date()): string {
+  const offsets: Record<TimeWindow, number> = {
+    "1h": 60 * 60 * 1000,
+    "24h": 24 * 60 * 60 * 1000,
+    "7d": 7 * 24 * 60 * 60 * 1000,
+  };
+  return new Date(now.getTime() - offsets[window]).toISOString();
+}
+
+function isAppName(value: string): value is AppName {
+  return (APP_NAMES as readonly string[]).includes(value);
+}
+
+function initialFilters(presetApp: string | null): FilterState {
+  const apps: AppName[] =
+    presetApp && isAppName(presetApp) ? [presetApp] : [...APP_NAMES];
+  return {
+    apps,
+    levels: [...LOG_LEVELS],
+    window: "1h",
+  };
+}
+
+export function LogExplorer() {
+  const { token, logout } = useAuth();
+  const [searchParams] = useSearchParams();
+  const presetApp = searchParams.get("app");
+
+  const [filters, setFilters] = useState<FilterState>(() =>
+    initialFilters(presetApp),
+  );
+  const [entries, setEntries] = useState<LogEntry[]>([]);
+  const [nextBefore, setNextBefore] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const since = useMemo(() => windowToSince(filters.window), [filters.window]);
+
+  const fetchPage = useCallback(
+    async (before: string | null, append: boolean) => {
+      if (!token) return;
+      setLoading(true);
+      try {
+        const res = await getLogs(token, {
+          apps: filters.apps,
+          levels: filters.levels,
+          since,
+          before,
+          limit: PAGE_LIMIT,
+        });
+        setEntries((prev) =>
+          append ? [...prev, ...res.entries] : res.entries,
+        );
+        setNextBefore(res.next_before);
+        setError(null);
+      } catch (err) {
+        if (err instanceof HttpError && err.status === 401) {
+          // Stale or expired session — clear the token; RequireAuth bounces to /login.
+          logout();
+          return;
+        }
+        if (err instanceof HttpError) {
+          setError(`logs request failed (${err.status})`);
+        } else {
+          setError("logs request failed");
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, logout, filters.apps, filters.levels, since],
+  );
+
+  // Refetch from page 1 whenever filters change.
+  useEffect(() => {
+    void fetchPage(null, false);
+  }, [fetchPage]);
+
+  function onLoadMore() {
+    if (nextBefore) void fetchPage(nextBefore, true);
+  }
+
+  return (
+    <section aria-labelledby="logs-heading" className="space-y-4">
+      <div className="flex items-baseline justify-between">
+        <h2 id="logs-heading" className="text-lg font-semibold text-slate-900">
+          Log Explorer
+        </h2>
+        <button
+          type="button"
+          onClick={() => void fetchPage(null, false)}
+          disabled={loading}
+          className="rounded-md border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
+      <LogsFilterBar value={filters} onChange={setFilters} />
+      {error && (
+        <p
+          role="alert"
+          className="rounded-md bg-red-50 p-3 text-sm text-red-700"
+        >
+          {error}
+        </p>
+      )}
+      <LogsTable
+        entries={entries}
+        loading={loading}
+        hasMore={nextBefore !== null}
+        onLoadMore={onLoadMore}
+      />
+    </section>
+  );
+}
