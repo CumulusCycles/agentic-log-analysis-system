@@ -153,7 +153,7 @@ application logs, and the Chroma vector store are permanently lost**. Use plain
 - **Branch:** always `feature/<name>` or `fix/<name>` — never commit to `main`
 - **Commit:** conventional commits scoped to the app — `feat(fnol):`, `fix(customer-portal):`
 - **Ship:** run `/ship` — lints, builds, commits, pushes, opens PR
-- **Done:** run `/done` after merge — checks out main, pulls, deletes both local and remote branches
+- **Done:** run `/done` after merge — checks out main, pulls, deletes both local and remote branches, removes orphaned PR-time CI runs
 
 See `.claude/rules/workflow.md` for the complete pre-ship checklist.
 
