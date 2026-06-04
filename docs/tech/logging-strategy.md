@@ -6,8 +6,32 @@ Each app logs in its native format. No normalization at write time.
 The LangGraph agent in the dashboard handles heterogeneous formats via LLM understanding.
 See `docs/decisions/ADR-003-logging-strategy.md`.
 
-**Non-negotiable rule:** Every app MUST emit a parseable severity level and timestamp.
-Everything else is stack-native.
+## Non-Negotiable Rules
+
+1. Every app MUST emit a parseable severity level and timestamp. Everything else is stack-native.
+
+2. **NEVER LOG CREDENTIALS — absolute prohibition across every app, every level, every PR.**
+
+   The following values must NEVER appear in any log line, structured field, error message, exception trace, response body, or debug output:
+
+   | Category | Examples |
+   |---|---|
+   | Passwords | plain, hashed, or any intermediate verification form |
+   | JWT secrets | `JWT_SECRET`, `DASHBOARD_JWT_SECRET` |
+   | API keys | `SHARED_DATA_API_KEY_FNOL`, `SHARED_DATA_API_KEY_CUSTOMER_PORTAL`, `SHARED_DATA_API_KEY_AGENT_PORTAL` |
+   | Bearer tokens / JWTs | full token, or any segment (header / payload / signature) |
+   | DB credentials | `POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_PASSWORD`, full connection strings with `user:pass@host` |
+   | LLM keys | `OPENAI_API_KEY`, `LANGSMITH_API_KEY` |
+   | Admin creds | `DASHBOARD_ADMIN_PASSWORD` |
+   | Any other `.env` value that maps to a real secret in production |
+
+   **Why this matters in this project specifically:** logs are written to volumes, ingested by the dashboard, embedded via OpenAI's embedding API into Chroma, traced through LangSmith, and read by humans in PR comments. Any credential that crosses the log boundary leaks through every one of those surfaces simultaneously.
+
+   **What IS safe to log:** identifiers (`user_id`, `username`, `policy_number`, `claim_id`, `vin`, `caller="fnol"`), decoder error messages (`reason="Signature verification failed"`), outcomes (`status=401`, `duration_ms=12.3`), and counts. Use identifiers + outcomes — never the secret values themselves.
+
+   **Audit baseline (2026-06-04):** every logger call site in SDA, FNOL, CP, and AP was scanned and confirmed clean. Every PR that touches logging MUST preserve this state. The 4 `jwt_decode_failed` log lines correctly emit only the decoder's `reason` string (e.g., PyJWT's `"Signature verification failed"`), never the token itself.
+
+   **Decision tree and counter-patterns:** see `feedback_never_log_credentials` (Claude Code memory, auto-loaded) and `.claude/rules/logging.md` §Non-Negotiable Rules.
 
 ---
 

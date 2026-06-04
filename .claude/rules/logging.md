@@ -8,8 +8,27 @@
 Each app uses its native logging format. Do NOT normalize at write time.
 The LangGraph agent handles heterogeneous formats. See docs/decisions/ADR-003-logging-strategy.md.
 
-## Non-Negotiable Rule
-Every app MUST log a parseable **severity level** and **timestamp**. Everything else is stack-native.
+## Non-Negotiable Rules
+
+1. Every app MUST log a parseable **severity level** and **timestamp**. Everything else is stack-native.
+
+2. **NEVER LOG CREDENTIALS — ABSOLUTE PROHIBITION.** The following values MUST NEVER appear in any log line, structured field, error message, exception trace, response body, or debug output across any app:
+   - Passwords (plain, hashed, or any intermediate form)
+   - JWT secrets / signing keys (`JWT_SECRET`, `DASHBOARD_JWT_SECRET`)
+   - API keys (`SHARED_DATA_API_KEY_*`)
+   - Bearer tokens, full JWTs, or any token segment
+   - DB credentials (`POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_PASSWORD`, full connection strings with `user:pass@host`)
+   - LLM API keys (`OPENAI_API_KEY`, `LANGSMITH_API_KEY`)
+   - Admin credentials (`DASHBOARD_ADMIN_PASSWORD`)
+   - **Any other value defined in `.env` or `.env.example` that maps to a real secret**
+
+   Why: logs are aggregated, persisted to volumes, ingested by the dashboard (Phase 7+), embedded in a vector store via OpenAI's API, traced through LangSmith, and may be screenshotted or pasted into PR comments. Any one of those becomes a credential leak the moment a secret crosses the log boundary.
+
+   What IS safe to log: identifiers (`user_id`, `username`, `policy_number`, `claim_id`, `caller`), decoder error messages (`reason="Signature verification failed"`), and outcomes (`status`, `duration_ms`). Use identifiers and outcomes, never the secret values themselves.
+
+   Audit baseline (verified 2026-06-04): every logger call site in SDA, FNOL, CP, AP scanned and confirmed clean. Preserve this state in every PR that touches logging.
+
+   Full decision tree and counter-patterns: `feedback_never_log_credentials` memory file (auto-loaded).
 
 ---
 

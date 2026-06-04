@@ -15,6 +15,7 @@ The complete build task list is in `PLAN.md` — update it before every `/ship`.
 - **NEVER READ FROM OR WRITE TO `.env` FILES** — Only read/write `.env.example` templates
 - Never commit `.env` files — use `.env.example` only
 - API keys live in `.env` — never reference them directly in code
+- **NEVER LOG CREDENTIALS** — passwords, JWT secrets, API keys, bearer tokens, DB connection strings, LLM keys, admin creds, or ANY `.env` value must never appear in any log line, error message, exception trace, or response body. See `.claude/rules/logging.md` §Non-Negotiable Rules and the `feedback_never_log_credentials` memory for the full decision tree. Audit baseline: every app's logger calls verified clean as of 2026-06-04.
 - Security-header middleware (`helmet` / Spring Security defaults / FastAPI middleware) intentionally skipped per ADR-010 — local-only deployment. Backfill required before any non-localhost exposure.
 
 ---
