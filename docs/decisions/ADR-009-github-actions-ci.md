@@ -17,12 +17,12 @@
 
 ## Rationale
 
-Reverses the over-broad rule in `CLAUDE.md` that conflated *app deployment* (still disallowed — local Docker Compose only) with *remote CI* (now permitted). They are independent decisions; bundling them prevented a useful machine-enforced PR gate.
+Reverses the over-broad rule in `CLAUDE.md` that conflated *app deployment* (still disallowed — local Docker Compose only) with *remote CI* (now permitted). They are independent decisions; the original rule's overreach blocked PR-time validation without justification.
 
 GH Actions adds three things local `/ship` cannot:
 
 - **Independent verification on a clean checkout.** Local runs benefit from existing virtualenvs, cached node_modules, and accumulated state. CI proves the repo is buildable from zero — catches missing files, stale lockfiles, dependency drift, and "works on my machine" issues that `/ship` is structurally blind to.
-- **Machine-enforced merge gate.** Once branch protection is enabled, a red PR cannot be merged. No more honor-system "did I run the tests?"
+- **Machine-enforced merge gate.** Branch protection's required-check rules turn CI into a hard gate — a red PR cannot be merged regardless of developer discipline.
 - **Persistent run history.** Every PR and push leaves an artifact under the Actions tab — useful for triaging post-merge regressions.
 
 The path-filter scoping is deliberate: it mirrors the `/ship` rule exactly so CI cost matches local cost. Small PRs trigger small CI. SDA / shared-infra PRs trigger the full sweep. There is no situation where CI runs *more* than `/ship` did locally — the two stay in lockstep.
