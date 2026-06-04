@@ -85,7 +85,7 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **Auth:** **Standalone** — local JWT signed with `DASHBOARD_JWT_SECRET`; admin credentials from `DASHBOARD_ADMIN_USERNAME` / `DASHBOARD_ADMIN_PASSWORD`. Does **not** depend on the Shared Data API to authenticate (so the dashboard stays operational when the insurance apps are sick — see ADR-006).
 
-**Routes:** `POST /api/auth/login`, `GET /api/auth/me`, plus the Phase 7 routes in `.claude/rules/dashboard.md`.
+**Routes:** `GET /health`, `POST /api/auth/login`, `GET /api/auth/me` (all 7a ✅). Phase 7b–7e routes are tracked in `.claude/rules/dashboard.md`. Swagger exposed at `/docs` (admin diagnostic tool — anonymous browser load like SDA, calling endpoints still requires JWT).
 
 **Data:** Chroma persistent collection of log embeddings — no relational tables, no seed.
 

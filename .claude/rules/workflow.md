@@ -40,8 +40,11 @@
 4. **Phase 4** — FNOL running and logging to volume
 5. **Phase 5** — Customer Portal running and logging
 6. **Phase 6** — Agent Portal running and logging; all containers + DBs stable together
-7. **Phase 7a** — Agentic Log Analysis Dashboard reading logs from all 3 log volumes
-8. **Phase 7b** — Dashboard with LangGraph + OpenAI + Chroma fully wired
+7. **Phase 7a** — Dashboard scaffold + standalone JWT auth (FastAPI + React + container)
+8. **Phase 7b** — Dashboard log ingestion (4 log volumes → `/api/logs` + `/api/status`)
+9. **Phase 7c** — Dashboard UI (Overview + Log Explorer screens)
+10. **Phase 7d** — Dashboard Chroma + embeddings pipeline
+11. **Phase 7e** — Dashboard LangGraph agent + AI Chat + Error Detail (the LLM work)
 
 ## Claude Code Hooks
 - `.claude/hooks/pre_bash_guard.sh` — blocks dangerous commands
