@@ -46,14 +46,28 @@ def registry():
     return RunRegistry()
 
 
+async def _noop_task() -> None:
+    return
+
+
 async def _add_running(registry: RunRegistry, run_id: str = "test-run") -> None:
+    """Insert a running record so scenario.run()'s counter updates can land.
+
+    Scenario tests drive `scenario.run()` directly rather than via the
+    router, so the task created by try_start is unused — a no-op task is
+    sufficient to satisfy the try_start contract.
+    """
     record = RunRecord(
         run_id=run_id,
         scenario_name="test",
         params={},
         started_at=datetime.now(tz=UTC),
     )
-    await registry.add(record)
+    await registry.try_start(
+        record,
+        max_concurrent=999,
+        task_factory=lambda: asyncio.create_task(_noop_task()),
+    )
 
 
 def _mock_transport(handler: Callable[[httpx.Request], httpx.Response]) -> httpx.MockTransport:

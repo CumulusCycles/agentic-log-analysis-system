@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -75,7 +75,7 @@ class Scenario(ABC):
 
     async def _fire(
         self,
-        send: Callable[[], asyncio.Future[tuple[int, bool]]],
+        send: Callable[[], Awaitable[tuple[int, bool]]],
         semaphore: asyncio.Semaphore,
     ) -> None:
         """One bounded request. Updates counters; never raises into the caller.
@@ -94,3 +94,39 @@ class Scenario(ABC):
                 Exception
             ) as exc:  # noqa: BLE001 — scenarios must keep running through transport errors
                 await self.registry.mark_failure(self.run_id, str(exc))
+
+    async def _run_paced(
+        self,
+        count: int,
+        duration_s: int,
+        send: Callable[[], Awaitable[tuple[int, bool]]],
+    ) -> None:
+        """Spawn `count` `_fire` tasks paced over `duration_s` with proper
+        cancellation propagation.
+
+        Why this helper exists: the naive pattern (spawn-loop + sleep +
+        gather) leaks tasks when the parent `run()` is cancelled during
+        the spawn loop. CancelledError exits the `for` loop, the spawned
+        tasks become orphans and keep firing HTTP requests after the
+        registry state has flipped to `cancelled`. The try/except below
+        catches the cancel, explicitly cancels every spawned task, drains
+        them, then re-raises — so the wrapper's `finalize("cancelled")`
+        runs against a fully-quiesced run.
+        """
+        interval = duration_s / max(count, 1)
+        semaphore = asyncio.Semaphore(
+            min(self.settings.agitator_default_concurrency, max(count, 1))
+        )
+        tasks: list[asyncio.Task[None]] = []
+        try:
+            for _ in range(count):
+                tasks.append(asyncio.create_task(self._fire(send, semaphore)))
+                await asyncio.sleep(interval)
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except asyncio.CancelledError:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            raise

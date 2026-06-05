@@ -13,7 +13,6 @@ WARN/ERROR-producing scenarios are auth-spike, payload-fuzz, sda-degraded.
 
 from __future__ import annotations
 
-import asyncio
 import uuid
 
 from ..http_client import build_client
@@ -37,10 +36,6 @@ class PolicyNotFound(Scenario):
     async def run(self) -> None:
         count = self.params.get("count", self.spec.params[0].default)
         duration_s = self.params.get("duration_s", self.spec.params[1].default)
-        interval = duration_s / max(count, 1)
-        semaphore = asyncio.Semaphore(
-            min(self.settings.agitator_default_concurrency, max(count, 1))
-        )
 
         headers = {"Authorization": f"Bearer {self.session.fnol_jwt}"}
 
@@ -52,8 +47,4 @@ class PolicyNotFound(Scenario):
                 # 404 is the expected outcome.
                 return response.status_code, response.status_code == 404
 
-            tasks: list[asyncio.Task[None]] = []
-            for _ in range(count):
-                tasks.append(asyncio.create_task(self._fire(send, semaphore)))
-                await asyncio.sleep(interval)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await self._run_paced(count, duration_s, send)

@@ -12,8 +12,6 @@ layer regardless of which app issued it via login proxy).
 
 from __future__ import annotations
 
-import asyncio
-
 from ..http_client import build_client
 from .base import Scenario, ScenarioParam, ScenarioSpec, register
 
@@ -38,10 +36,6 @@ class SdaDegraded(Scenario):
     async def run(self) -> None:
         count = self.params.get("count", self.spec.params[0].default)
         duration_s = self.params.get("duration_s", self.spec.params[1].default)
-        interval = duration_s / max(count, 1)
-        semaphore = asyncio.Semaphore(
-            min(self.settings.agitator_default_concurrency, max(count, 1))
-        )
 
         headers = {
             "X-API-Key": self.session.sda_api_key_cp,
@@ -57,8 +51,4 @@ class SdaDegraded(Scenario):
                 response = await client.get("/policies", headers=headers)
                 return response.status_code, response.status_code == 200
 
-            tasks: list[asyncio.Task[None]] = []
-            for _ in range(count):
-                tasks.append(asyncio.create_task(self._fire(send, semaphore)))
-                await asyncio.sleep(interval)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await self._run_paced(count, duration_s, send)
