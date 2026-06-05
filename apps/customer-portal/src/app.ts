@@ -7,6 +7,7 @@ import express, { type Express } from "express";
 import { SharedDataAPIClient } from "./clients/sda-client.js";
 import type { Config } from "./config.js";
 import type { Logger } from "./logger.js";
+import { chaos } from "./middleware/chaos.js";
 import { errorHandler } from "./middleware/error-handler.js";
 import { requestLogger } from "./middleware/request-logger.js";
 import { requireAuth } from "./middleware/require-auth.js";
@@ -35,6 +36,10 @@ export function buildApp({ cfg, logger, sda }: BuildAppOptions): CustomerPortalA
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));
   app.use(requestLogger(logger));
+  // Chaos sits after requestLogger so the request log line records the
+  // delayed/errored response; before routes so it fires regardless of auth
+  // state (consistent with SDA / FNOL / AP). Per ADR-013.
+  app.use(chaos(cfg, logger));
 
   // Anonymous — health probe + login proxy.
   app.use("/", healthRouter());

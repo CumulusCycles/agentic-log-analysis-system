@@ -50,7 +50,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | Agitator PR 1.75 | Node prettier format gate — root config + per-package scripts + CI binding across all 5 Node packages | ✅ |
 | Agitator PR 1.9 | Code review enhancements — `/ship` Step 1 tool-enforcement audit (`.claude/hooks/ship_audit.sh`) + agentreviewer policy (`/ultrareview` for high-stakes PRs, Opus 4.7 preference, pre-flight checks) | ✅ |
 | Agitator PR 1.95 | Consolidate CI workflows — single `ci.yml` with `paths-filter` `changes` job + 5 conditional per-app jobs; cross-cutting PRs go 5 runs → 1; README badge row collapses 5 → 1 | ✅ |
-| Agitator PR 2 | Chaos middleware (`X-Chaos` directive, `ENABLE_CHAOS` env gate) | ⬜ |
+| Agitator PR 2 | Chaos middleware — `X-Chaos: slow:<ms>` / `error:<status>` across SDA/FNOL/CP/AP, `ENABLE_CHAOS` env gate, dashboard exempt | ✅ |
 | Agitator PR 3 | Agitator bundled into dashboard — operator-triggered bounded scenarios | ⬜ |
 | 7e | Dashboard LangGraph agent — AI Chat + Error Detail analysis (the LLM work) | ⬜ |
 

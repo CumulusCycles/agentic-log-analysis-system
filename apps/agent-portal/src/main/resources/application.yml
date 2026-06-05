@@ -29,3 +29,5 @@ app:
     secret: ${JWT_SECRET}
     algorithm: ${JWT_ALGORITHM:HS256}
   log-file-path: ${LOG_FILE_PATH:/app/logs/agent-portal.log}
+  chaos:
+    enabled: ${ENABLE_CHAOS:false}

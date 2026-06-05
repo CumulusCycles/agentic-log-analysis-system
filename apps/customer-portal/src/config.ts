@@ -9,6 +9,11 @@ const ConfigSchema = z.object({
     .string()
     .min(1, "SHARED_DATA_API_KEY_CUSTOMER_PORTAL is required"),
   LOG_FILE_PATH: z.string().default("/app/logs/customer-portal.log"),
+  // Chaos middleware — default off. See ADR-013 and middleware/chaos.ts.
+  ENABLE_CHAOS: z
+    .string()
+    .default("false")
+    .transform((v) => v.toLowerCase() === "true"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

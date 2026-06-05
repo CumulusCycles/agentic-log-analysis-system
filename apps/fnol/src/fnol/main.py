@@ -15,6 +15,7 @@ from .exception_handlers import (
     validation_exception_handler,
 )
 from .logging_setup import configure_logging, get_logger
+from .middleware.chaos import ChaosMiddleware
 from .middleware.request_logger import RequestLoggerMiddleware
 from .routers import auth, claims, health
 
@@ -50,6 +51,9 @@ def create_app() -> FastAPI:
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
+    # Chaos sits innermost (added first) so the request logger wraps it and
+    # captures chaos-delayed duration_ms accurately. Per ADR-013.
+    app.add_middleware(ChaosMiddleware, settings=settings)
     app.add_middleware(RequestLoggerMiddleware)
 
     app.include_router(health.router)
