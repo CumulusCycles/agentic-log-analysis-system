@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from ..auth.jwt import get_current_admin
 from ..config import Settings, get_settings
@@ -17,6 +17,7 @@ log = get_logger("status")
 
 @router.get("/status", response_model=StatusResponse)
 async def get_status(
+    request: Request,
     _: dict[str, Any] = Depends(get_current_admin),
     settings: Settings = Depends(get_settings),
 ) -> StatusResponse:
@@ -46,4 +47,19 @@ async def get_status(
             )
             continue
         apps.append(compute_app_status(app_log.name, entries, now=now, file_present=True))
-    return StatusResponse(as_of=now, apps=apps)
+
+    # PR 3: corpus_empty drives the Overview "go run the Agitator" banner.
+    # Only true when the vectorstore is wired up AND has zero docs — degraded
+    # mode (no OpenAI key) reports False so the banner doesn't dangle.
+    return StatusResponse(as_of=now, apps=apps, corpus_empty=_corpus_empty(request))
+
+
+def _corpus_empty(request: Request) -> bool:
+    store = getattr(request.app.state, "vectorstore", None)
+    if store is None:
+        return False
+    try:
+        count = store._collection.count()  # noqa: SLF001 — Chroma exposes no public count
+    except Exception:  # noqa: BLE001 — Chroma transport errors are non-fatal here
+        return False
+    return count == 0

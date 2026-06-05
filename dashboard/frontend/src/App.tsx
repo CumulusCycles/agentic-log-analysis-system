@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { RequireAuth } from "./components/RequireAuth";
 import { useAuth } from "./lib/auth";
 import { AuthProvider } from "./lib/auth-context";
+import { LogGenerator } from "./pages/LogGenerator";
 import { LoginPage } from "./pages/LoginPage";
 import { LogExplorer } from "./pages/LogExplorer";
 import { Overview } from "./pages/Overview";
@@ -34,6 +35,16 @@ export function App() {
               <RequireAuth>
                 <Layout>
                   <LogExplorer />
+                </Layout>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/log-generator"
+            element={
+              <RequireAuth>
+                <Layout>
+                  <LogGenerator />
                 </Layout>
               </RequireAuth>
             }

@@ -200,6 +200,22 @@ The dashboard's parser tokenizes `key=value` pairs from the message.
 
 ---
 
+## Dashboard — Agitator events (PR 3)
+
+The dashboard logs to stdout only (no log volume; per `.claude/rules/logging.md`).
+These Agitator events are the only PR-3-introduced lines; they emit at INFO so
+they're visible via `docker compose logs log-dashboard` but are dropped by the
+default ingest gate (`DASHBOARD_INGEST_LEVELS=WARN,ERROR`) and never enter Chroma.
+
+| Event | Producer | Fields | Meaning |
+|---|---|---|---|
+| `agitator_run_started` | `routers/agitator.py` | `run_id`, `scenario`, `params` | Operator clicked Run; bounded scenario task scheduled |
+| `agitator_run_complete` | `routers/agitator.py` | `run_id`, `scenario`, `state` (`succeeded`/`failed`/`cancelled`), `error_class` (failed only) | Scenario task exited |
+| `agitator_login_ok` | `agitator/auth.py` | `app`, `username` | Per-scenario login to FNOL/CP/AP succeeded — never logs the password or token |
+| `agitator_login_failed` | `agitator/auth.py` | `app`, `reason` (`transport_error` / `non_200` / `missing_token`), `status` (when applicable), `error_class` (when applicable) | Per-scenario login failed — router converts to 502 |
+
+---
+
 ## Cross-app conventions
 
 - **Every request** carries `caller`, `user`, `method`, `path`, `status`,

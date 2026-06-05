@@ -94,3 +94,57 @@ async def test_status_reports_degraded_on_recent_error_burst(
     sda_row = next(a for a in response.json()["apps"] if a["name"] == "shared-data-api")
     assert sda_row["status"] == "degraded"
     assert sda_row["counts_1h"]["error"] >= 10
+
+
+# --- PR 3: corpus_empty flag ---
+
+
+async def test_status_corpus_empty_false_when_vectorstore_missing(
+    client, valid_token, log_volume
+) -> None:
+    """Embeddings-disabled mode: corpus_empty is False so the UI banner stays hidden."""
+    _seed_all_apps_healthy(log_volume)
+    response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
+    assert response.status_code == 200
+    assert response.json()["corpus_empty"] is False
+
+
+async def test_status_corpus_empty_true_when_vectorstore_empty(
+    app_instance, client, valid_token, log_volume, fake_vectorstore
+) -> None:
+    """Inject an empty fake vectorstore → flag flips to True."""
+    _seed_all_apps_healthy(log_volume)
+    app_instance.state.vectorstore = fake_vectorstore
+    response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
+    assert response.status_code == 200
+    assert response.json()["corpus_empty"] is True
+
+
+async def test_status_corpus_empty_false_when_vectorstore_populated(
+    app_instance, client, valid_token, log_volume, fake_vectorstore
+) -> None:
+    """Seed at least one doc → corpus_empty becomes False."""
+    from datetime import UTC, datetime
+
+    from log_dashboard.ingest.vectorstore import upsert_entries
+    from log_dashboard.schemas import LogEntry, LogLevel
+
+    _seed_all_apps_healthy(log_volume)
+    upsert_entries(
+        fake_vectorstore,
+        [
+            LogEntry(
+                id="seed:1",
+                timestamp=datetime.now(tz=UTC),
+                level=LogLevel.INFO,
+                app="fnol",
+                event="claim_submitted",
+                fields={},
+                raw="{}",
+            )
+        ],
+    )
+    app_instance.state.vectorstore = fake_vectorstore
+    response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
+    assert response.status_code == 200
+    assert response.json()["corpus_empty"] is False

@@ -1,6 +1,13 @@
 // Lightweight fetch wrapper. Production: relative paths (same origin as the
 // FastAPI host). Dev: VITE_DASHBOARD_API_BASE_URL points at http://localhost:4001.
 
+import type {
+  AgitatorEnv,
+  RunCreateRequest,
+  RunListResponse,
+  RunRecord,
+  ScenarioSpec,
+} from "../types/agitator";
 import type { AdminOut, ApiError, LoginRequest, TokenResponse } from "../types/api";
 import type {
   LogsFilters,
@@ -80,4 +87,34 @@ export async function searchLogs(
     { method: "POST", body: JSON.stringify(body) },
     token,
   );
+}
+
+// --- PR 3: Agitator ---
+
+export async function listScenarios(token: string): Promise<ScenarioSpec[]> {
+  return request<ScenarioSpec[]>("/api/agitator/scenarios", {}, token);
+}
+
+export async function getAgitatorEnv(token: string): Promise<AgitatorEnv> {
+  return request<AgitatorEnv>("/api/agitator/env", {}, token);
+}
+
+export async function startRun(token: string, body: RunCreateRequest): Promise<RunRecord> {
+  return request<RunRecord>(
+    "/api/agitator/runs",
+    { method: "POST", body: JSON.stringify(body) },
+    token,
+  );
+}
+
+export async function listRuns(token: string): Promise<RunListResponse> {
+  return request<RunListResponse>("/api/agitator/runs", {}, token);
+}
+
+export async function getRun(token: string, runId: string): Promise<RunRecord> {
+  return request<RunRecord>(`/api/agitator/runs/${runId}`, {}, token);
+}
+
+export async function cancelRun(token: string, runId: string): Promise<RunRecord> {
+  return request<RunRecord>(`/api/agitator/runs/${runId}/cancel`, { method: "POST" }, token);
 }

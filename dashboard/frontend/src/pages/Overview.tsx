@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 
+import { EmptyCorpusBanner } from "../components/EmptyCorpusBanner";
 import { StatusCard } from "../components/StatusCard";
 import { usePolling } from "../hooks/use-polling";
 import { getStatus, HttpError } from "../lib/api";
@@ -64,6 +65,7 @@ export function Overview() {
           {error} — showing cached data
         </p>
       )}
+      {data.corpus_empty && <EmptyCorpusBanner />}
       <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="status-grid">
         {data.apps.map((app) => (
           <StatusCard key={app.name} status={app} />

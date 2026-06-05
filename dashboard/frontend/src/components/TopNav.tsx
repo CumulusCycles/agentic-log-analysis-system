@@ -32,6 +32,9 @@ export function TopNav() {
             <NavLink to="/logs" className={linkClass}>
               Log Explorer
             </NavLink>
+            <NavLink to="/log-generator" className={linkClass}>
+              Log Generator
+            </NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm">
