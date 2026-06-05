@@ -11,8 +11,10 @@ import org.springframework.context.annotation.Configuration;
 public class WebConfig {
 
     @Bean
-    public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterRegistration(AppProperties props, ObjectMapper objectMapper) {
-        FilterRegistrationBean<JwtAuthenticationFilter> reg = new FilterRegistrationBean<>(new JwtAuthenticationFilter(props, objectMapper));
+    public FilterRegistrationBean<JwtAuthenticationFilter> jwtFilterRegistration(
+            AppProperties props, ObjectMapper objectMapper) {
+        FilterRegistrationBean<JwtAuthenticationFilter> reg =
+                new FilterRegistrationBean<>(new JwtAuthenticationFilter(props, objectMapper));
         reg.addUrlPatterns("/api/*");
         reg.setOrder(1);
         return reg;

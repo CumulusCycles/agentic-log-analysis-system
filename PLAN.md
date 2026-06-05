@@ -321,6 +321,7 @@ without manual clicking. Designed 2026-06-04 (memory:
 | PR | Scope | Status |
 |---|---|---|
 | **PR 1** | Cross-app `X-Source` header convention — each app's request-logger middleware reads `X-Source` (default `prod`); Playwright configs set `X-Source: test`; ADR-011; parser precedence updated so health-path beats explicit. | ✅ |
+| **PR 1.5** | Agent Portal — vendor Google Java Style ruleset to `apps/agent-portal/checkstyle.xml`, declare `maven-checkstyle-plugin` in `pom.xml` and bind to `verify` phase so `./mvnw -B verify` (the CI command) enforces it; pin `checkstyle 10.20.2` in the plugin dependency; AP code style cleanup. | ✅ |
 | **PR 2** | Chaos middleware — each app gains a thin `X-Chaos: <directive>` middleware gated by `ENABLE_CHAOS=true` (default off). Enables cross-app cascade scenarios. | ⬜ |
 | **PR 3** | Agitator — bundled INTO the dashboard at `dashboard/src/log_dashboard/agitator/` + new screen `LogGenerator.tsx`. Operator-button-only bounded scenarios (auth-spike, payload-fuzz, policy-not-found, claim-burst, sda-degraded). `DASHBOARD_INGEST_SOURCES` default widens to `prod,synthetic`. | ⬜ |
 | **PR 4** | Phase 7e — LangGraph agent + AI Chat + Error Detail (the LLM slice that closes Phase 7). | ⬜ |
