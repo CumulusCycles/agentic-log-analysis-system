@@ -77,7 +77,7 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **HTTP/1.1 only:** the Spring `RestClient` that calls SDA is pinned to `HttpClient.Version.HTTP_1_1` — uvicorn (SDA's ASGI server) does not support HTTP/2 cleartext upgrade and rejects h2c attempts with `"Unsupported upgrade request"` / 400 before the body reaches pydantic.
 
-**Checkstyle:** project ruleset at `apps/agent-portal/checkstyle.xml` (Google Java Style — checkstyle-10.20.2 — with overrides: 4-space indentation, 120-char line length, allowedAbbreviationLength=4, no required Javadoc on types/methods). Declared in `pom.xml` with `maven-checkstyle-plugin 3.6.0` pinned to `checkstyle 10.20.2`, bound to the `verify` Maven phase — so `./mvnw -B verify` (the CI command in `.github/workflows/ci-agent-portal.yml`) enforces it on every PR.
+**Checkstyle:** project ruleset at `apps/agent-portal/checkstyle.xml` (Google Java Style — checkstyle-10.20.2 — with overrides: 4-space indentation, 120-char line length, allowedAbbreviationLength=4, no required Javadoc on types/methods). Declared in `pom.xml` with `maven-checkstyle-plugin 3.6.0` pinned to `checkstyle 10.20.2`, bound to the `verify` Maven phase — so `./mvnw -B verify` (the CI command in the `agent-portal` job of `.github/workflows/ci.yml`) enforces it on every PR.
 
 ---
 
@@ -104,4 +104,4 @@ Keep UI minimal — just enough screens to look and feel real.
 - Environment variables via `.env` — never hardcoded
 - Seed data will load on startup if the DB is empty — idempotent (Shared Data API only — the other apps have no DB)
 - **TypeScript module naming (all React apps):** `kebab-case.ts` for non-component modules and utilities; React components use `PascalCase.tsx`
-- **Node formatting (all Node packages):** prettier 3.x — root `.prettierrc.json` (`printWidth: 100`, `endOfLine: lf`); each package declares `prettier` in `devDependencies` + `format` (`prettier --write .`) and `format:check` (`prettier --check .`) scripts; each `ci-*.yml` runs `pnpm format:check` after `pnpm lint`
+- **Node formatting (all Node packages):** prettier 3.x — root `.prettierrc.json` (`printWidth: 100`, `endOfLine: lf`); each package declares `prettier` in `devDependencies` + `format` (`prettier --write .`) and `format:check` (`prettier --check .`) scripts; the relevant per-app job in `.github/workflows/ci.yml` runs `pnpm format:check` after `pnpm lint`

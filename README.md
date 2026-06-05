@@ -1,6 +1,6 @@
 # Agentic Log Analysis System
 
-![shared-data-api](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-shared-data-api.yml?branch=main&label=shared-data-api) ![fnol](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-fnol.yml?branch=main&label=fnol) ![customer-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-customer-portal.yml?branch=main&label=customer-portal) ![agent-portal](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-agent-portal.yml?branch=main&label=agent-portal) ![dashboard](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci-dashboard.yml?branch=main&label=dashboard)
+![ci](https://img.shields.io/github/actions/workflow/status/CumulusCycles/agentic-log-analysis-system/ci.yml?branch=main&label=ci)
 
 ![License](https://img.shields.io/badge/license-MIT-yellow) ![Platform](https://img.shields.io/badge/platform-linux%2Farm64-blue)
 
@@ -49,6 +49,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | Agitator PR 1.5 | Agent Portal — project checkstyle ruleset (Google Java Style + overrides) + CI binding via `verify` phase + code style cleanup | ✅ |
 | Agitator PR 1.75 | Node prettier format gate — root config + per-package scripts + CI binding across all 5 Node packages | ✅ |
 | Agitator PR 1.9 | Code review enhancements — `/ship` Step 1 tool-enforcement audit (`.claude/hooks/ship_audit.sh`) + agentreviewer policy (`/ultrareview` for high-stakes PRs, Opus 4.7 preference, pre-flight checks) | ✅ |
+| Agitator PR 1.95 | Consolidate CI workflows — single `ci.yml` with `paths-filter` `changes` job + 5 conditional per-app jobs; cross-cutting PRs go 5 runs → 1; README badge row collapses 5 → 1 | ✅ |
 | Agitator PR 2 | Chaos middleware (`X-Chaos` directive, `ENABLE_CHAOS` env gate) | ⬜ |
 | Agitator PR 3 | Agitator bundled into dashboard — operator-triggered bounded scenarios | ⬜ |
 | 7e | Dashboard LangGraph agent — AI Chat + Error Detail analysis (the LLM work) | ⬜ |

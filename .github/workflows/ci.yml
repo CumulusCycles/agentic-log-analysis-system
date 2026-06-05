@@ -1,0 +1,326 @@
+name: ci
+
+# Per ADR-009 (CI architecture). Single consolidated workflow with per-app jobs
+# gated by dorny/paths-filter so unchanged apps skip cleanly. Replaces the prior
+# five per-app workflows; job names preserved so branch-protection contexts
+# remain valid without a contexts-list update.
+#
+# Behavior matches the prior per-app workflows:
+#   - touch apps/<name>/**   -> only that app's job runs
+#   - touch dashboard/**     -> only dashboard's job runs
+#   - touch shared (compose, .env.example, apps.md, workflows) -> all 4 app jobs run
+#   - touch dashboard.md     -> only dashboard's job runs
+#   - touch docs / .claude (non-rules) / CLAUDE.md / PLAN.md / README.md
+#     -> workflow does not trigger at all (workflow-level paths filter)
+#
+# Skipped conditional jobs report as success to branch protection, matching
+# how the prior per-app paths-filtered workflows behaved when not triggered.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'dashboard/**'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.claude/rules/apps.md'
+      - '.claude/rules/dashboard.md'
+      - '.github/workflows/**'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/**'
+      - 'dashboard/**'
+      - 'docker-compose.yml'
+      - '.env.example'
+      - '.claude/rules/apps.md'
+      - '.claude/rules/dashboard.md'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    outputs:
+      shared-data-api: ${{ steps.filter.outputs.shared-data-api }}
+      fnol: ${{ steps.filter.outputs.fnol }}
+      customer-portal: ${{ steps.filter.outputs.customer-portal }}
+      agent-portal: ${{ steps.filter.outputs.agent-portal }}
+      dashboard: ${{ steps.filter.outputs.dashboard }}
+      shared-apps: ${{ steps.filter.outputs.shared-apps }}
+      shared-dashboard: ${{ steps.filter.outputs.shared-dashboard }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared-data-api:
+              - 'apps/shared-data-api/**'
+            fnol:
+              - 'apps/fnol/**'
+            customer-portal:
+              - 'apps/customer-portal/**'
+            agent-portal:
+              - 'apps/agent-portal/**'
+            dashboard:
+              - 'dashboard/**'
+            shared-apps:
+              - 'docker-compose.yml'
+              - '.env.example'
+              - '.claude/rules/apps.md'
+              - '.github/workflows/**'
+            shared-dashboard:
+              - 'docker-compose.yml'
+              - '.env.example'
+              - '.claude/rules/dashboard.md'
+              - '.github/workflows/**'
+
+  shared-data-api:
+    name: shared-data-api
+    needs: changes
+    if: needs.changes.outputs.shared-data-api == 'true' || needs.changes.outputs.shared-apps == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: shared-data-api-${{ github.ref }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: apps/shared-data-api
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run black --check .
+      - run: uv run pytest -q
+
+  fnol:
+    name: fnol
+    needs: changes
+    if: needs.changes.outputs.fnol == 'true' || needs.changes.outputs.shared-apps == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: fnol-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+
+      # Backend (Python / uv)
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: backend — install
+        working-directory: apps/fnol
+        run: uv sync --frozen
+      - name: backend — lint
+        working-directory: apps/fnol
+        run: |
+          uv run ruff check .
+          uv run black --check .
+      - name: backend — tests
+        working-directory: apps/fnol
+        run: uv run pytest -q
+
+      # Frontend (Node / pnpm)
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/fnol/frontend/pnpm-lock.yaml
+      - name: frontend — install
+        working-directory: apps/fnol/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: apps/fnol/frontend
+        run: pnpm lint
+      - name: frontend — format:check
+        working-directory: apps/fnol/frontend
+        run: pnpm format:check
+      - name: frontend — typecheck
+        working-directory: apps/fnol/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: apps/fnol/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: apps/fnol/frontend
+        run: pnpm test
+
+  customer-portal:
+    name: customer-portal
+    needs: changes
+    if: needs.changes.outputs.customer-portal == 'true' || needs.changes.outputs.shared-apps == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: customer-portal-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            apps/customer-portal/pnpm-lock.yaml
+            apps/customer-portal/frontend/pnpm-lock.yaml
+
+      # Backend (Node / Express + TypeScript)
+      - name: backend — install
+        working-directory: apps/customer-portal
+        run: pnpm install --frozen-lockfile
+      - name: backend — lint
+        working-directory: apps/customer-portal
+        run: pnpm lint
+      - name: backend — format:check
+        working-directory: apps/customer-portal
+        run: pnpm format:check
+      - name: backend — typecheck
+        working-directory: apps/customer-portal
+        run: pnpm typecheck
+      - name: backend — build
+        working-directory: apps/customer-portal
+        run: pnpm build
+      - name: backend — tests
+        working-directory: apps/customer-portal
+        run: pnpm test
+
+      # Frontend (Node / Vite + React)
+      - name: frontend — install
+        working-directory: apps/customer-portal/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: apps/customer-portal/frontend
+        run: pnpm lint
+      - name: frontend — format:check
+        working-directory: apps/customer-portal/frontend
+        run: pnpm format:check
+      - name: frontend — typecheck
+        working-directory: apps/customer-portal/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: apps/customer-portal/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: apps/customer-portal/frontend
+        run: pnpm test
+
+  agent-portal:
+    name: agent-portal
+    needs: changes
+    if: needs.changes.outputs.agent-portal == 'true' || needs.changes.outputs.shared-apps == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: agent-portal-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+
+      # Backend (Java 21 / Maven Wrapper)
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: backend — build + test
+        working-directory: apps/agent-portal
+        run: ./mvnw -B verify
+
+      # Frontend (Node / pnpm)
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/agent-portal/frontend/pnpm-lock.yaml
+      - name: frontend — install
+        working-directory: apps/agent-portal/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: apps/agent-portal/frontend
+        run: pnpm lint
+      - name: frontend — format:check
+        working-directory: apps/agent-portal/frontend
+        run: pnpm format:check
+      - name: frontend — typecheck
+        working-directory: apps/agent-portal/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: apps/agent-portal/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: apps/agent-portal/frontend
+        run: pnpm test
+
+  dashboard:
+    name: dashboard
+    needs: changes
+    if: needs.changes.outputs.dashboard == 'true' || needs.changes.outputs.shared-dashboard == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: dashboard-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v6
+
+      # Backend (Python / uv)
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          python-version: '3.12'
+      - name: backend — install
+        working-directory: dashboard
+        run: uv sync --frozen
+      - name: backend — lint
+        working-directory: dashboard
+        run: |
+          uv run ruff check .
+          uv run black --check .
+      - name: backend — tests
+        working-directory: dashboard
+        run: uv run pytest -q
+
+      # Frontend (Node / pnpm)
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: dashboard/frontend/pnpm-lock.yaml
+      - name: frontend — install
+        working-directory: dashboard/frontend
+        run: pnpm install --frozen-lockfile
+      - name: frontend — lint
+        working-directory: dashboard/frontend
+        run: pnpm lint
+      - name: frontend — format:check
+        working-directory: dashboard/frontend
+        run: pnpm format:check
+      - name: frontend — typecheck
+        working-directory: dashboard/frontend
+        run: pnpm typecheck
+      - name: frontend — build
+        working-directory: dashboard/frontend
+        run: pnpm build
+      - name: frontend — tests
+        working-directory: dashboard/frontend
+        run: pnpm test

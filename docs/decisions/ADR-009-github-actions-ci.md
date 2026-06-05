@@ -1,6 +1,15 @@
 # ADR-009: Adopt GitHub Actions for CI (Per-App Workflows + README Badges)
 
-**Status:** Accepted
+**Status:** Superseded by [ADR-012](ADR-012-consolidate-ci-workflows.md) — 2026-06-05
+
+ADR-012 consolidates the five per-app workflow files into a single
+`.github/workflows/ci.yml` with `dorny/paths-filter@v3` gating per-app jobs,
+and collapses the five per-app README badges into one `ci` badge. ADR-009's
+decisions 2, 3, 4, 5, 6, 7 (path filtering, one job per app, no E2E, GH token
+posture, dashboard timing) carry forward into ADR-012. Decisions 1 (per-app
+files) and 8 (per-app badges) are reversed.
+
+Original decisions retained below for historical context.
 
 ## Decisions
 
