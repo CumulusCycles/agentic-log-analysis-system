@@ -48,7 +48,7 @@ Detailed rules are in `.claude/rules/`:
 - **One app at a time:** Fully scaffold and verify one app before moving to the next
 - **ARM64:** All Docker images must be ARM64-compatible (M1 Max host)
 - **No cloud deployment for the apps:** Local Docker Compose only — no AWS, CDK, no remote app hosting
-- **CI:** GitHub Actions runs lint + unit tests + build on every PR. One workflow file per app (`.github/workflows/ci-*.yml`); see ADR-009. E2E stays local via `/ship`.
+- **CI:** GitHub Actions runs lint + unit tests + build on every PR via a single consolidated `.github/workflows/ci.yml` — `dorny/paths-filter@v3` `changes` job + 5 conditional per-app jobs (`shared-data-api`, `fnol`, `customer-portal`, `agent-portal`, `dashboard`). See ADR-012 (supersedes ADR-009). E2E stays local via `/ship`.
 - **GitHub operations:** Always use `gh` CLI
 
 ---

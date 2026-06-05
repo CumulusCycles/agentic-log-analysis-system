@@ -44,7 +44,7 @@ These Claude Code hooks run automatically in the background — no action requir
 
 ### `.claude/hooks/ship_audit.sh`
 - **When:** Step 1 of `/ship` (before doc check), and runnable standalone
-- **What it does:** Fails closed if any tool prescribed by `/ship` or `/lint` is not bound in CI — Node `format:check` script + `prettier` devDep, Python `[tool.ruff]` + `[tool.black]` in every `pyproject.toml`, Java `maven-checkstyle-plugin` bound to a Maven phase in `pom.xml`, and each per-app `ci-*.yml` actually invokes those commands
+- **What it does:** Fails closed if any tool prescribed by `/ship` or `/lint` is not bound in CI — Node `format:check` script + `prettier` devDep, Python `[tool.ruff]` + `[tool.black]` in every `pyproject.toml`, Java `maven-checkstyle-plugin` bound to a Maven phase in `pom.xml`, and the consolidated `.github/workflows/ci.yml` actually invoking those commands
 - **Why:** PR #29 (211 dormant AP checkstyle violations) and PR #30 (Node `format:check` listed in `/ship` but no package.json declared it) both surfaced the same root cause — a tool prescribed in a process doc that CI never enforces accumulates silent drift. The audit catches that pattern at ship time, not months later
 - **No `--skip` flag** by design (per `feedback_dormant_lint_tools`)
 
@@ -151,7 +151,7 @@ When you run `/ship`, Claude Code executes this entire sequence:
    ├─ Node packages: format:check + prettier devDep present
    ├─ Python: ruff + black configured in every pyproject.toml
    ├─ Java: maven-checkstyle-plugin bound to a Maven phase
-   └─ Every per-app ci-*.yml invokes the tools /ship prescribes
+   └─ Consolidated .github/workflows/ci.yml invokes the tools /ship prescribes
    (fails closed; no --skip flag)
 
 2. Pre-Ship Documentation Check

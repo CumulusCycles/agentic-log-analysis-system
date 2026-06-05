@@ -60,22 +60,21 @@ else
   FAIL "$AP_POM does not exist"
 fi
 
-# 4. CI workflows enforce what /ship prescribes
-NODE_CI_WORKFLOWS=(
-  .github/workflows/ci-fnol.yml
-  .github/workflows/ci-customer-portal.yml
-  .github/workflows/ci-agent-portal.yml
-  .github/workflows/ci-dashboard.yml
-)
-for wf in "${NODE_CI_WORKFLOWS[@]}"; do
-  [ -f "$wf" ] || { FAIL "$wf does not exist"; continue; }
-  grep -q "format:check" "$wf" || FAIL "format:check step in $wf"
-done
-
-AP_CI=.github/workflows/ci-agent-portal.yml
-if [ -f "$AP_CI" ]; then
-  grep -qE 'mvn(w)?[^A-Za-z].*verify' "$AP_CI" \
-    || FAIL "mvn verify step in $AP_CI"
+# 4. CI workflow enforces what /ship prescribes
+# Per ADR-012, CI is consolidated into a single .github/workflows/ci.yml with
+# per-app conditional jobs. format:check appears in 4 Node-using jobs (FNOL,
+# Customer Portal, Agent Portal, dashboard); mvn verify appears in the
+# agent-portal job. Checking for at least one occurrence of each is sufficient
+# — if any per-app job's step were missing format:check, this script would
+# need to grow per-job assertions, but a missing top-level step is the more
+# common drift pattern.
+CI_WORKFLOW=.github/workflows/ci.yml
+if [ -f "$CI_WORKFLOW" ]; then
+  grep -q 'format:check' "$CI_WORKFLOW" || FAIL "format:check step in $CI_WORKFLOW"
+  grep -qE 'mvn(w)?[^A-Za-z].*verify' "$CI_WORKFLOW" \
+    || FAIL "mvn verify step in $CI_WORKFLOW"
+else
+  FAIL "$CI_WORKFLOW does not exist"
 fi
 
 # Result

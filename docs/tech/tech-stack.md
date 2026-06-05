@@ -63,17 +63,17 @@ See ADR-006 for the strategy. Library choices per stack:
 | Router | `react-router-dom` v6 |
 | HTTP | `fetch` (no axios) |
 | Linter | ESLint 9 (flat config) + `typescript-eslint` + `eslint-plugin-react-hooks` + `eslint-plugin-react-refresh` |
-| Formatter | Prettier 3 (root `.prettierrc.json` — `printWidth: 100`, `endOfLine: lf`) — each Node package declares `prettier` + `format` / `format:check` scripts; enforced by per-app `ci-*.yml` |
+| Formatter | Prettier 3 (root `.prettierrc.json` — `printWidth: 100`, `endOfLine: lf`) — each Node package declares `prettier` + `format` / `format:check` scripts; enforced by the per-app jobs in `.github/workflows/ci.yml` |
 
 ## Backend Linting
 
 | App | Linter | Config | CI binding |
 |---|---|---|---|
-| Shared Data API | ruff + black | `pyproject.toml` | `ci-shared-data-api.yml` |
-| FNOL | ruff + black | `pyproject.toml` | `ci-fnol.yml` |
-| Customer Portal | ESLint 9 (flat config) | `eslint.config.js` | `ci-customer-portal.yml` |
-| Agent Portal | maven-checkstyle-plugin 3.6.0 (pinned to checkstyle 10.20.2) | `apps/agent-portal/checkstyle.xml` — Google Java Style + project overrides (4-space indent, 120-char lines, allowedAbbreviationLength=4) | Bound to `verify` Maven phase → enforced by `ci-agent-portal.yml`'s `./mvnw -B verify` |
-| Dashboard (backend) | ruff + black | `pyproject.toml` | `ci-dashboard.yml` |
+| Shared Data API | ruff + black | `pyproject.toml` | `ci.yml` → `shared-data-api` job |
+| FNOL | ruff + black | `pyproject.toml` | `ci.yml` → `fnol` job |
+| Customer Portal | ESLint 9 (flat config) | `eslint.config.js` | `ci.yml` → `customer-portal` job |
+| Agent Portal | maven-checkstyle-plugin 3.6.0 (pinned to checkstyle 10.20.2) | `apps/agent-portal/checkstyle.xml` — Google Java Style + project overrides (4-space indent, 120-char lines, allowedAbbreviationLength=4) | Bound to `verify` Maven phase → enforced by `ci.yml` → `agent-portal` job's `./mvnw -B verify` |
+| Dashboard (backend) | ruff + black | `pyproject.toml` | `ci.yml` → `dashboard` job |
 
 ## Testing
 

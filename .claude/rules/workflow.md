@@ -50,7 +50,7 @@
 - `.claude/hooks/pre_bash_guard.sh` — blocks dangerous commands
 - `.claude/hooks/post_format.sh` — auto-formats Python, JS/TS, JSON after file save
 - `.claude/hooks/post_compose_validate.sh` — validates docker-compose.yml after edits
-- `.claude/hooks/ship_audit.sh` — invoked as `/ship` Step 1; fails closed if any tool prescribed by `/ship` or `/lint` is not bound in CI (Node `format:check`, Python `ruff`+`black`, Java `maven-checkstyle-plugin` phase binding, per-app `ci-*.yml` enforcement). No `--skip` flag by design. Why: PRs #29 and #30 both surfaced dormant gates — tools in process docs that CI never ran.
+- `.claude/hooks/ship_audit.sh` — invoked as `/ship` Step 1; fails closed if any tool prescribed by `/ship` or `/lint` is not bound in CI (Node `format:check`, Python `ruff`+`black`, Java `maven-checkstyle-plugin` phase binding, and the consolidated `.github/workflows/ci.yml` actually invoking them). No `--skip` flag by design. Why: PRs #29 and #30 both surfaced dormant gates — tools in process docs that CI never ran.
 
 ---
 
