@@ -307,7 +307,9 @@ entry.
 | **7b** | Log ingestion — read the 4 mounted volumes, parse each native format to a common shape, expose paginated/filterable `/api/logs` + `/api/status` | ✅ |
 | **7c** | UI for the two non-AI screens — Overview Dashboard + Log Explorer wired to 7b's endpoints | ✅ |
 | **7d** | Chroma + embeddings pipeline — vector-store-backed semantic search via `POST /api/logs/search`. WARN+ERROR / source=prod ingest filter, content-hash dedup, `DASHBOARD_INGEST_DRY_RUN` cost kill-switch, watcher + backfill respect both. | ✅ |
-| **7e** | LangGraph agent (StateGraph: ingest → analyze → correlate → predict → respond) + AI Chat + Error Detail analysis panel | ⬜ |
+| **7e-PR4a** | LangGraph agent (StateGraph: ingest → analyze → correlate → predict → respond) + `POST /api/chat` + AI Chat UI + safe-by-default dry-run + credential redaction + LangSmith metadata. Bundled cross-cutting fix: X-Source propagation across all 4 apps (`structlog.contextvars` in SDA/FNOL, `AsyncLocalStorage` in CP, SLF4J `MDC` in AP) + outbound HTTP-client forwarding (FNOL/CP/AP → SDA carry the inbound source) + parser default → `unknown` so propagation gaps are operator-visible. Resolves the corpus mislabeling where 100% of WARN entries were tagged `prod` regardless of true origin. | ✅ |
+| **7e-PR4b** | `GET /api/errors/{id}` + Error Detail UI; threads the agent into the Suggested Fix panel; optional SSE streaming on `/api/chat` | ⬜ |
+| **7e-PR4c** | Proactive background scan (every N minutes) — surfaces anomalies automatically | ⬜ |
 
 ---
 
@@ -327,4 +329,6 @@ without manual clicking. Designed 2026-06-04 (memory:
 | **PR 1.95** | Consolidate CI workflows — replace 5 per-app `.github/workflows/ci-*.yml` files with a single `.github/workflows/ci.yml` containing a `dorny/paths-filter@v3` `changes` job + 5 conditional per-app jobs (same names, same steps, per-job concurrency). README badge row collapses 5 → 1. Cross-cutting PRs go from 5 workflow runs to 1; per-app PRs stay at 1. Memory updated for new branch-protection check names (`ci / <app>` prefix). No app code touched. | ✅ |
 | **PR 2** | Chaos middleware — each of the 4 monitored apps (SDA/FNOL/CP/AP; dashboard exempt) gains a thin `X-Chaos: <directive>` middleware gated by `ENABLE_CHAOS=true` (default off). Directive grammar: `slow:<ms>` (0..60000) + `error:<status>` (400..599). Logs `chaos_honored` / `chaos_directive_invalid` at WARN so dashboard ingest picks them up. AP filter scoped to `/api/*` so `/actuator/health` is never chaosed. ADR-013. 20 new unit tests across the 4 apps. **First real exercise of agentreviewer** per the policy. | ✅ |
 | **PR 3** | Agitator — bundled INTO the dashboard at `dashboard/src/log_dashboard/agitator/` + new screen `LogGenerator.tsx`. Operator-button-only bounded scenarios (auth-spike, payload-fuzz, policy-not-found, claim-burst, sda-degraded). `DASHBOARD_INGEST_SOURCES` default widens to `prod,synthetic`. ADR-014. 33 new dashboard backend tests + 10 new frontend tests. | ✅ |
-| **PR 4** | Phase 7e — LangGraph agent + AI Chat + Error Detail (the LLM slice that closes Phase 7). | ⬜ |
+| **PR 4** | Phase 7e first slice — LangGraph StateGraph + `POST /api/chat` + AI Chat UI; deferred to PR 4b (Error Detail) and PR 4c (proactive scan). ADR-015. ~30 new backend tests + 7 new frontend tests. Safe-by-default `DASHBOARD_LLM_DRY_RUN=true`. | ✅ |
+| **PR 4b** | Phase 7e second slice — `GET /api/errors/{id}` + Error Detail UI. Threads the agent into the Suggested Fix panel; optional SSE streaming on `/api/chat`. | ⬜ |
+| **PR 4c** | Phase 7e final slice — proactive background scan (every N minutes). Surfaces anomalies automatically through the existing agent graph + tool surface. | ⬜ |

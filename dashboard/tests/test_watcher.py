@@ -37,7 +37,7 @@ def _settings(volume_root: Path) -> Settings:
         log_volume_root=volume_root,
         embedding_batch_size=50,
         dashboard_ingest_levels=frozenset(LogLevel),
-        dashboard_ingest_sources=frozenset({"prod", "health", "test"}),
+        dashboard_ingest_sources=frozenset({"prod", "health", "test", "unknown"}),
     )
 
 

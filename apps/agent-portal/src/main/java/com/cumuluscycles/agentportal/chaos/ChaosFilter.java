@@ -55,8 +55,9 @@ public class ChaosFilter extends OncePerRequestFilter {
         }
         Directive parsed = parse(directive);
         if (parsed == null) {
-            log.warn("chaos_directive_invalid directive_raw={} reason=malformed method={} path={}",
-                    directive, request.getMethod(), request.getRequestURI());
+            log.warn("chaos_directive_invalid directive_raw={} reason=malformed method={} path={} source={}",
+                    directive, request.getMethod(), request.getRequestURI(),
+                    com.cumuluscycles.agentportal.logging.SourceContext.currentSource());
             respond(response, 400, Map.of("detail", "invalid X-Chaos directive: " + directive));
             return;
         }
@@ -69,13 +70,15 @@ public class ChaosFilter extends OncePerRequestFilter {
                 respond(response, 500, Map.of("detail", "chaos interrupted"));
                 return;
             }
-            log.warn("chaos_honored directive={} delay_ms={} method={} path={}",
-                    directive, parsed.n(), request.getMethod(), request.getRequestURI());
+            log.warn("chaos_honored directive={} delay_ms={} method={} path={} source={}",
+                    directive, parsed.n(), request.getMethod(), request.getRequestURI(),
+                    com.cumuluscycles.agentportal.logging.SourceContext.currentSource());
             chain.doFilter(request, response);
             return;
         }
-        log.warn("chaos_honored directive={} status={} method={} path={}",
-                directive, parsed.n(), request.getMethod(), request.getRequestURI());
+        log.warn("chaos_honored directive={} status={} method={} path={} source={}",
+                directive, parsed.n(), request.getMethod(), request.getRequestURI(),
+                com.cumuluscycles.agentportal.logging.SourceContext.currentSource());
         respond(response, parsed.n(), Map.of("detail", "chaos"));
     }
 

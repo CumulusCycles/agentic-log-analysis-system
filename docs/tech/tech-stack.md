@@ -14,11 +14,15 @@
 
 | Component | Technology |
 |---|---|
-| Agent framework | LangChain + LangGraph |
-| LLM (analysis) | OpenAI `gpt-4o` |
+| Agent framework | LangChain 1.x + LangGraph 1.x |
+| Agent state schema | `langgraph.graph.MessagesState` extended with custom keys |
+| Agent checkpointer (PR 4a) | `langgraph.checkpoint.memory.InMemorySaver` — process-local, restart-lossy by design (ADR-015) |
+| Tool dispatch (PR 4a) | Manual — no `langgraph.prebuilt.ToolNode` (see ADR-015 §3) |
+| LLM (analysis) | OpenAI `gpt-4o` (real) / `dashboard.agent.llm._DryRunChatModel` (dry-run) |
 | Embeddings | OpenAI `text-embedding-3-small` |
 | Vector store | Chroma (persistent) |
-| Observability | LangSmith |
+| Token counting (cost cap) | `tiktoken` against `gpt-4o`'s `o200k_base` encoding |
+| Observability | LangSmith — per-invocation metadata: `{session_id, jwt_sub, dry_run}` |
 
 ## Auth & Security
 

@@ -8,6 +8,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .agent.graph import build_agent_graph
+from .agent.sessions import SessionIndex
 from .agitator.runs import RunRegistry
 from .auth.password import hash_password
 from .config import get_settings
@@ -24,7 +26,7 @@ from .ingest.vectorstore import (
 )
 from .ingest.watcher import LogVolumeWatcher
 from .logging_setup import configure_logging, get_logger
-from .routers import agitator, auth, health, logs, search, status
+from .routers import agitator, auth, chat, health, logs, search, status
 
 # Paths FastAPI auto-mounts that the SPA catch-all MUST NOT intercept.
 # Swagger UI is intentionally exposed per ADR-001 — the dashboard's audience
@@ -97,6 +99,20 @@ def create_app() -> FastAPI:
             app.state.vectorstore = build_vectorstore(settings)
             backfill_task = asyncio.create_task(_backfill_and_start_watcher(app))
 
+        # Phase 7e (PR 4a): LangGraph agent + /api/chat. The graph and its
+        # InMemorySaver checkpointer + SessionIndex are built unconditionally
+        # — `vectorstore=None` is permitted so the chat route still responds
+        # in degraded mode (the `query_logs` tool returns a tool_error).
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        agent_checkpointer = InMemorySaver()
+        app.state.session_index = SessionIndex(
+            checkpointer=agent_checkpointer, max_entries=settings.session_index_max
+        )
+        app.state.agent_graph = build_agent_graph(
+            settings, app.state.vectorstore, agent_checkpointer
+        )
+
         log.info("startup_complete")
         yield
 
@@ -106,6 +122,9 @@ def create_app() -> FastAPI:
             app.state.watcher.stop()
         # Drain any in-flight Agitator runs so shutdown is clean.
         await app.state.agitator_runs.cancel_all()
+        # Drop every tracked LangGraph thread so the in-process checkpointer
+        # is empty on next start.
+        await app.state.session_index.aclose()
 
     app = FastAPI(
         title="Agentic Log Analysis Dashboard",
@@ -123,6 +142,7 @@ def create_app() -> FastAPI:
     app.include_router(status.router, prefix="/api")
     app.include_router(search.router, prefix="/api")
     app.include_router(agitator.router, prefix="/api/agitator")
+    app.include_router(chat.router, prefix="/api")
 
     # Static React build — mounted under /assets/ for hashed bundles, with a
     # catch-all GET that serves index.html for every other unknown path so the

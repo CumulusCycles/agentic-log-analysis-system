@@ -1,8 +1,9 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from .schemas import LogLevel
 
@@ -61,18 +62,32 @@ class Settings(BaseSettings):
     # log line is ever embedded twice.
 
     # Level filter — drop everything below WARN by default.
-    dashboard_ingest_levels: frozenset[LogLevel] = Field(
+    # `NoDecode` stops pydantic-settings from JSON-parsing the env value
+    # before our `field_validator(mode="before")` gets to split the CSV.
+    # Without it, langgraph 1.x's typing-extensions bump made pydantic-
+    # settings try `json.loads("WARN,ERROR")` first and crash at startup.
+    dashboard_ingest_levels: Annotated[frozenset[LogLevel], NoDecode] = Field(
         default=frozenset({LogLevel.WARN, LogLevel.ERROR}),
         alias="DASHBOARD_INGEST_LEVELS",
     )
 
-    # Source filter — embed prod- and synthetic-tagged entries by default.
-    # "health"    → /health, /api/health, /actuator/health (parser detects)
-    # "test"      → Playwright suites (per ADR-011); excluded by default
-    # "synthetic" → Agitator-generated traffic (ADR-014); included by default
-    # "prod"      → everything else (parser default)
-    dashboard_ingest_sources: frozenset[str] = Field(
-        default=frozenset({"prod", "synthetic"}),
+    # Source filter — embed prod-, synthetic-, and unknown-tagged entries
+    # by default. Source values come from each app's per-request middleware
+    # via `structlog.contextvars` (SDA/FNOL), `AsyncLocalStorage` (CP), or
+    # SLF4J `MDC` (AP), propagated cross-app via the outbound HTTP clients
+    # forwarding `X-Source`. Vocabulary:
+    #
+    # "health"    → /health, /api/health, /actuator/health (parser-derived;
+    #               immutable, header cannot override)
+    # "test"      → Playwright suites (extraHTTPHeaders set X-Source: test);
+    #               excluded by default so E2E noise stays out of Chroma
+    # "synthetic" → Agitator-generated traffic (ADR-014); included
+    # "prod"      → real-user traffic (default when no header is supplied)
+    # "unknown"   → parser fallback when no source field is present; admitted
+    #               so the operator can spot leaks in propagation. Once the
+    #               chain is rock-solid this should approach zero in Chroma.
+    dashboard_ingest_sources: Annotated[frozenset[str], NoDecode] = Field(
+        default=frozenset({"prod", "synthetic", "unknown"}),
         alias="DASHBOARD_INGEST_SOURCES",
     )
 
@@ -105,6 +120,35 @@ class Settings(BaseSettings):
     langsmith_project: str = Field(
         default="agentic-log-analysis",
         alias="LANGSMITH_PROJECT",
+    )
+
+    # --- Phase 7e (PR 4a): LangGraph agent + /api/chat ---
+    #
+    # `dashboard_llm_dry_run` defaults to True — safe-by-default. With dry-run on,
+    # `analyze`/`predict` nodes use GenericFakeChatModel instead of ChatOpenAI;
+    # no OpenAI call is ever made. Operator opts INTO paid spend by setting
+    # DASHBOARD_LLM_DRY_RUN=false in `.env`. Cost-safety asymmetry: a forgotten
+    # env var that defaults to spend is unrecoverable + pollutes LangSmith;
+    # a forgotten env var that defaults to dry-run is a one-line `.env` edit.
+    # Tests inherit dry-run automatically — the Settings default IS dry-run.
+    dashboard_llm_dry_run: bool = Field(default=True, alias="DASHBOARD_LLM_DRY_RUN")
+
+    # Cost-bounding caps — all enforced in-graph, deterministic, no advisory
+    # middleware. Each is a single integer comparison.
+    llm_max_tool_calls_per_request: int = Field(
+        default=4, alias="DASHBOARD_LLM_MAX_TOOL_CALLS_PER_REQUEST", ge=1, le=20
+    )
+    llm_max_input_tokens_per_request: int = Field(
+        default=8000, alias="DASHBOARD_LLM_MAX_INPUT_TOKENS_PER_REQUEST", ge=512, le=64_000
+    )
+    llm_max_messages_per_session: int = Field(
+        default=40, alias="DASHBOARD_LLM_MAX_MESSAGES_PER_SESSION", ge=2, le=200
+    )
+
+    # SessionIndex bounds the in-process LRU of `thread_id` checkpoints. When
+    # the cap is hit, the oldest thread is evicted via `checkpointer.adelete_thread`.
+    session_index_max: int = Field(
+        default=200, alias="DASHBOARD_SESSION_INDEX_MAX", ge=10, le=10_000
     )
 
     # --- Phase 7b: log ingestion ---

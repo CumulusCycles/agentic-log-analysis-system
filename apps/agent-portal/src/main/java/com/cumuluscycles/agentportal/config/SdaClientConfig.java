@@ -1,5 +1,6 @@
 package com.cumuluscycles.agentportal.config;
 
+import com.cumuluscycles.agentportal.logging.SourceContext;
 import com.cumuluscycles.agentportal.sda.SdaClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.http.HttpClient;
@@ -30,6 +31,14 @@ public class SdaClientConfig {
         RestClient http = RestClient.builder()
                 .baseUrl(props.sharedDataApi().baseUrl())
                 .defaultHeader("X-API-Key", props.sharedDataApi().apiKey())
+                // Forward the inbound request's `X-Source` so SDA tags any
+                // WARN/ERROR it emits with the original source. Reads MDC
+                // (bound by `RequestLoggingFilter`) per call so the value
+                // reflects the active request, not the bean's construction.
+                .requestInterceptor((request, body, execution) -> {
+                    request.getHeaders().set("X-Source", SourceContext.currentSource());
+                    return execution.execute(request, body);
+                })
                 .requestFactory(factory)
                 .build();
         return new SdaClient(http, mapper);

@@ -98,8 +98,8 @@ Routes land incrementally:
 | `GET` | `/api/agitator/runs` | List recent (up to 50) Agitator runs | PR 3 ✅ |
 | `GET` | `/api/agitator/runs/{run_id}` | Poll one run's counters | PR 3 ✅ |
 | `POST` | `/api/agitator/runs/{run_id}/cancel` | Cancel an in-flight run | PR 3 ✅ |
-| `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response | 7e |
-| `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis | 7e |
+| `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response | 7e (PR 4a) ✅ |
+| `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis | 7e (PR 4b) |
 
 Swagger UI (`/docs`, `/redoc`, `/openapi.json`) is exposed — the dashboard's
 audience is the admin/operator, and Swagger is a strict diagnostic win.
@@ -164,6 +164,30 @@ ADR-014.
 `/api/status` gains a `corpus_empty: bool` flag (Chroma count == 0 with
 the vectorstore wired up). The Overview UI shows a one-line banner with
 a "Open Log Generator" link when true.
+
+---
+
+## LangGraph Agent (PR 4a ✅)
+
+Phase 7e's first slice — `POST /api/chat` + AI Chat UI. ADR-015 captures
+the design rationale.
+
+| Invariant | Why |
+|---|---|
+| 5-node StateGraph named per `.claude/rules/dashboard.md:24`: ingest → analyze → correlate → predict → respond | Rule-driven naming + standard agent loop underneath |
+| Tools: `query_logs` (Chroma) + `get_app_status` — DI'd via `build_tools(settings, vectorstore)` at compile time | No globals; tools degrade gracefully when `vectorstore=None` |
+| `correlate` dispatches tools manually (not `langgraph.prebuilt.ToolNode`) | ToolNode needs LangGraph's internal runtime context; manual dispatch is ~20 lines + fully testable |
+| Session memory: `langgraph.checkpoint.memory.InMemorySaver`, thread_id = `{jwt_sub}:{session_id}` | Matches RunRegistry's stateless-by-design stance; restart-lossy on purpose |
+| `SessionIndex` LRU (default cap 200) evicts oldest via `adelete_thread` | Bounds in-process memory growth; eviction failures swallowed |
+| `DASHBOARD_LLM_DRY_RUN=true` is the **default** (safe-by-default) | Cost-safety asymmetry — see ADR-015 §5 |
+| Dry-run uses a custom `_DryRunChatModel` (subclass of `BaseChatModel`) that scripts: tool_call → ToolMessage → canned final answer | Exercises the FULL graph topology in tests without any network call |
+| `analyze` + `predict` share `_invoke_llm_with_tools`; separate nodes only for the rule's 5-name palette | Single implementation, two graph slots, no duplicated logic |
+| Non-streaming `POST /api/chat`; `streaming: true` is 422'd (forward-compat for PR 4b SSE) | Keeps test surface clean; the contract is additive |
+| Cost caps (3): `LLM_MAX_TOOL_CALLS_PER_REQUEST=4`, `LLM_MAX_INPUT_TOKENS_PER_REQUEST=8000` (tiktoken `o200k_base`), `LLM_MAX_MESSAGES_PER_SESSION=40` | Deterministic in-graph bounds; no advisory middleware |
+| Credential redaction in NEW `credentials.py` — `sanitize_user_input` + `sanitize_log_raw` cover Bearer/X-API-Key/password/JWT-shape/DSN | Defence-in-depth at BOTH input (router + ingest_node) AND output (tool `raw` field) |
+| Agitator's `_sanitize_error` is **NOT** modified in this PR — dedupe deferred to a follow-up chore PR | Scope discipline per `feedback_remediation_pr_granularity` |
+| LangSmith metadata: every `ainvoke` carries `{session_id, jwt_sub, dry_run}` | Filterable in LangSmith UI |
+| Proactive-loop background scan is deferred to **PR 4c** — no stub shipped in 4a | Avoids dead-code YAGNI; ~3 lines of lifespan glue in PR 4c |
 
 ---
 
