@@ -158,8 +158,22 @@ def test_structlog_health_request_is_tagged_source_health() -> None:
     assert "source" not in entry.fields  # tag lives on LogEntry, not in fields
 
 
-def test_structlog_regular_request_is_tagged_source_prod() -> None:
+def test_structlog_request_missing_source_field_is_tagged_unknown() -> None:
+    """A request line without an explicit `source` field is tagged `unknown`
+    after the Phase 7e source-propagation slice — the X-Source chain now
+    ships end-to-end across all 4 apps, so missing source is a code smell,
+    not a happy-path default. Operator-visible in the UI; admitted through
+    the gate by default so leaks stay observable."""
     line = _structlog_line(event="request", path="/policies/me", status=200)
+    entry = parse_structlog_line(app="shared-data-api", seq=0, line=line)
+    assert entry is not None
+    assert entry.source == "unknown"
+
+
+def test_structlog_request_with_explicit_source_prod_is_tagged_prod() -> None:
+    """A request line WITH `source=prod` from the middleware (the normal
+    real-user case) is tagged `prod`."""
+    line = _structlog_line(event="request", path="/policies/me", status=200, source="prod")
     entry = parse_structlog_line(app="shared-data-api", seq=0, line=line)
     assert entry is not None
     assert entry.source == "prod"

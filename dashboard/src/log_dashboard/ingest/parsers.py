@@ -49,17 +49,23 @@ def _infer_source(
     Precedence:
       1. If the line is a healthcheck request, tag `health` — this is an
          immutable property of the request that no header can override.
-         Required so PR 1's app-side default `source=prod` doesn't cause
-         healthcheck heartbeat to leak into Chroma.
       2. Otherwise honour the explicit `source` value (set by each app's
-         request-logger middleware from `X-Source` per ADR-011).
-      3. Fall back to `prod` (the default — real app traffic).
+         request-logger middleware via `structlog.contextvars` /
+         `AsyncLocalStorage` / `MDC` from the inbound `X-Source` per ADR-011
+         — propagated cross-app via the outbound HTTP clients).
+      3. Fall back to `unknown`. Missing source is a code smell once the
+         X-Source propagation chain ships everywhere — usually a non-request
+         event (startup / scheduled task) or a regression in one of the
+         per-app logging plumbings. The dashboard surfaces `unknown` in the
+         UI so the operator can spot leaks; the ingest gate admits it
+         alongside `prod`/`synthetic` (`DASHBOARD_INGEST_SOURCES` default
+         widens to include `unknown` so visibility is preserved).
     """
     if event == "request" and isinstance(path, str) and path in _HEALTH_PATHS:
         return "health"
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip().lower()
-    return "prod"
+    return "unknown"
 
 
 def _normalize_level(raw: str | None) -> LogLevel | None:

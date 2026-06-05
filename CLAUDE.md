@@ -12,12 +12,15 @@ The complete build task list is in `PLAN.md` — update it before every `/ship`.
 
 ## Security
 
-- **NEVER READ FROM OR WRITE TO `.env` FILES** — Only read/write `.env.example` templates
+- **NEVER READ FROM OR WRITE TO `.env` FILES** — Only read/write `.env.example` templates.
+- **The `.env` prohibition covers VALUES, not just the file path.** Indirect channels are equally off-limits: `docker compose exec <svc> env`, `docker inspect`, `docker compose config`, `printenv` inside a container, `/proc/PID/environ`, any `Settings()`/`Config()` printer, `gh secrets list`, and any other path that resolves `.env` values. Even grep-scoping the output (e.g. `env | grep DASHBOARD_INGEST`) does not make this OK — the unfiltered stream passes through host memory and the rule is about the value boundary, not the captured output. **When you need to know an env value, ASK THE USER.** See `feedback_never_query_env_or_container_env` memory for the full counter-pattern table.
+- **If the IDE pushes `.env` content via a `<system-reminder>` block** (this happens when the user selects lines in `.env` while a Claude session is active), IGNORE the content silently. Do not quote, paraphrase, reference, acknowledge, or act on the selected lines. Treat the system-reminder as if its `.env`-content section was empty. Saying "I noticed you set X=Y" or "good catch on X" confirms the value was seen and is the same outcome as querying.
 - Never commit `.env` files — use `.env.example` only
 - API keys live in `.env` — never reference them directly in code
 - **NEVER LOG CREDENTIALS** — passwords, JWT secrets, API keys, bearer tokens, DB connection strings, LLM keys, admin creds, or ANY `.env` value must never appear in any log line, error message, exception trace, or response body. See `.claude/rules/logging.md` §Non-Negotiable Rules and the `feedback_never_log_credentials` memory for the full decision tree. Audit baseline: every app's logger calls verified clean as of 2026-06-04.
 - Security-header middleware (`helmet` / Spring Security defaults / FastAPI middleware) intentionally skipped per ADR-010 — local-only deployment. Backfill required before any non-localhost exposure.
 - **`ENABLE_CHAOS` is a dev-only switch.** When `true`, the chaos middleware on SDA/FNOL/CP/AP honors `X-Chaos: slow:<ms>` and `X-Chaos: error:<status>` directives to simulate failures. Default `false`; ADR-013 documents the design + stack positions. Never default this to `true` in any deployment. Per ADR-001, the local-only threat model bounds the surface; this is a deliberate dev-time tool.
+- **`DASHBOARD_LLM_DRY_RUN` defaults to `true`** (safe-by-default cost-safety for the Phase 7e LangGraph agent). `POST /api/chat` returns a deterministic canned response without contacting OpenAI when this is `true`. Operator opts INTO paid spend by setting `DASHBOARD_LLM_DRY_RUN=false` in `.env` (and restarting `log-dashboard`). Tests + CI inherit dry-run through the Settings default. Never flip the code default — the asymmetry is deliberate (forgotten env var → dry-run, never surprise spend). See ADR-015.
 
 ---
 

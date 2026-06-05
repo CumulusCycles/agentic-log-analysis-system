@@ -32,6 +32,9 @@ export function TopNav() {
             <NavLink to="/logs" className={linkClass}>
               Log Explorer
             </NavLink>
+            <NavLink to="/chat" className={linkClass}>
+              AI Chat
+            </NavLink>
             <NavLink to="/log-generator" className={linkClass}>
               Log Generator
             </NavLink>

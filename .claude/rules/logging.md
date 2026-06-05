@@ -14,6 +14,15 @@ The LangGraph agent handles heterogeneous formats. See docs/decisions/ADR-003-lo
 
    Every per-request log line MUST also include a `source=<value>` field
    read from the `X-Source` HTTP header (default `prod`) — see ADR-011.
+   Domain events (`login_failed`, `sda_upstream_rejected`, etc.) emitted
+   during the request lifetime MUST also carry the same `source` value,
+   propagated via the stack-native carrier set by the request middleware:
+   `structlog.contextvars` (SDA, FNOL), `AsyncLocalStorage` (CP), SLF4J
+   `MDC` (AP). Outbound HTTP clients to SDA MUST forward `X-Source` from
+   the same carrier so SDA tags its WARN/ERROR events with the original
+   source instead of defaulting to `prod`. Domain events emitted OUTSIDE
+   a request context (startup, background tasks) get tagged `unknown` by
+   the dashboard parser so the operator can spot propagation gaps.
 
 2. **NEVER LOG CREDENTIALS — ABSOLUTE PROHIBITION.** The following values MUST NEVER appear in any log line, structured field, error message, exception trace, response body, or debug output across any app:
    - Passwords (plain, hashed, or any intermediate form)
@@ -30,6 +39,8 @@ The LangGraph agent handles heterogeneous formats. See docs/decisions/ADR-003-lo
    What IS safe to log: identifiers (`user_id`, `username`, `policy_number`, `claim_id`, `caller`), decoder error messages (`reason="Signature verification failed"`), and outcomes (`status`, `duration_ms`). Use identifiers and outcomes, never the secret values themselves.
 
    Audit baseline (verified 2026-06-04): every logger call site in SDA, FNOL, CP, AP scanned and confirmed clean. Preserve this state in every PR that touches logging.
+
+   Phase 7e (PR 4a, 2026-06-05): user input and tool-returned log lines pass through `dashboard/src/log_dashboard/credentials.py` before reaching LangChain / LangSmith / OpenAI. Two-layer defence (input sanitisation in `routers/chat.py` + `agent/nodes.py::ingest_node`; output sanitisation in `agent/tools.py::query_logs`). Verified via `test_credentials.py` + `test_agent_credential_redaction.py`. The Agitator's separate `agitator/runs.py::_sanitize_error` is untouched in PR 4a (scope discipline); dedupe is a follow-up chore PR.
 
    Full decision tree and counter-patterns: `feedback_never_log_credentials` memory file (auto-loaded).
 

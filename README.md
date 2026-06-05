@@ -52,7 +52,9 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | Agitator PR 1.95 | Consolidate CI workflows — single `ci.yml` with `paths-filter` `changes` job + 5 conditional per-app jobs; cross-cutting PRs go 5 runs → 1; README badge row collapses 5 → 1 | ✅ |
 | Agitator PR 2 | Chaos middleware — `X-Chaos: slow:<ms>` / `error:<status>` across SDA/FNOL/CP/AP, `ENABLE_CHAOS` env gate, dashboard exempt | ✅ |
 | Agitator PR 3 | Agitator bundled into dashboard — operator-triggered bounded scenarios (auth-spike, payload-fuzz, policy-not-found, claim-burst, sda-degraded); `X-Source: synthetic` tagging; new `/log-generator` UI; ADR-014 | ✅ |
-| 7e | Dashboard LangGraph agent — AI Chat + Error Detail analysis (the LLM work) | ⬜ |
+| 7e-PR4a | Dashboard LangGraph agent — `POST /api/chat` + AI Chat UI; 5-node StateGraph; safe-by-default dry-run; credential redaction; LangSmith metadata; ADR-015. Bundled cross-cutting X-Source propagation across SDA/FNOL/CP/AP (contextvars / AsyncLocalStorage / MDC) + outbound HTTP-client forwarding so SDA's WARN/ERROR domain events carry the originating source — Chroma can now distinguish prod/synthetic/test instead of mislabeling everything as prod | ✅ |
+| 7e-PR4b | Dashboard `GET /api/errors/{id}` + Error Detail UI; threads agent into Suggested Fix; optional SSE streaming | ⬜ |
+| 7e-PR4c | Dashboard proactive background scan — surfaces anomalies automatically | ⬜ |
 
 **Status:** ✅ Done · ⬜ Todo · 🔄 In Progress
 

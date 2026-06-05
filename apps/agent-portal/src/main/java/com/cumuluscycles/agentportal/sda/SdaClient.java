@@ -1,5 +1,6 @@
 package com.cumuluscycles.agentportal.sda;
 
+import com.cumuluscycles.agentportal.logging.SourceContext;
 import com.cumuluscycles.agentportal.sda.dto.ClaimDetail;
 import com.cumuluscycles.agentportal.sda.dto.ClaimOut;
 import com.cumuluscycles.agentportal.sda.dto.LoginRequest;
@@ -83,8 +84,8 @@ public class SdaClient {
         } catch (SdaException ex) {
             throw ex;
         } catch (ResourceAccessException ex) {
-            log.warn("sda_upstream_unreachable target={} error_class={}",
-                    target, ex.getClass().getSimpleName());
+            log.warn("sda_upstream_unreachable target={} error_class={} source={}",
+                    target, ex.getClass().getSimpleName(), SourceContext.currentSource());
             throw new SdaException(502, "shared data api unreachable");
         }
     }
@@ -94,7 +95,8 @@ public class SdaClient {
         String body = new String(resp.getBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         String detail = extractDetail(body);
         String target = request.getURI().getPath();
-        log.warn("sda_upstream_rejected target={} status={} detail={}", target, status, detail);
+        log.warn("sda_upstream_rejected target={} status={} detail={} source={}",
+                target, status, detail, SourceContext.currentSource());
         throw new SdaException(status, detail);
     }
 

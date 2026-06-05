@@ -9,6 +9,7 @@ import type {
   ScenarioSpec,
 } from "../types/agitator";
 import type { AdminOut, ApiError, LoginRequest, TokenResponse } from "../types/api";
+import type { ChatRequest, ChatResponse } from "../types/chat";
 import type {
   LogsFilters,
   LogsResponse,
@@ -117,4 +118,10 @@ export async function getRun(token: string, runId: string): Promise<RunRecord> {
 
 export async function cancelRun(token: string, runId: string): Promise<RunRecord> {
   return request<RunRecord>(`/api/agitator/runs/${runId}/cancel`, { method: "POST" }, token);
+}
+
+// --- Phase 7e (PR 4a): AI Chat ---
+
+export async function postChat(token: string, body: ChatRequest): Promise<ChatResponse> {
+  return request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(body) }, token);
 }

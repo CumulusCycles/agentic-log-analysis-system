@@ -3,6 +3,7 @@ import axios, { AxiosError, type AxiosInstance } from "axios";
 import type { Config } from "../config.js";
 import { sdaErrorToHttp } from "../errors.js";
 import type { Logger } from "../logger.js";
+import { getCurrentSource } from "../source-context.js";
 
 /**
  * Hand-authored TS mirror of the SDA response shapes Customer Portal consumes.
@@ -83,6 +84,13 @@ export class SharedDataAPIClient {
       baseURL: cfg.SHARED_DATA_API_BASE_URL,
       timeout: timeoutMs,
       headers: { "X-API-Key": cfg.SHARED_DATA_API_KEY_CUSTOMER_PORTAL },
+    });
+    // Forward the inbound request's `X-Source` so SDA tags any WARN/ERROR it
+    // emits with the original source (test/synthetic/prod). Without this,
+    // every CP-driven SDA call would land in SDA's logger as `source=prod`.
+    this.http.interceptors.request.use((config) => {
+      config.headers.set("X-Source", getCurrentSource());
+      return config;
     });
   }
 

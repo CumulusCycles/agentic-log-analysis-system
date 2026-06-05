@@ -13,11 +13,19 @@ NEVER the bearer header, NEVER the API key, NEVER the password.
 """
 
 import httpx
+import structlog
 
 from ..config import Settings
 from ..logging_setup import get_logger
 
 log = get_logger("sda_client")
+
+
+def _current_source() -> str:
+    """Pull `source` from the structlog contextvars set by the request
+    middleware. Defaults to `prod` if FNOL emits an outbound call outside a
+    request context (e.g. a future startup probe — none today)."""
+    return str(structlog.contextvars.get_contextvars().get("source") or "prod")
 
 
 def _detail_from(resp: httpx.Response) -> str:
@@ -46,7 +54,11 @@ class SharedDataAPIClient:
     async def login(self, username: str, password: str) -> dict:
         target = "/auth/login"
         try:
-            r = await self._client.post(target, json={"username": username, "password": password})
+            r = await self._client.post(
+                target,
+                json={"username": username, "password": password},
+                headers={"X-Source": _current_source()},
+            )
             r.raise_for_status()
         except httpx.HTTPStatusError as exc:
             log.warning(
@@ -71,7 +83,10 @@ class SharedDataAPIClient:
             r = await self._client.post(
                 target,
                 json=payload,
-                headers={"Authorization": f"Bearer {bearer}"},
+                headers={
+                    "Authorization": f"Bearer {bearer}",
+                    "X-Source": _current_source(),
+                },
             )
             r.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -96,7 +111,10 @@ class SharedDataAPIClient:
         try:
             r = await self._client.get(
                 target,
-                headers={"Authorization": f"Bearer {bearer}"},
+                headers={
+                    "Authorization": f"Bearer {bearer}",
+                    "X-Source": _current_source(),
+                },
             )
             r.raise_for_status()
         except httpx.HTTPStatusError as exc:

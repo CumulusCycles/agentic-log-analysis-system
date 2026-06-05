@@ -40,7 +40,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleUnhandled(Exception ex, HttpServletRequest req) {
         // Log at ERROR with stack — the body intentionally hides the exception
         // message so internal details don't leak to the client.
-        log.error("unhandled_exception path={} method={}", req.getRequestURI(), req.getMethod(), ex);
+        log.error("unhandled_exception path={} method={} source={}",
+                req.getRequestURI(), req.getMethod(),
+                com.cumuluscycles.agentportal.logging.SourceContext.currentSource(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("detail", "internal server error"));
     }
 }

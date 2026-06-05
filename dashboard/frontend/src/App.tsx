@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { RequireAuth } from "./components/RequireAuth";
 import { useAuth } from "./lib/auth";
 import { AuthProvider } from "./lib/auth-context";
+import { AiChat } from "./pages/AiChat";
 import { LogGenerator } from "./pages/LogGenerator";
 import { LoginPage } from "./pages/LoginPage";
 import { LogExplorer } from "./pages/LogExplorer";
@@ -35,6 +36,16 @@ export function App() {
               <RequireAuth>
                 <Layout>
                   <LogExplorer />
+                </Layout>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/chat"
+            element={
+              <RequireAuth>
+                <Layout>
+                  <AiChat />
                 </Layout>
               </RequireAuth>
             }

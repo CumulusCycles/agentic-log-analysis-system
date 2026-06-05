@@ -161,3 +161,73 @@ class RunRecordOut(BaseModel):
 
 class RunListResponse(BaseModel):
     runs: list[RunRecordOut]
+
+
+# --- Phase 7e (PR 4a): LangGraph agent + /api/chat ---
+
+
+class ChatRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
+class ChatMessage(BaseModel):
+    """One turn in the chat history surfaced to the UI."""
+
+    role: ChatRole
+    content: str
+
+
+class Citation(BaseModel):
+    """A single log entry the agent cited as supporting evidence.
+
+    Mirrors a subset of `LogEntry` plus the similarity `score`. The agent's
+    `query_logs` tool sanitises `raw` via `credentials.sanitize_log_raw`
+    BEFORE the citation reaches the LLM context, so this `raw` value is
+    safe to ship to the client.
+    """
+
+    id: str
+    timestamp: datetime
+    level: LogLevel
+    app: str
+    event: str
+    raw: str
+    score: float
+
+
+class ChatRequest(BaseModel):
+    """Submit a question to the LangGraph agent.
+
+    `session_id` is generated server-side on the first call (omit it). Echo
+    it back on subsequent calls to share the InMemorySaver thread (carries
+    conversation history). `streaming=true` is rejected with 422 in PR 4a —
+    the field exists so the contract is forward-compatible with SSE in 4b.
+    """
+
+    message: str = Field(min_length=1, max_length=4000)
+    session_id: str | None = None
+    streaming: bool = False
+    # Streaming rejection is enforced in `routers/chat.py` via HTTPException(422)
+    # instead of a model_validator — the validator's ValueError lands in the
+    # validation handler's `ctx` field, which can't be JSON-serialised.
+
+
+class ChatResponse(BaseModel):
+    """LangGraph agent's final answer + supporting citations.
+
+    `dry_run` flips to True when `DASHBOARD_LLM_DRY_RUN=true` (the default —
+    safe-by-default). The UI shows a banner in that case so the operator
+    knows the answer came from `GenericFakeChatModel`, not OpenAI.
+
+    `tool_budget_exhausted` flips when the graph reached
+    `llm_max_tool_calls_per_request` and was forced to short-circuit to
+    `respond`. The final answer is still returned; this flag tells the UI
+    to surface a caveat.
+    """
+
+    answer: str
+    citations: list[Citation] = Field(default_factory=list)
+    session_id: str
+    dry_run: bool = False
+    tool_budget_exhausted: bool = False

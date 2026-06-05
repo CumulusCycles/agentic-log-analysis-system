@@ -124,6 +124,36 @@ def fake_vectorstore(fake_embeddings):
 
 
 @pytest.fixture
+def agent_graph(fake_vectorstore):
+    """Compile a fresh LangGraph agent for one test.
+
+    Uses the in-process FakeEmbeddings-backed Chroma so any docs the test
+    writes are queryable; uses a fresh `InMemorySaver` so each test owns
+    its own thread state.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from log_dashboard.agent import build_agent_graph
+    from log_dashboard.config import get_settings
+
+    return build_agent_graph(get_settings(), fake_vectorstore, InMemorySaver())
+
+
+@pytest.fixture
+def fail_if_openai_invoked(monkeypatch):
+    """Defence-in-depth: monkeypatch `ChatOpenAI.__init__` to raise on
+    construction. Any test that opts into this fixture asserts that NO real
+    OpenAI call path is touched."""
+    from langchain_openai import ChatOpenAI
+
+    def _boom(self, *args, **kwargs):
+        raise RuntimeError("test attempted to construct ChatOpenAI")
+
+    monkeypatch.setattr(ChatOpenAI, "__init__", _boom)
+    yield
+
+
+@pytest.fixture
 def log_volume(tmp_path_factory, monkeypatch):
     """Provide a writable log-volume root with the 4 expected file paths.
 
