@@ -57,12 +57,13 @@ Detailed rules are in `.claude/rules/`:
 
 - `/self-review` — query MCP docs → review written code against best practices → fix issues
 - `/security-review` — scan for secrets, injection, auth gaps, exposed internals → fix issues
-- `/ship` — pre-ship doc check → self-review → security-review → lint → build → test → commit → push → open PR
+- `/ship` — Step 1 audit (`.claude/hooks/ship_audit.sh`) → pre-ship doc check → self-review → security-review → lint → build → test → commit → push → open PR
 - `/done` — post-merge cleanup: checkout main, pull, delete local + remote branch
 - `/test` — run tests for the current app or all apps
 - `/lint` — run linting and formatting checks
 - `/build` — run production build and report errors
 - `/logs` — tail live container logs
+- **agentreviewer** — multi-agent cloud review for high-stakes PRs (PR 2 chaos, PR 3 Agitator, PR 4 Phase 7e). Invoked via the Claude Code built-in `/ultrareview <PR#>`; **user-triggered only — Claude cannot launch it.** Model preference: Opus 4.7. Full policy + pre-flight + workflow: `.claude/rules/workflow.md` and `docs/development-workflow.md`.
 
 ---
 

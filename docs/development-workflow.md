@@ -42,6 +42,12 @@ These Claude Code hooks run automatically in the background — no action requir
 - **What it does:** Validates YAML syntax and ARM64 compatibility
 - **Why:** Catches configuration errors early before containers start
 
+### `.claude/hooks/ship_audit.sh`
+- **When:** Step 1 of `/ship` (before doc check), and runnable standalone
+- **What it does:** Fails closed if any tool prescribed by `/ship` or `/lint` is not bound in CI — Node `format:check` script + `prettier` devDep, Python `[tool.ruff]` + `[tool.black]` in every `pyproject.toml`, Java `maven-checkstyle-plugin` bound to a Maven phase in `pom.xml`, and each per-app `ci-*.yml` actually invokes those commands
+- **Why:** PR #29 (211 dormant AP checkstyle violations) and PR #30 (Node `format:check` listed in `/ship` but no package.json declared it) both surfaced the same root cause — a tool prescribed in a process doc that CI never enforces accumulates silent drift. The audit catches that pattern at ship time, not months later
+- **No `--skip` flag** by design (per `feedback_dormant_lint_tools`)
+
 ---
 
 ## Manual Commands
@@ -66,6 +72,67 @@ These are slash commands developers invoke explicitly.
 
 **Note:** These are *optional* because `/ship` will run both automatically. Use them for iterative feedback during development.
 
+### Agentreviewer — `/ultrareview` (High-Stakes PRs Only)
+
+`/ultrareview` is Claude Code's built-in multi-agent cloud review. Several
+Claude agents inspect the PR in parallel — design, correctness, security,
+cross-file consistency, test coverage. Referred to as **agentreviewer**
+in this project's docs and memory.
+
+| Property | Value |
+|---|---|
+| Trigger | Operator types `/ultrareview <PR#>` (or bare `/ultrareview` for the local branch) |
+| Who can launch it | **Operator only.** Claude cannot launch it, even with explicit approval |
+| Billing | Anthropic API (separate from this conversation's budget) |
+| Code surface sent | Tracked files only — `.env` is gitignored and excluded. `.env.example` IS sent (tracked file) |
+| Model preference | Opus 4.7 across all agents; Sonnet 4.6 acceptable for breadth-only roles; never Haiku for high-stakes PRs |
+
+**When to use:**
+
+| PR | Run agentreviewer? |
+|---|---|
+| Agitator PR 2 (chaos middleware) | Yes — first real exercise on this codebase |
+| Agitator PR 3 (Agitator bundled into dashboard) | Yes — architecture call + new HTTP-driving code |
+| Phase 7e PR (LangGraph + AI Chat + Error Detail) | **Yes, non-negotiable** — the LLM slice |
+| Any future cross-cutting middleware / LangGraph / Phase 7+ work | Yes |
+| Single-file doc edit, lockfile bump, ADR-only PR | No — `/self-review` + `/security-review` are sufficient |
+
+**Pre-flight checks (run once before the first agentreviewer invocation):**
+
+```bash
+# 1. .env is gitignored and not tracked
+git check-ignore .env && [ -z "$(git ls-files .env)" ] && echo OK-env-untracked
+
+# 2. .env.example has only placeholder values — manually inspect output
+grep -vE '^#|^$|=changeme$|=example$|=your-.*-here$|=placeholder' .env.example
+
+# 3. No real secrets accidentally committed in source
+grep -rE 'sk-[A-Za-z0-9]{20,}|xoxb-|ghp_|AKIA[0-9A-Z]{16}' \
+  --include='*.py' --include='*.ts' --include='*.tsx' \
+  --include='*.java' --include='*.json' --include='*.yml' \
+  apps/ dashboard/ docs/ .github/ .claude/ || echo OK-no-hardcoded-secrets
+```
+
+All three must pass. Re-run only when `.env.example` or secret-handling
+code changes materially.
+
+**Finding-triage workflow:**
+
+1. `/ship` opens the PR; CI goes green
+2. Operator runs `/ultrareview <PR#>`
+3. Findings land — either as PR review comments or terminal output
+4. Operator surfaces findings to Claude (paste, or `gh pr view <PR#> --comments`)
+5. Claude triages each finding: fix in code + push fix commit, or push back with rationale
+6. Re-run `/ultrareview` if findings were structural enough to warrant a second pass
+7. Merge the PR when findings are dispositioned
+
+**Why this is process and not a `/ship` step:** agentreviewer is billed
+per run and user-triggered by Anthropic's design. Wiring it into `/ship`
+automatically would either burn cost on PRs that don't need it or
+require a Claude-side approval flow the tool doesn't expose. Keeping it
+as a deliberate operator step preserves cost control and matches
+Anthropic's intended UX.
+
 ### Mandatory Workflow Commands
 
 | Command | Purpose | When to Run |
@@ -80,7 +147,14 @@ These are slash commands developers invoke explicitly.
 When you run `/ship`, Claude Code executes this entire sequence:
 
 ```
-1. Pre-Ship Documentation Check
+1. Tool-Enforcement Audit (.claude/hooks/ship_audit.sh)
+   ├─ Node packages: format:check + prettier devDep present
+   ├─ Python: ruff + black configured in every pyproject.toml
+   ├─ Java: maven-checkstyle-plugin bound to a Maven phase
+   └─ Every per-app ci-*.yml invokes the tools /ship prescribes
+   (fails closed; no --skip flag)
+
+2. Pre-Ship Documentation Check
    ├─ CLAUDE.md is current (reflects decisions)
    ├─ PLAN.md is updated (progress marked)
    ├─ Relevant .claude/rules/*.md are current
@@ -88,38 +162,41 @@ When you run `/ship`, Claude Code executes this entire sequence:
    ├─ docs/ is up-to-date (architecture, tech, decisions)
    └─ file names match `docs/tech/file-naming-convention.md`
 
-2. Code Quality Review (/self-review)
+3. Code Quality Review (/self-review)
    ├─ Query MCP docs for framework/library standards
    ├─ Analyze code against project conventions
    ├─ Identify issues
    └─ Auto-fix where possible
 
-3. Security Review (/security-review)
+4. Security Review (/security-review)
    ├─ Scan for exposed secrets/tokens
    ├─ Check for injection vulnerabilities
    ├─ Validate auth/ownership checks
    ├─ Identify exposed internals
    └─ Auto-fix where possible
 
-4. Lint & Format
+5. Lint & Format
    └─ Run linting checks
 
-5. Production Build
+6. Production Build
    └─ Run full build, verify success
 
-6. Tests (every app — not just the changed one)
+7. Tests (every app — not just the changed one)
    ├─ Backend: pytest / mvn / pnpm test for each app's backend
    ├─ Frontend unit: Vitest for each app's frontend
    └─ Frontend E2E: Playwright for each app with frontend/e2e/ — requires live stack
 
-7. Git Workflow
+8. Git Workflow
    ├─ Create/update commit with conventional message
    ├─ Push to origin
    └─ Open pull request (with summary)
 
-8. PR Created
-   └─ Ready for human review or auto-merge
+9. PR Created
+   └─ Ready for human review, agentreviewer, or auto-merge
 ```
+
+**Optional post-`/ship` step for high-stakes PRs:** operator runs
+`/ultrareview <PR#>` (agentreviewer). See the dedicated section above.
 
 **Key Point:** Everything runs in sequence. If any step fails, the pipeline stops and reports the issue.
 
@@ -189,6 +266,38 @@ When you run `/ship`, Claude Code executes this entire sequence:
 # 4. After merge
 /done
 ```
+
+### Workflow D: High-Stakes PR (Cross-Cutting / LangGraph / Phase 7e+)
+
+```bash
+# 1. Write code
+# ... (save file, post_format runs automatically)
+
+# 2. Ship
+/ship
+# → Step 1 audit, doc check, /self-review, /security-review, lint, build, tests, PR opens
+
+# 3. Wait for CI green on the PR
+
+# 4. Run agentreviewer (operator types this — Claude cannot launch it)
+/ultrareview <PR#>
+# → Multi-agent cloud review (Opus 4.7 preferred)
+
+# 5. Triage findings with Claude
+gh pr view <PR#> --comments   # or paste findings into the chat
+# → Claude fixes + pushes commits, or pushes back with rationale
+
+# 6. Re-run agentreviewer if findings were structural
+
+# 7. Merge
+
+# 8. After merge
+/done
+```
+
+Use Workflow D for: Agitator PR 2 (chaos middleware), Agitator PR 3
+(Agitator), Phase 7e (LangGraph + AI Chat + Error Detail), and any
+future cross-cutting middleware or LangGraph work.
 
 ---
 
