@@ -14,6 +14,7 @@ export const TEST_CONFIG: Config = {
   SHARED_DATA_API_BASE_URL: "http://shared-data-api-test",
   SHARED_DATA_API_KEY_CUSTOMER_PORTAL: "test-cp-key",
   LOG_FILE_PATH: "/tmp/customer-portal-test.log",
+  ENABLE_CHAOS: false,
 };
 
 export function buildTestApp() {

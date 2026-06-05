@@ -11,7 +11,8 @@ import org.springframework.validation.annotation.Validated;
 public record AppProperties(
         @Valid SharedDataApi sharedDataApi,
         @Valid Jwt jwt,
-        @NotBlank String logFilePath
+        @NotBlank String logFilePath,
+        @Valid Chaos chaos
 ) {
     public record SharedDataApi(
             @NotBlank String baseUrl,
@@ -23,4 +24,10 @@ public record AppProperties(
             @NotBlank String secret,
             @NotBlank String algorithm
     ) {}
+
+    /**
+     * Chaos middleware toggle — default off. See ADR-013 and
+     * {@link com.cumuluscycles.agentportal.chaos.ChaosFilter}.
+     */
+    public record Chaos(boolean enabled) {}
 }

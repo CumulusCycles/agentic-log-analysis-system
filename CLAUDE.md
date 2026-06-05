@@ -17,6 +17,7 @@ The complete build task list is in `PLAN.md` — update it before every `/ship`.
 - API keys live in `.env` — never reference them directly in code
 - **NEVER LOG CREDENTIALS** — passwords, JWT secrets, API keys, bearer tokens, DB connection strings, LLM keys, admin creds, or ANY `.env` value must never appear in any log line, error message, exception trace, or response body. See `.claude/rules/logging.md` §Non-Negotiable Rules and the `feedback_never_log_credentials` memory for the full decision tree. Audit baseline: every app's logger calls verified clean as of 2026-06-04.
 - Security-header middleware (`helmet` / Spring Security defaults / FastAPI middleware) intentionally skipped per ADR-010 — local-only deployment. Backfill required before any non-localhost exposure.
+- **`ENABLE_CHAOS` is a dev-only switch.** When `true`, the chaos middleware on SDA/FNOL/CP/AP honors `X-Chaos: slow:<ms>` and `X-Chaos: error:<status>` directives to simulate failures. Default `false`; ADR-013 documents the design + stack positions. Never default this to `true` in any deployment. Per ADR-001, the local-only threat model bounds the surface; this is a deliberate dev-time tool.
 
 ---
 

@@ -14,6 +14,7 @@ from .exception_handlers import (
 )
 from .logging_setup import configure_logging, get_logger
 from .middleware.api_key import APIKeyMiddleware
+from .middleware.chaos import ChaosMiddleware
 from .middleware.request_logger import RequestLoggerMiddleware
 from .routers import auth, claims, health, policies, users
 from .seeds.seed import run_seed_if_empty
@@ -50,7 +51,10 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_exception_handler)
 
     # Last-added middleware is outermost — request logger wraps everything,
-    # api-key check runs inside it so 401s are still logged.
+    # api-key check runs inside it so 401s are still logged. Chaos sits
+    # innermost (added first) so it runs AFTER auth: unauthenticated requests
+    # with X-Chaos are rejected by APIKey before chaos sees them. Per ADR-013.
+    app.add_middleware(ChaosMiddleware, settings=settings)
     app.add_middleware(APIKeyMiddleware, settings=settings)
     app.add_middleware(RequestLoggerMiddleware)
 

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     simulator_tick_seconds: int = 30
     log_file_path: str = "/app/logs/shared-data-api.log"
 
+    # Chaos middleware — default off. See ADR-013 and middleware/chaos.py.
+    enable_chaos: bool = Field(default=False, alias="ENABLE_CHAOS")
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
