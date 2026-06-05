@@ -8,8 +8,6 @@ log has `reason=bad_password` rather than `user_not_found`.
 
 from __future__ import annotations
 
-import asyncio
-
 from ..http_client import build_client
 from .base import Scenario, ScenarioParam, ScenarioSpec, register
 
@@ -32,10 +30,6 @@ class AuthSpike(Scenario):
         count = self.params.get("count", self.spec.params[0].default)
         duration_s = self.params.get("duration_s", self.spec.params[1].default)
         username = self.settings.agitator_customer_username
-        interval = duration_s / max(count, 1)
-        semaphore = asyncio.Semaphore(
-            min(self.settings.agitator_default_concurrency, max(count, 1))
-        )
 
         async with build_client(self.settings.fnol_base_url) as client:
 
@@ -47,8 +41,4 @@ class AuthSpike(Scenario):
                 # 401 is the expected outcome.
                 return response.status_code, response.status_code == 401
 
-            tasks: list[asyncio.Task[None]] = []
-            for _ in range(count):
-                tasks.append(asyncio.create_task(self._fire(send, semaphore)))
-                await asyncio.sleep(interval)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await self._run_paced(count, duration_s, send)

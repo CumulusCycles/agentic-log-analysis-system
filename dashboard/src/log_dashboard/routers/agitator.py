@@ -25,7 +25,13 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from ..agitator.auth import AgitatorAuthError, bootstrap_session
-from ..agitator.runs import RunRecord, RunRegistry
+from ..agitator.runs import (
+    ConcurrentRunCapError,
+    RegistryFullError,
+    RunRecord,
+    RunRegistry,
+    ScenarioAlreadyRunningError,
+)
 from ..agitator.scenarios import SCENARIOS
 from ..auth.jwt import get_current_admin
 from ..config import Settings, get_settings
@@ -141,21 +147,8 @@ async def start_run(
 
     registry = _get_registry(request)
 
-    if await registry.running_count() >= settings.agitator_max_concurrent_runs:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=(
-                f"concurrent-run cap reached "
-                f"({settings.agitator_max_concurrent_runs}); wait or cancel"
-            ),
-        )
-    if body.scenario in await registry.running_scenarios():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"{body.scenario} is already running",
-        )
-
-    # Single login burst at run start. AgitatorAuthError → 502.
+    # Single login burst at run start. AgitatorAuthError → 502. Bootstrap
+    # BEFORE try_start so we don't insert a registry record we can't fulfil.
     try:
         session = await bootstrap_session(settings)
     except AgitatorAuthError as exc:
@@ -171,7 +164,6 @@ async def start_run(
         params=coerced,
         started_at=datetime.now(tz=UTC),
     )
-    await registry.add(record)
 
     scenario = scenario_cls(
         settings=settings,
@@ -211,7 +203,33 @@ async def start_run(
             state="succeeded",
         )
 
-    record.task = asyncio.create_task(_wrapped())
+    # try_start atomically: cap check + same-scenario check + eviction +
+    # add + task creation + task assignment. All four sequencing bugs from
+    # the PR #35 review (TOCTOU on cap, TOCTOU on same-scenario, eviction
+    # dangling reference, task-assignment gap) collapse into this one call.
+    try:
+        await registry.try_start(
+            record,
+            max_concurrent=settings.agitator_max_concurrent_runs,
+            task_factory=lambda: asyncio.create_task(_wrapped()),
+        )
+    except ConcurrentRunCapError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"{exc}; wait or cancel",
+        ) from exc
+    except ScenarioAlreadyRunningError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except RegistryFullError as exc:
+        # Defensive — concurrent cap should make this unreachable.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="registry full of running records",
+        ) from exc
+
     log.info(
         "agitator_run_started",
         run_id=run_id,

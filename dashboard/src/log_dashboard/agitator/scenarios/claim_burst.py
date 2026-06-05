@@ -11,7 +11,6 @@ Postgres gains `count` rows per invocation. Reset via
 
 from __future__ import annotations
 
-import asyncio
 import random
 from datetime import UTC, datetime, timedelta
 
@@ -36,10 +35,6 @@ class ClaimBurst(Scenario):
     async def run(self) -> None:
         count = self.params.get("count", self.spec.params[0].default)
         duration_s = self.params.get("duration_s", self.spec.params[1].default)
-        interval = duration_s / max(count, 1)
-        semaphore = asyncio.Semaphore(
-            min(self.settings.agitator_default_concurrency, max(count, 1))
-        )
 
         policy = await self._lookup_first_policy()
         if policy is None:
@@ -72,11 +67,7 @@ class ClaimBurst(Scenario):
                 response = await client.post("/fnol/submit", json=body, headers=headers)
                 return response.status_code, response.status_code == 201
 
-            tasks: list[asyncio.Task[None]] = []
-            for _ in range(count):
-                tasks.append(asyncio.create_task(self._fire(send, semaphore)))
-                await asyncio.sleep(interval)
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await self._run_paced(count, duration_s, send)
 
     async def _lookup_first_policy(self) -> dict | None:
         """Fetch the seeded customer's first policy via CP `/policies/me`."""

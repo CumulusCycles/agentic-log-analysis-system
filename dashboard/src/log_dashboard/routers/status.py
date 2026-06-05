@@ -60,6 +60,13 @@ def _corpus_empty(request: Request) -> bool:
         return False
     try:
         count = store._collection.count()  # noqa: SLF001 — Chroma exposes no public count
-    except Exception:  # noqa: BLE001 — Chroma transport errors are non-fatal here
+    except Exception as exc:  # noqa: BLE001 — Chroma transport errors must not crash /api/status
+        # Log so the operator can distinguish "empty corpus" from "Chroma
+        # unreachable" — without this, both paths return False and the
+        # banner stays hidden silently.
+        log.warning(
+            "corpus_count_failed",
+            error_class=type(exc).__name__,
+        )
         return False
     return count == 0

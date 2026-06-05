@@ -73,6 +73,17 @@ billed cloud review, user-triggered only.
 
 **Skip on:** single-file doc edits, lockfile bumps, ADR-only PRs.
 
+**Fallback when `/ultrareview` is unavailable:** Run `/local-review <PR#>`
+— a parallel-subagent review (design / security / correctness /
+test-coverage) that runs locally with no Claude.ai web dependency. It
+does NOT independently reproduce findings (that's `/ultrareview`'s
+signature), so it does not satisfy the agentreviewer named-target
+requirement for high-stakes PRs. Use it when `/ultrareview` returns
+"GitHub repository access check failed", on Bedrock/Vertex/Foundry
+runtimes, or in ZDR orgs where `/ultrareview` is unavailable. See
+`.claude/commands/local-review.md` and the
+[[project_agentreviewer_policy]] memory.
+
 **Model preference:** Opus 4.7 across all reviewer agents (deep design,
 security, test-coverage gap analysis). Sonnet 4.6 acceptable for
 breadth-only roles if the tool exposes per-agent selection. Never Haiku

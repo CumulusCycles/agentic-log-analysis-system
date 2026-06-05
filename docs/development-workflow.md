@@ -133,6 +133,30 @@ require a Claude-side approval flow the tool doesn't expose. Keeping it
 as a deliberate operator step preserves cost control and matches
 Anthropic's intended UX.
 
+#### Fallback: `/local-review <PR#>` when `/ultrareview` is unavailable
+
+`/ultrareview` requires a Claude.ai account login (not API-key auth) and
+GitHub App authorization on the target repo, and is unavailable on
+Bedrock / Vertex AI / Foundry runtimes and ZDR organizations. When it
+returns `"GitHub repository access check failed — re-authorize GitHub in
+settings"` or otherwise can't start the remote session, run
+`/local-review <PR#>` as the documented fallback.
+
+`/local-review` launches four parallel `Explore` subagents — design /
+security / correctness / test-coverage — and aggregates their findings
+locally. It uses normal Claude Code usage allowance (no separate cloud
+billing) and does not need a Claude.ai web dependency.
+
+**What `/local-review` does NOT replicate:**
+- No independent reproduction of findings (that's `/ultrareview`'s
+  signature — every finding is reproduced before reporting)
+- No fleet-per-dimension (one agent per angle)
+- Does NOT satisfy the agentreviewer named-target requirement; prefer
+  `/ultrareview` for high-stakes PRs when it's available
+
+See `.claude/commands/local-review.md` for the command surface and
+argument handling.
+
 ### Mandatory Workflow Commands
 
 | Command | Purpose | When to Run |
