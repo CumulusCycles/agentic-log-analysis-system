@@ -41,6 +41,14 @@ on:
 
 permissions:
   contents: read
+  # dorny/paths-filter@v3 calls the GitHub REST API (listFiles on the pull request)
+  # to compute the changed-file set, which requires pull-requests: read.
+  # Without this, the changes job fails with "Resource not accessible by integration"
+  # on pull_request triggers. push: main triggers don't need it (the action falls
+  # back to git diff against the parent commit), but granting it for all triggers
+  # keeps the permissions block consistent and matches the action's documented
+  # minimum-permissions surface.
+  pull-requests: read
 
 jobs:
   changes:
