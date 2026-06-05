@@ -6,10 +6,7 @@ import { JWT_AUDIENCE, JWT_ISSUER } from "../src/middleware/require-auth.js";
 
 import { buildTestApp, makeToken, TEST_CONFIG } from "./setup.js";
 
-function signWith(
-  payload: Record<string, unknown>,
-  secret = TEST_CONFIG.JWT_SECRET,
-): string {
+function signWith(payload: Record<string, unknown>, secret = TEST_CONFIG.JWT_SECRET): string {
   const now = Math.floor(Date.now() / 1000);
   return jwt.sign(
     {
@@ -31,9 +28,7 @@ describe("requireAuth middleware (via /profile/me)", () => {
   it("rejects tokens with the wrong issuer", async () => {
     const token = signWith({ iss: "evil-issuer" });
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/profile/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/profile/me").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(401);
     expect(res.body.detail).toBe("invalid token");
   });
@@ -41,9 +36,7 @@ describe("requireAuth middleware (via /profile/me)", () => {
   it("rejects tokens with the wrong audience", async () => {
     const token = signWith({ aud: "other-audience" });
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/profile/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/profile/me").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(401);
   });
 
@@ -51,18 +44,14 @@ describe("requireAuth middleware (via /profile/me)", () => {
     const now = Math.floor(Date.now() / 1000);
     const token = signWith({ exp: now - 60, iat: now - 120 });
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/profile/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/profile/me").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(401);
   });
 
   it("rejects tokens signed with the wrong secret", async () => {
     const token = signWith({}, "wrong-secret");
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/profile/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/profile/me").set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(401);
   });
 

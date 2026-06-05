@@ -22,9 +22,7 @@ export function ClaimsPage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(
-          err instanceof HttpError ? err.detail : "failed to load claims",
-        );
+        setError(err instanceof HttpError ? err.detail : "failed to load claims");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -48,9 +46,7 @@ export function ClaimsPage() {
           </p>
         )}
 
-        {claims && claims.length === 0 && (
-          <p className="mt-4 text-slate-600">No claims filed.</p>
-        )}
+        {claims && claims.length === 0 && <p className="mt-4 text-slate-600">No claims filed.</p>}
 
         {claims && claims.length > 0 && (
           <ul className="mt-6 space-y-3">
@@ -64,9 +60,7 @@ export function ClaimsPage() {
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                       Claim
                     </p>
-                    <h2 className="font-mono text-sm font-semibold">
-                      {claim.id}
-                    </h2>
+                    <h2 className="font-mono text-sm font-semibold">{claim.id}</h2>
                   </div>
                   <StatusBadge status={claim.current_status} />
                 </header>
@@ -74,9 +68,7 @@ export function ClaimsPage() {
                 <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
                   <div>
                     <dt className="text-slate-500">Policy</dt>
-                    <dd className="font-mono text-slate-900">
-                      {claim.policy_number}
-                    </dd>
+                    <dd className="font-mono text-slate-900">{claim.policy_number}</dd>
                   </div>
                   <div>
                     <dt className="text-slate-500">Vehicle</dt>

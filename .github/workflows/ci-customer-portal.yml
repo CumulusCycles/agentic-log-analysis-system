@@ -52,6 +52,9 @@ jobs:
       - name: backend — lint
         working-directory: apps/customer-portal
         run: pnpm lint
+      - name: backend — format:check
+        working-directory: apps/customer-portal
+        run: pnpm format:check
       - name: backend — typecheck
         working-directory: apps/customer-portal
         run: pnpm typecheck
@@ -69,6 +72,9 @@ jobs:
       - name: frontend — lint
         working-directory: apps/customer-portal/frontend
         run: pnpm lint
+      - name: frontend — format:check
+        working-directory: apps/customer-portal/frontend
+        run: pnpm format:check
       - name: frontend — typecheck
         working-directory: apps/customer-portal/frontend
         run: pnpm typecheck

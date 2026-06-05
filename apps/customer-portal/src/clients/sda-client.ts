@@ -108,9 +108,7 @@ export class SharedDataAPIClient {
     this.logger.warn("sda_upstream_unreachable", {
       event: "sda_upstream_unreachable",
       target,
-      error_class:
-        (err as { constructor?: { name?: string } })?.constructor?.name ??
-        "Unknown",
+      error_class: (err as { constructor?: { name?: string } })?.constructor?.name ?? "Unknown",
     });
   }
 

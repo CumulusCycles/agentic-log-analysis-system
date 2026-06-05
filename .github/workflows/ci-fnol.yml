@@ -67,6 +67,9 @@ jobs:
       - name: frontend — lint
         working-directory: apps/fnol/frontend
         run: pnpm lint
+      - name: frontend — format:check
+        working-directory: apps/fnol/frontend
+        run: pnpm format:check
       - name: frontend — typecheck
         working-directory: apps/fnol/frontend
         run: pnpm typecheck

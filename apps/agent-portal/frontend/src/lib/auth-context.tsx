@@ -1,23 +1,10 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import {
-  AuthContext,
-  decodeJwt,
-  STORAGE_KEY,
-  type AuthContextValue,
-  type AuthState,
-} from "./auth";
+import { AuthContext, decodeJwt, STORAGE_KEY, type AuthContextValue, type AuthState } from "./auth";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(() => {
-    const token =
-      typeof window === "undefined" ? null : localStorage.getItem(STORAGE_KEY);
+    const token = typeof window === "undefined" ? null : localStorage.getItem(STORAGE_KEY);
     return { token, claims: token ? decodeJwt(token) : null };
   });
 

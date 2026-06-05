@@ -28,15 +28,8 @@ export function spaFallback(distDir: string) {
         // Malformed URI — fall through to index.html.
         candidate = "";
       }
-      const inside =
-        candidate === distResolved ||
-        candidate.startsWith(distResolved + path.sep);
-      if (
-        candidate &&
-        inside &&
-        existsSync(candidate) &&
-        statSync(candidate).isFile()
-      ) {
+      const inside = candidate === distResolved || candidate.startsWith(distResolved + path.sep);
+      if (candidate && inside && existsSync(candidate) && statSync(candidate).isFile()) {
         res.sendFile(candidate);
         return;
       }

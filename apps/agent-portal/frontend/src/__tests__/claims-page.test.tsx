@@ -98,8 +98,6 @@ describe("ClaimsPage", () => {
     );
 
     renderClaims();
-    expect(
-      await screen.findByText(/no claims in the system/i),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/no claims in the system/i)).toBeInTheDocument();
   });
 });

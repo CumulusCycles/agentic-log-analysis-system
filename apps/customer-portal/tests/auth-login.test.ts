@@ -31,16 +31,11 @@ describe("POST /auth/login", () => {
       .post("/auth/login")
       .reply(function () {
         receivedKey = this.req.headers["x-api-key"] as string | undefined;
-        return [
-          200,
-          { access_token: "x", token_type: "bearer", expires_in: 60 },
-        ];
+        return [200, { access_token: "x", token_type: "bearer", expires_in: 60 }];
       });
 
     const { express: app } = buildTestApp();
-    await request(app)
-      .post("/auth/login")
-      .send({ username: "alice", password: "customer" });
+    await request(app).post("/auth/login").send({ username: "alice", password: "customer" });
 
     expect(receivedKey).toBe(TEST_CONFIG.SHARED_DATA_API_KEY_CUSTOMER_PORTAL);
     scope.done();
@@ -66,9 +61,7 @@ describe("POST /auth/login", () => {
       .replyWithError({ code: "ECONNREFUSED", message: "boom" });
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .post("/auth/login")
-      .send({ username: "alice", password: "x" });
+    const res = await request(app).post("/auth/login").send({ username: "alice", password: "x" });
 
     expect(res.status).toBe(502);
     expect(res.body.detail).toMatch(/unreachable/i);
@@ -76,9 +69,7 @@ describe("POST /auth/login", () => {
 
   it("returns 422 when the body is malformed", async () => {
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .post("/auth/login")
-      .send({ username: "alice" });
+    const res = await request(app).post("/auth/login").send({ username: "alice" });
     expect(res.status).toBe(422);
   });
 });

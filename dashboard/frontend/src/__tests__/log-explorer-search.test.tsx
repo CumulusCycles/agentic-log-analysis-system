@@ -153,9 +153,7 @@ describe("LogExplorer (7d semantic search)", () => {
     const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
       const u = String(url);
       if (u.includes("/api/logs/search")) {
-        return Promise.resolve(
-          errorResponse(503, "semantic search is unavailable"),
-        );
+        return Promise.resolve(errorResponse(503, "semantic search is unavailable"));
       }
       return Promise.resolve(jsonResponse(logsResp));
     });
@@ -164,8 +162,6 @@ describe("LogExplorer (7d semantic search)", () => {
     renderExplorer();
     await userEvent.type(screen.getByTestId("filter-query"), "auth");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /OPENAI_API_KEY/i,
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(/OPENAI_API_KEY/i);
   });
 });

@@ -104,3 +104,4 @@ Keep UI minimal — just enough screens to look and feel real.
 - Environment variables via `.env` — never hardcoded
 - Seed data will load on startup if the DB is empty — idempotent (Shared Data API only — the other apps have no DB)
 - **TypeScript module naming (all React apps):** `kebab-case.ts` for non-component modules and utilities; React components use `PascalCase.tsx`
+- **Node formatting (all Node packages):** prettier 3.x — root `.prettierrc.json` (`printWidth: 100`, `endOfLine: lf`); each package declares `prettier` in `devDependencies` + `format` (`prettier --write .`) and `format:check` (`prettier --check .`) scripts; each `ci-*.yml` runs `pnpm format:check` after `pnpm lint`

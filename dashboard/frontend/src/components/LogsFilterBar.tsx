@@ -1,10 +1,4 @@
-import {
-  APP_NAMES,
-  LOG_LEVELS,
-  type AppName,
-  type LogLevel,
-  type TimeWindow,
-} from "../types/logs";
+import { APP_NAMES, LOG_LEVELS, type AppName, type LogLevel, type TimeWindow } from "../types/logs";
 
 export interface FilterState {
   apps: AppName[];
@@ -65,8 +59,8 @@ export function LogsFilterBar({ value, onChange }: Props) {
         />
         {value.query && (
           <p className="mt-1 text-[11px] text-slate-500">
-            Semantic search uses the Chroma vector store — time-window filter
-            limits results to that range; cursor pagination is disabled.
+            Semantic search uses the Chroma vector store — time-window filter limits results to that
+            range; cursor pagination is disabled.
           </p>
         )}
       </div>

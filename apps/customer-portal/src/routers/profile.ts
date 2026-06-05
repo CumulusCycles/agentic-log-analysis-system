@@ -3,10 +3,7 @@ import { Router } from "express";
 import type { SharedDataAPIClient } from "../clients/sda-client.js";
 import type { Logger } from "../logger.js";
 
-export function profileRouter(
-  sda: SharedDataAPIClient,
-  logger: Logger,
-): Router {
+export function profileRouter(sda: SharedDataAPIClient, logger: Logger): Router {
   const router = Router();
 
   router.get("/", async (_req, res) => {

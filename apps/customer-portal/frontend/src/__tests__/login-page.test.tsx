@@ -30,13 +30,9 @@ afterEach(() => {
 describe("LoginPage", () => {
   it("renders username + password fields and the submit button", () => {
     renderLogin();
-    expect(
-      screen.getByRole("textbox", { name: /username/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /username/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /sign in/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /sign in/i })).toBeInTheDocument();
   });
 
   it("stores the token returned by the API after a successful submit", async () => {
@@ -53,16 +49,11 @@ describe("LoginPage", () => {
     vi.stubGlobal("fetch", fetchSpy);
 
     renderLogin();
-    await userEvent.type(
-      screen.getByRole("textbox", { name: /username/i }),
-      "alice",
-    );
+    await userEvent.type(screen.getByRole("textbox", { name: /username/i }), "alice");
     await userEvent.type(screen.getByLabelText(/password/i), "customer");
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
-    await waitFor(() =>
-      expect(localStorage.getItem("customer_portal_token")).toBe("tok-1"),
-    );
+    await waitFor(() => expect(localStorage.getItem("customer_portal_token")).toBe("tok-1"));
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
@@ -76,16 +67,11 @@ describe("LoginPage", () => {
     vi.stubGlobal("fetch", fetchSpy);
 
     renderLogin();
-    await userEvent.type(
-      screen.getByRole("textbox", { name: /username/i }),
-      "alice",
-    );
+    await userEvent.type(screen.getByRole("textbox", { name: /username/i }), "alice");
     await userEvent.type(screen.getByLabelText(/password/i), "WRONG");
     await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "invalid credentials",
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("invalid credentials");
     expect(localStorage.getItem("customer_portal_token")).toBeNull();
   });
 });

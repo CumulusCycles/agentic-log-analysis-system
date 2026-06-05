@@ -24,11 +24,7 @@ export class HttpError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {},
-  token?: string,
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -62,13 +58,6 @@ export async function getClaims(token: string): Promise<ClaimOut[]> {
   return request<ClaimOut[]>("/api/claims", {}, token);
 }
 
-export async function getClaim(
-  token: string,
-  id: string,
-): Promise<ClaimDetail> {
-  return request<ClaimDetail>(
-    `/api/claims/${encodeURIComponent(id)}`,
-    {},
-    token,
-  );
+export async function getClaim(token: string, id: string): Promise<ClaimDetail> {
+  return request<ClaimDetail>(`/api/claims/${encodeURIComponent(id)}`, {}, token);
 }

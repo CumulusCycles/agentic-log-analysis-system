@@ -4,11 +4,7 @@
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 
-export type AppName =
-  | "shared-data-api"
-  | "fnol"
-  | "customer-portal"
-  | "agent-portal";
+export type AppName = "shared-data-api" | "fnol" | "customer-portal" | "agent-portal";
 
 export const APP_NAMES: readonly AppName[] = [
   "shared-data-api",
@@ -17,12 +13,7 @@ export const APP_NAMES: readonly AppName[] = [
   "agent-portal",
 ] as const;
 
-export const LOG_LEVELS: readonly LogLevel[] = [
-  "DEBUG",
-  "INFO",
-  "WARN",
-  "ERROR",
-] as const;
+export const LOG_LEVELS: readonly LogLevel[] = ["DEBUG", "INFO", "WARN", "ERROR"] as const;
 
 export interface LogEntry {
   id: string;

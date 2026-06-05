@@ -79,14 +79,9 @@ describe("SubmitClaimPage", () => {
     renderSubmit();
     await userEvent.type(screen.getByLabelText(/policy number/i), "POL-1004");
     await userEvent.type(screen.getByLabelText(/vin/i), "VIN12345678901234");
-    await userEvent.type(
-      screen.getByLabelText(/incident date/i),
-      "2026-06-01T10:00",
-    );
+    await userEvent.type(screen.getByLabelText(/incident date/i), "2026-06-01T10:00");
     await userEvent.type(screen.getByLabelText(/what happened/i), "ouch");
-    await userEvent.click(
-      screen.getByRole("button", { name: /submit claim/i }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: /submit claim/i }));
 
     expect(fetchSpy).toHaveBeenCalled();
     const seen = captured as unknown as {

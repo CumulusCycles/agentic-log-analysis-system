@@ -67,6 +67,9 @@ jobs:
       - name: frontend — lint
         working-directory: dashboard/frontend
         run: pnpm lint
+      - name: frontend — format:check
+        working-directory: dashboard/frontend
+        run: pnpm format:check
       - name: frontend — typecheck
         working-directory: dashboard/frontend
         run: pnpm typecheck

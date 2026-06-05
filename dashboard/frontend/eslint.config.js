@@ -6,13 +6,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: [
-      "dist",
-      "node_modules",
-      "e2e",
-      "playwright-report",
-      "test-results",
-    ],
+    ignores: ["dist", "node_modules", "e2e", "playwright-report", "test-results"],
   },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
@@ -27,10 +21,7 @@ export default tseslint.config(
     },
     rules: {
       ...reactHooks.configs.recommended.rules,
-      "react-refresh/only-export-components": [
-        "warn",
-        { allowConstantExport: true },
-      ],
+      "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },
 );

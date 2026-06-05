@@ -26,9 +26,7 @@ describe("GET /claims/me", () => {
       ]);
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/claims/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/claims/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
@@ -45,9 +43,7 @@ describe("GET /claims/me", () => {
       .reply(200, []);
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/claims/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/claims/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
@@ -67,9 +63,7 @@ describe("GET /claims/me", () => {
       .replyWithError({ code: "ECONNREFUSED", message: "boom" });
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/claims/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/claims/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(502);
   });

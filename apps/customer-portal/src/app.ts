@@ -28,11 +28,7 @@ export interface CustomerPortalApp {
   sda: SharedDataAPIClient;
 }
 
-export function buildApp({
-  cfg,
-  logger,
-  sda,
-}: BuildAppOptions): CustomerPortalApp {
+export function buildApp({ cfg, logger, sda }: BuildAppOptions): CustomerPortalApp {
   const client = sda ?? new SharedDataAPIClient(cfg, logger);
 
   const app = express();
@@ -59,10 +55,7 @@ export function buildApp({
   // alongside the backend's working directory root.
   const distDir = path.resolve(here, "..", "frontend", "dist");
   if (existsSync(distDir)) {
-    app.use(
-      "/assets",
-      express.static(path.join(distDir, "assets"), { fallthrough: false }),
-    );
+    app.use("/assets", express.static(path.join(distDir, "assets"), { fallthrough: false }));
     // Express 5 / path-to-regexp 8 requires a named wildcard; "*" alone is
     // a syntax error. "/*splat" matches /policies, /xyz, /a/b/c — but NOT
     // the bare "/" root. Wrap the segment in braces ("{/*splat}") so the

@@ -47,6 +47,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | 7d | Dashboard semantic search — Chroma + embeddings pipeline + ingest filter (WARN/ERROR/prod by default) + `POST /api/logs/search` | ✅ |
 | Agitator PR 1 | Cross-app `X-Source` header convention — middleware + Playwright configs + ADR-011 | ✅ |
 | Agitator PR 1.5 | Agent Portal — project checkstyle ruleset (Google Java Style + overrides) + CI binding via `verify` phase + code style cleanup | ✅ |
+| Agitator PR 1.75 | Node prettier format gate — root config + per-package scripts + CI binding across all 5 Node packages | ✅ |
 | Agitator PR 2 | Chaos middleware (`X-Chaos` directive, `ENABLE_CHAOS` env gate) | ⬜ |
 | Agitator PR 3 | Agitator bundled into dashboard — operator-triggered bounded scenarios | ⬜ |
 | 7e | Dashboard LangGraph agent — AI Chat + Error Detail analysis (the LLM work) | ⬜ |

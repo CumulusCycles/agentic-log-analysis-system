@@ -1,13 +1,9 @@
 import { ALICE, expect, test } from "./fixtures";
 
 test.describe("Profile page", () => {
-  test("alice's profile renders username and role", async ({
-    loggedInPage: page,
-  }) => {
+  test("alice's profile renders username and role", async ({ loggedInPage: page }) => {
     await page.goto("/profile");
-    await expect(
-      page.getByRole("heading", { name: /my profile/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /my profile/i })).toBeVisible();
     // The Username dd renders the lowercase username; the Name dd renders
     // the display_name "Alice". Match the exact lowercase string to avoid
     // colliding with the Name field.

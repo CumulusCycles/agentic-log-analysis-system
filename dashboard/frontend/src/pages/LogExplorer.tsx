@@ -5,13 +5,7 @@ import { LogsFilterBar, type FilterState } from "../components/LogsFilterBar";
 import { LogsTable } from "../components/LogsTable";
 import { getLogs, HttpError, searchLogs } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import {
-  APP_NAMES,
-  LOG_LEVELS,
-  type AppName,
-  type LogEntry,
-  type TimeWindow,
-} from "../types/logs";
+import { APP_NAMES, LOG_LEVELS, type AppName, type LogEntry, type TimeWindow } from "../types/logs";
 
 const PAGE_LIMIT = 100;
 const SEARCH_TOP_K = 50;
@@ -31,8 +25,7 @@ function isAppName(value: string): value is AppName {
 }
 
 function initialFilters(presetApp: string | null): FilterState {
-  const apps: AppName[] =
-    presetApp && isAppName(presetApp) ? [presetApp] : [...APP_NAMES];
+  const apps: AppName[] = presetApp && isAppName(presetApp) ? [presetApp] : [...APP_NAMES];
   return {
     apps,
     levels: [...LOG_LEVELS],
@@ -46,9 +39,7 @@ export function LogExplorer() {
   const [searchParams] = useSearchParams();
   const presetApp = searchParams.get("app");
 
-  const [filters, setFilters] = useState<FilterState>(() =>
-    initialFilters(presetApp),
-  );
+  const [filters, setFilters] = useState<FilterState>(() => initialFilters(presetApp));
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [scores, setScores] = useState<number[]>([]);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
@@ -59,10 +50,7 @@ export function LogExplorer() {
   // round-trip. 300ms feels responsive but coalesces typing bursts.
   const [debouncedQuery, setDebouncedQuery] = useState(filters.query);
   useEffect(() => {
-    const handle = window.setTimeout(
-      () => setDebouncedQuery(filters.query),
-      SEARCH_DEBOUNCE_MS,
-    );
+    const handle = window.setTimeout(() => setDebouncedQuery(filters.query), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(handle);
   }, [filters.query]);
 
@@ -93,9 +81,7 @@ export function LogExplorer() {
             before,
             limit: PAGE_LIMIT,
           });
-          setEntries((prev) =>
-            append ? [...prev, ...res.entries] : res.entries,
-          );
+          setEntries((prev) => (append ? [...prev, ...res.entries] : res.entries));
           setScores([]);
           setNextBefore(res.next_before);
         }
@@ -106,13 +92,9 @@ export function LogExplorer() {
           return;
         }
         if (err instanceof HttpError && err.status === 503 && isSearchMode) {
-          setError(
-            "semantic search is unavailable — set OPENAI_API_KEY to enable it",
-          );
+          setError("semantic search is unavailable — set OPENAI_API_KEY to enable it");
         } else if (err instanceof HttpError) {
-          setError(
-            `${isSearchMode ? "search" : "logs"} request failed (${err.status})`,
-          );
+          setError(`${isSearchMode ? "search" : "logs"} request failed (${err.status})`);
         } else {
           setError(`${isSearchMode ? "search" : "logs"} request failed`);
         }
@@ -120,15 +102,7 @@ export function LogExplorer() {
         setLoading(false);
       }
     },
-    [
-      token,
-      logout,
-      filters.apps,
-      filters.levels,
-      since,
-      isSearchMode,
-      debouncedQuery,
-    ],
+    [token, logout, filters.apps, filters.levels, since, isSearchMode, debouncedQuery],
   );
 
   // Refetch from page 1 whenever filters change (or the debounced query
@@ -158,10 +132,7 @@ export function LogExplorer() {
       </div>
       <LogsFilterBar value={filters} onChange={setFilters} />
       {error && (
-        <p
-          role="alert"
-          className="rounded-md bg-red-50 p-3 text-sm text-red-700"
-        >
+        <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">
           {error}
         </p>
       )}

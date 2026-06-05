@@ -22,11 +22,7 @@ export class HttpError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {},
-  token?: string,
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -52,10 +48,7 @@ export async function login(payload: LoginRequest): Promise<TokenResponse> {
   });
 }
 
-export async function submitClaim(
-  payload: ClaimCreate,
-  token: string,
-): Promise<ClaimOut> {
+export async function submitClaim(payload: ClaimCreate, token: string): Promise<ClaimOut> {
   return request<ClaimOut>(
     "/fnol/submit",
     { method: "POST", body: JSON.stringify(payload) },
@@ -63,13 +56,6 @@ export async function submitClaim(
   );
 }
 
-export async function getClaim(
-  claimId: string,
-  token: string,
-): Promise<ClaimDetail> {
-  return request<ClaimDetail>(
-    `/fnol/${encodeURIComponent(claimId)}`,
-    {},
-    token,
-  );
+export async function getClaim(claimId: string, token: string): Promise<ClaimDetail> {
+  return request<ClaimDetail>(`/fnol/${encodeURIComponent(claimId)}`, {}, token);
 }

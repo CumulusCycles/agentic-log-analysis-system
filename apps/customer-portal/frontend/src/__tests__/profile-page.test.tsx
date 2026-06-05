@@ -58,9 +58,7 @@ describe("ProfilePage", () => {
     );
 
     renderProfile();
-    await waitFor(() =>
-      expect(screen.getByText("Alice Anderson")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("Alice Anderson")).toBeInTheDocument());
     expect(screen.getByText("alice")).toBeInTheDocument();
     expect(screen.getByText("customer")).toBeInTheDocument();
   });

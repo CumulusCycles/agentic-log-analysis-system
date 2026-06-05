@@ -59,13 +59,7 @@ interface Props {
   scores?: number[];
 }
 
-export function LogsTable({
-  entries,
-  loading,
-  hasMore,
-  onLoadMore,
-  scores,
-}: Props) {
+export function LogsTable({ entries, loading, hasMore, onLoadMore, scores }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const showScores = (scores?.length ?? 0) > 0;
 
@@ -95,11 +89,7 @@ export function LogsTable({
               Event
             </th>
             {showScores && (
-              <th
-                scope="col"
-                className="px-4 py-2 text-right"
-                data-testid="score-header"
-              >
+              <th scope="col" className="px-4 py-2 text-right" data-testid="score-header">
                 Score
               </th>
             )}
@@ -130,9 +120,7 @@ export function LogsTable({
                   <td className="whitespace-nowrap px-4 py-2">
                     <LevelPill level={entry.level} />
                   </td>
-                  <td className="px-4 py-2 font-mono text-xs text-slate-800">
-                    {entry.event}
-                  </td>
+                  <td className="px-4 py-2 font-mono text-xs text-slate-800">{entry.event}</td>
                   {showScores && (
                     <td
                       className="whitespace-nowrap px-4 py-2 text-right font-mono text-xs text-slate-500"
@@ -145,9 +133,7 @@ export function LogsTable({
                     {isExpanded ? "▾" : "▸"}
                   </td>
                 </tr>
-                {isExpanded && (
-                  <ExpandedRow entry={entry} colSpan={showScores ? 6 : 5} />
-                )}
+                {isExpanded && <ExpandedRow entry={entry} colSpan={showScores ? 6 : 5} />}
               </Fragment>
             );
           })}

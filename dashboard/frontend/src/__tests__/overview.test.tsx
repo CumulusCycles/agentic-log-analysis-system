@@ -97,9 +97,7 @@ describe("Overview", () => {
 
     renderOverview();
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /status request failed/,
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(/status request failed/);
   });
 
   it("clears the token on a 401 so RequireAuth can bounce to /login", async () => {

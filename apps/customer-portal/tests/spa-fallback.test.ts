@@ -6,11 +6,7 @@ import { buildTestApp } from "./setup.js";
 describe("SPA fallback / path traversal hardening", () => {
   it("never serves /etc/passwd contents for path-traversal attempts", async () => {
     const { express: app } = buildTestApp();
-    for (const path of [
-      "../etc/passwd",
-      "../../etc/passwd",
-      "..%2F..%2Fetc%2Fpasswd",
-    ]) {
+    for (const path of ["../etc/passwd", "../../etc/passwd", "..%2F..%2Fetc%2Fpasswd"]) {
       const res = await request(app).get(`/${path}`);
       expect([200, 404]).toContain(res.status);
       // Only check file-contents leakage on 200 — Express's default 404

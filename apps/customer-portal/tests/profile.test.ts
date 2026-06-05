@@ -15,9 +15,7 @@ describe("GET /profile/me", () => {
     });
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/profile/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/profile/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body.username).toBe("alice");
@@ -33,9 +31,7 @@ describe("GET /profile/me", () => {
 
   it("returns 401 for an invalid token", async () => {
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/profile/me")
-      .set("Authorization", "Bearer not-a-jwt");
+    const res = await request(app).get("/profile/me").set("Authorization", "Bearer not-a-jwt");
     expect(res.status).toBe(401);
     expect(res.body.detail).toBe("invalid token");
   });
@@ -47,9 +43,7 @@ describe("GET /profile/me", () => {
       .reply(404, { detail: "user not found" });
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/profile/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/profile/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ detail: "user not found" });

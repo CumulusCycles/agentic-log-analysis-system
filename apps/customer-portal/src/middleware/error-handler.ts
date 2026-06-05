@@ -29,9 +29,7 @@ export function errorHandler(logger: Logger): ErrorRequestHandler {
     }
     logger.error("unhandled_exception", {
       event: "unhandled_exception",
-      error_class:
-        (err as { constructor?: { name?: string } })?.constructor?.name ??
-        "Unknown",
+      error_class: (err as { constructor?: { name?: string } })?.constructor?.name ?? "Unknown",
       error_message: (err as { message?: string })?.message,
       method: req.method,
       path: req.originalUrl.split("?")[0],

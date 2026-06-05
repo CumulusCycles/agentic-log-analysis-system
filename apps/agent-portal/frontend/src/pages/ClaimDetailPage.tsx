@@ -25,9 +25,7 @@ export function ClaimDetailPage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(
-          err instanceof HttpError ? err.detail : "failed to load claim",
-        );
+        setError(err instanceof HttpError ? err.detail : "failed to load claim");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -64,9 +62,7 @@ export function ClaimDetailPage() {
                   <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     Claim
                   </p>
-                  <h1 className="font-mono text-base font-semibold">
-                    {claim.id}
-                  </h1>
+                  <h1 className="font-mono text-base font-semibold">{claim.id}</h1>
                 </div>
                 <StatusBadge status={claim.current_status} />
               </header>
@@ -74,15 +70,11 @@ export function ClaimDetailPage() {
               <dl className="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <dt className="text-slate-500">Policy</dt>
-                  <dd className="font-mono text-slate-900">
-                    {claim.policy_number}
-                  </dd>
+                  <dd className="font-mono text-slate-900">{claim.policy_number}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Customer</dt>
-                  <dd className="font-mono text-xs text-slate-700">
-                    {claim.customer_id}
-                  </dd>
+                  <dd className="font-mono text-xs text-slate-700">{claim.customer_id}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Vehicle</dt>
@@ -94,15 +86,11 @@ export function ClaimDetailPage() {
                 </div>
                 <div>
                   <dt className="text-slate-500">VIN</dt>
-                  <dd className="font-mono text-xs text-slate-700">
-                    {claim.vin}
-                  </dd>
+                  <dd className="font-mono text-xs text-slate-700">{claim.vin}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Incident</dt>
-                  <dd className="text-slate-900">
-                    {new Date(claim.incident_at).toLocaleString()}
-                  </dd>
+                  <dd className="text-slate-900">{new Date(claim.incident_at).toLocaleString()}</dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Assigned adjuster</dt>
@@ -120,9 +108,7 @@ export function ClaimDetailPage() {
             </article>
 
             <section className="mt-6">
-              <h2 className="text-lg font-semibold tracking-tight">
-                Status history
-              </h2>
+              <h2 className="text-lg font-semibold tracking-tight">Status history</h2>
               <div className="mt-3">
                 <StatusTimeline history={claim.history} />
               </div>

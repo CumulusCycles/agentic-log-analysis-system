@@ -19,10 +19,7 @@ function entry(over: Partial<LogEntry> = {}): LogEntry {
   };
 }
 
-function response(
-  entries: LogEntry[],
-  nextBefore: string | null = null,
-): LogsResponse {
+function response(entries: LogEntry[], nextBefore: string | null = null): LogsResponse {
   return { entries, next_before: nextBefore };
 }
 
@@ -63,9 +60,7 @@ describe("LogExplorer", () => {
 
     // Initial fetch has all 4 apps in the query.
     const initialUrl = String(fetchSpy.mock.calls[0][0]);
-    expect(initialUrl).toMatch(
-      /app=shared-data-api%2Cfnol%2Ccustomer-portal%2Cagent-portal/,
-    );
+    expect(initialUrl).toMatch(/app=shared-data-api%2Cfnol%2Ccustomer-portal%2Cagent-portal/);
 
     fetchSpy.mockClear();
 
@@ -89,9 +84,7 @@ describe("LogExplorer", () => {
 
     renderExplorer();
 
-    await waitFor(() =>
-      expect(screen.getByTestId("load-more")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByTestId("load-more")).toBeInTheDocument());
 
     await userEvent.click(screen.getByTestId("load-more"));
 
