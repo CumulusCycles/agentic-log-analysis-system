@@ -1,0 +1,48 @@
+# Build artifacts and dependency stores
+**/node_modules/
+**/dist/
+**/build/
+**/coverage/
+**/.next/
+**/.vite/
+**/playwright-report/
+**/test-results/
+**/*.min.*
+
+# Lockfiles — managed by their package managers, not prettier
+**/pnpm-lock.yaml
+**/package-lock.json
+**/yarn.lock
+**/uv.lock
+
+# Python sources — formatted by black, not prettier
+apps/shared-data-api/
+apps/fnol/src/
+apps/fnol/tests/
+apps/fnol/pyproject.toml
+apps/fnol/alembic/
+dashboard/src/
+dashboard/tests/
+dashboard/pyproject.toml
+dashboard/alembic/
+
+# Java sources and Maven build files — formatted by checkstyle/Maven, not prettier
+apps/agent-portal/src/main/java/
+apps/agent-portal/src/main/resources/
+apps/agent-portal/src/test/java/
+apps/agent-portal/pom.xml
+apps/agent-portal/checkstyle.xml
+apps/agent-portal/mvnw
+apps/agent-portal/mvnw.cmd
+apps/agent-portal/.mvn/
+
+# Container infra and bind-mount data
+chroma-data/
+postgres-data/
+mongodb-data/
+.docker/
+
+# Generated/sync state
+.venv/
+__pycache__/
+*.pyc

@@ -18,16 +18,12 @@ describe("GET /policies/me", () => {
           expiration_date: "2026-01-01",
           coverage_type: "auto-comprehensive",
           premium_cents: 120000,
-          vehicles: [
-            { vin: "VIN-1", make: "Toyota", model: "Camry", year: 2022 },
-          ],
+          vehicles: [{ vin: "VIN-1", make: "Toyota", model: "Camry", year: 2022 }],
         },
       ]);
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/policies/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/policies/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
@@ -44,9 +40,7 @@ describe("GET /policies/me", () => {
       .reply(200, []);
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/policies/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/policies/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
@@ -66,9 +60,7 @@ describe("GET /policies/me", () => {
       .reply(500, { detail: "boom" });
 
     const { express: app } = buildTestApp();
-    const res = await request(app)
-      .get("/policies/me")
-      .set("Authorization", `Bearer ${token}`);
+    const res = await request(app).get("/policies/me").set("Authorization", `Bearer ${token}`);
 
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ detail: "boom" });

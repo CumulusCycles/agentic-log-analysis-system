@@ -42,9 +42,7 @@ describe("CP enrichment — auth", () => {
       expires_in: 60,
     });
 
-    await request(app)
-      .post("/auth/login")
-      .send({ username: "alice", password: "customer" });
+    await request(app).post("/auth/login").send({ username: "alice", password: "customer" });
 
     const call = eventOf(infoSpy, "login_proxied_success");
     expect(call).toBeTruthy();
@@ -80,9 +78,7 @@ describe("CP enrichment — read paths", () => {
         },
       ]);
 
-    await request(app)
-      .get("/policies/me")
-      .set("Authorization", `Bearer ${token}`);
+    await request(app).get("/policies/me").set("Authorization", `Bearer ${token}`);
 
     const call = eventOf(infoSpy, "policies_fetched");
     expect(call).toBeTruthy();
@@ -102,9 +98,7 @@ describe("CP enrichment — read paths", () => {
       .query({ customer_id: "u-2" })
       .reply(200, []);
 
-    await request(app)
-      .get("/claims/me")
-      .set("Authorization", `Bearer ${token}`);
+    await request(app).get("/claims/me").set("Authorization", `Bearer ${token}`);
 
     const call = eventOf(infoSpy, "claims_fetched");
     expect(call?.[1]).toMatchObject({
@@ -124,9 +118,7 @@ describe("CP enrichment — read paths", () => {
       display_name: "Alice",
     });
 
-    await request(app)
-      .get("/profile/me")
-      .set("Authorization", `Bearer ${token}`);
+    await request(app).get("/profile/me").set("Authorization", `Bearer ${token}`);
 
     const call = eventOf(infoSpy, "profile_fetched");
     expect(call?.[1]).toMatchObject({
@@ -149,9 +141,7 @@ describe("CP enrichment — SDA upstream errors", () => {
       .query(true)
       .reply(403, { detail: "forbidden" });
 
-    await request(app)
-      .get("/policies/me")
-      .set("Authorization", `Bearer ${token}`);
+    await request(app).get("/policies/me").set("Authorization", `Bearer ${token}`);
 
     const call = eventOf(warnSpy, "sda_upstream_rejected");
     expect(call).toBeTruthy();
@@ -162,9 +152,7 @@ describe("CP enrichment — SDA upstream errors", () => {
       detail: "forbidden",
     });
     expect(JSON.stringify(call)).not.toContain(token);
-    expect(JSON.stringify(call)).not.toContain(
-      TEST_CONFIG.SHARED_DATA_API_KEY_CUSTOMER_PORTAL,
-    );
+    expect(JSON.stringify(call)).not.toContain(TEST_CONFIG.SHARED_DATA_API_KEY_CUSTOMER_PORTAL);
   });
 
   it("emits sda_upstream_unreachable when SDA is unreachable", async () => {
@@ -175,9 +163,7 @@ describe("CP enrichment — SDA upstream errors", () => {
       .query(true)
       .replyWithError({ code: "ECONNREFUSED", message: "boom" });
 
-    await request(app)
-      .get("/policies/me")
-      .set("Authorization", `Bearer ${token}`);
+    await request(app).get("/policies/me").set("Authorization", `Bearer ${token}`);
 
     const call = eventOf(warnSpy, "sda_upstream_unreachable");
     expect(call).toBeTruthy();

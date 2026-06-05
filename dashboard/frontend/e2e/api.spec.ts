@@ -67,9 +67,7 @@ test.describe("Read-only log API (7b)", () => {
     expect(timestamps).toEqual(sorted);
   });
 
-  test("unauthenticated /api/logs and /api/status return 401", async ({
-    request,
-  }) => {
+  test("unauthenticated /api/logs and /api/status return 401", async ({ request }) => {
     const statusRes = await request.get("/api/status");
     expect(statusRes.status()).toBe(401);
     const logsRes = await request.get("/api/logs");
@@ -80,10 +78,9 @@ test.describe("Read-only log API (7b)", () => {
     request,
   }) => {
     const token = await getToken(request);
-    const res = await request.get(
-      "/api/logs?app=shared-data-api&level=ERROR,WARN&limit=20",
-      { headers: { Authorization: `Bearer ${token}` } },
-    );
+    const res = await request.get("/api/logs?app=shared-data-api&level=ERROR,WARN&limit=20", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     expect(res.status()).toBe(200);
     const body = (await res.json()) as {
       entries: Array<{ app: string; level: string }>;

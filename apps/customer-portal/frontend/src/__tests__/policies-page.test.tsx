@@ -55,9 +55,7 @@ describe("PoliciesPage", () => {
             expiration_date: "2026-01-01",
             coverage_type: "auto-comprehensive",
             premium_cents: 120000,
-            vehicles: [
-              { vin: "VIN-A", make: "Toyota", model: "Camry", year: 2022 },
-            ],
+            vehicles: [{ vin: "VIN-A", make: "Toyota", model: "Camry", year: 2022 }],
           },
         ]),
         { status: 200, headers: { "Content-Type": "application/json" } },
@@ -67,9 +65,7 @@ describe("PoliciesPage", () => {
 
     renderPolicies();
 
-    await waitFor(() =>
-      expect(screen.getByText("POL-1004")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("POL-1004")).toBeInTheDocument());
     expect(screen.getByText(/Toyota/)).toBeInTheDocument();
     expect(screen.getByText(/VIN-A/)).toBeInTheDocument();
     expect(screen.getByText(/auto-comprehensive/)).toBeInTheDocument();

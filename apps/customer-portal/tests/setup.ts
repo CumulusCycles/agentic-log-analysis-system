@@ -44,9 +44,7 @@ export function makeToken(overrides: Record<string, unknown> = {}): string {
 beforeAll(() => {
   nock.disableNetConnect();
   // Permit Supertest's loopback connections.
-  nock.enableNetConnect(
-    (host) => /^127\.0\.0\.1/.test(host) || /^localhost/.test(host),
-  );
+  nock.enableNetConnect((host) => /^127\.0\.0\.1/.test(host) || /^localhost/.test(host));
 });
 
 afterEach(() => {

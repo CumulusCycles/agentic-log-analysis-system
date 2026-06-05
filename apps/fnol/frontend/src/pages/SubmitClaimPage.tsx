@@ -46,9 +46,7 @@ export function SubmitClaimPage() {
     <main className="mx-auto max-w-md px-4 py-6 sm:py-10">
       <header className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            File a Claim
-          </h1>
+          <h1 className="text-2xl font-semibold tracking-tight">File a Claim</h1>
           {claims && (
             <p className="mt-1 text-sm text-slate-600">
               Signed in as <span className="font-medium">{claims.user_id}</span>
@@ -70,9 +68,7 @@ export function SubmitClaimPage() {
         aria-label="submit-claim"
       >
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">
-            Policy number
-          </span>
+          <span className="text-sm font-medium text-slate-700">Policy number</span>
           <input
             type="text"
             required
@@ -95,9 +91,7 @@ export function SubmitClaimPage() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">
-            Incident date/time
-          </span>
+          <span className="text-sm font-medium text-slate-700">Incident date/time</span>
           <input
             type="datetime-local"
             required
@@ -108,9 +102,7 @@ export function SubmitClaimPage() {
         </label>
 
         <label className="block">
-          <span className="text-sm font-medium text-slate-700">
-            What happened?
-          </span>
+          <span className="text-sm font-medium text-slate-700">What happened?</span>
           <textarea
             rows={4}
             value={description}

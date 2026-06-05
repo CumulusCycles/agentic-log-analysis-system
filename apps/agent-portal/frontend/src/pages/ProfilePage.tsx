@@ -21,9 +21,7 @@ export function ProfilePage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(
-          err instanceof HttpError ? err.detail : "failed to load profile",
-        );
+        setError(err instanceof HttpError ? err.detail : "failed to load profile");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -52,9 +50,7 @@ export function ProfilePage() {
             <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
               <div>
                 <dt className="font-medium text-slate-500">Name</dt>
-                <dd className="mt-0.5 text-slate-900">
-                  {profile.display_name}
-                </dd>
+                <dd className="mt-0.5 text-slate-900">{profile.display_name}</dd>
               </div>
               <div>
                 <dt className="font-medium text-slate-500">Username</dt>
@@ -66,9 +62,7 @@ export function ProfilePage() {
               </div>
               <div>
                 <dt className="font-medium text-slate-500">User ID</dt>
-                <dd className="mt-0.5 font-mono text-xs text-slate-700">
-                  {profile.id}
-                </dd>
+                <dd className="mt-0.5 font-mono text-xs text-slate-700">{profile.id}</dd>
               </div>
             </dl>
           </article>

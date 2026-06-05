@@ -37,10 +37,7 @@ export function Overview() {
 
   if (error && !data) {
     return (
-      <div
-        role="alert"
-        className="rounded-md bg-red-50 p-4 text-sm text-red-700"
-      >
+      <div role="alert" className="rounded-md bg-red-50 p-4 text-sm text-red-700">
         {error}
       </div>
     );
@@ -55,10 +52,7 @@ export function Overview() {
   return (
     <section aria-labelledby="overview-heading">
       <div className="flex items-baseline justify-between">
-        <h2
-          id="overview-heading"
-          className="text-lg font-semibold text-slate-900"
-        >
+        <h2 id="overview-heading" className="text-lg font-semibold text-slate-900">
           Overview
         </h2>
         <span className="text-xs text-slate-500" data-testid="as-of">
@@ -66,17 +60,11 @@ export function Overview() {
         </span>
       </div>
       {error && (
-        <p
-          role="alert"
-          className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-800"
-        >
+        <p role="alert" className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-800">
           {error} — showing cached data
         </p>
       )}
-      <div
-        className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        data-testid="status-grid"
-      >
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4" data-testid="status-grid">
         {data.apps.map((app) => (
           <StatusCard key={app.name} status={app} />
         ))}

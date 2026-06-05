@@ -33,17 +33,11 @@ test.describe("Claim detail", () => {
 
     await page.goto(`/claims/${claimId}`);
 
-    await expect(
-      page.getByRole("heading", { name: new RegExp(claimId) }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: new RegExp(claimId) })).toBeVisible();
 
     // The status dl/dd grid contains the values.
-    await expect(
-      page.locator("dd").filter({ hasText: ALICE.policyNumber }),
-    ).toBeVisible();
-    await expect(
-      page.locator("dd").filter({ hasText: ALICE.vin }),
-    ).toBeVisible();
+    await expect(page.locator("dd").filter({ hasText: ALICE.policyNumber })).toBeVisible();
+    await expect(page.locator("dd").filter({ hasText: ALICE.vin })).toBeVisible();
 
     // Status starts as "submitted" — the simulator may have advanced it by the
     // time we load, so accept any ADR-007 status value.
@@ -54,9 +48,7 @@ test.describe("Claim detail", () => {
     ).toBeVisible();
   });
 
-  test("shows error alert when the claim id is unknown", async ({
-    loggedInPage: page,
-  }) => {
+  test("shows error alert when the claim id is unknown", async ({ loggedInPage: page }) => {
     await page.goto("/claims/00000000-0000-0000-0000-000000000000");
     await expect(page.getByRole("alert")).toBeVisible();
   });

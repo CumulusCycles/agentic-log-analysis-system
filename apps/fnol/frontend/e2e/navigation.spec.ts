@@ -11,9 +11,7 @@ test.describe("Routing", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  test("anonymous visit to /claims/<id> redirects to /login", async ({
-    page,
-  }) => {
+  test("anonymous visit to /claims/<id> redirects to /login", async ({ page }) => {
     await page.goto("/claims/anything");
     await expect(page).toHaveURL(/\/login$/);
   });
@@ -23,9 +21,7 @@ test.describe("Routing", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  test("authenticated / redirects to /submit", async ({
-    loggedInPage: page,
-  }) => {
+  test("authenticated / redirects to /submit", async ({ loggedInPage: page }) => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/submit$/);
   });

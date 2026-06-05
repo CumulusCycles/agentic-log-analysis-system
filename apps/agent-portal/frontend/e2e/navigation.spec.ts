@@ -6,9 +6,7 @@ test.describe("Routing", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  test("authenticated / redirects to /claims", async ({
-    loggedInPage: page,
-  }) => {
+  test("authenticated / redirects to /claims", async ({ loggedInPage: page }) => {
     await page.goto("/");
     await expect(page).toHaveURL(/\/claims$/);
   });
@@ -18,9 +16,7 @@ test.describe("Routing", () => {
     await expect(page).toHaveURL(/\/login$/);
   });
 
-  test("top nav links navigate between sections when authed", async ({
-    loggedInPage: page,
-  }) => {
+  test("top nav links navigate between sections when authed", async ({ loggedInPage: page }) => {
     await page.goto("/profile");
     await page.getByRole("link", { name: /^claims$/i }).click();
     await expect(page).toHaveURL(/\/claims$/);

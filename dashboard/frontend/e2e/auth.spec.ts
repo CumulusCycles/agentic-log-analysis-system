@@ -3,27 +3,19 @@ import { test, expect } from "@playwright/test";
 import { ADMIN } from "./fixtures";
 
 test.describe("Authentication", () => {
-  test("successful login navigates to / and persists token", async ({
-    page,
-  }) => {
+  test("successful login navigates to / and persists token", async ({ page }) => {
     await page.goto("/login");
     await page.getByRole("textbox", { name: /username/i }).fill(ADMIN.username);
     await page.getByLabel(/password/i).fill(ADMIN.password);
     await page.getByRole("button", { name: /sign in/i }).click();
 
     await expect(page).toHaveURL(/\/$/);
-    await expect(
-      page.getByRole("heading", { name: /^overview$/i }),
-    ).toBeVisible();
-    const token = await page.evaluate(() =>
-      localStorage.getItem("dashboard_token"),
-    );
+    await expect(page.getByRole("heading", { name: /^overview$/i })).toBeVisible();
+    const token = await page.evaluate(() => localStorage.getItem("dashboard_token"));
     expect(token).not.toBeNull();
   });
 
-  test("wrong password shows the upstream 401 detail and stays on /login", async ({
-    page,
-  }) => {
+  test("wrong password shows the upstream 401 detail and stays on /login", async ({ page }) => {
     await page.goto("/login");
     await page.getByRole("textbox", { name: /username/i }).fill(ADMIN.username);
     await page.getByLabel(/password/i).fill("WRONG");
@@ -31,9 +23,7 @@ test.describe("Authentication", () => {
 
     await expect(page.getByRole("alert")).toContainText(/invalid credentials/i);
     await expect(page).toHaveURL(/\/login$/);
-    const token = await page.evaluate(() =>
-      localStorage.getItem("dashboard_token"),
-    );
+    const token = await page.evaluate(() => localStorage.getItem("dashboard_token"));
     expect(token).toBeNull();
   });
 
@@ -55,9 +45,7 @@ test.describe("Authentication", () => {
 
     await page.getByRole("button", { name: /log out/i }).click();
     await expect(page).toHaveURL(/\/login$/);
-    const token = await page.evaluate(() =>
-      localStorage.getItem("dashboard_token"),
-    );
+    const token = await page.evaluate(() => localStorage.getItem("dashboard_token"));
     expect(token).toBeNull();
   });
 
@@ -70,8 +58,6 @@ test.describe("Authentication", () => {
 
     await page.reload();
     await expect(page).toHaveURL(/\/$/);
-    await expect(
-      page.getByRole("heading", { name: /^overview$/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^overview$/i })).toBeVisible();
   });
 });

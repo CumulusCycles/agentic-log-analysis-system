@@ -5,9 +5,7 @@ test.describe("Policies page", () => {
     loggedInPage: page,
   }) => {
     await page.goto("/policies");
-    await expect(
-      page.getByRole("heading", { name: /my policies/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /my policies/i })).toBeVisible();
 
     await expect(page.getByText(ALICE.policyNumber)).toBeVisible();
 

@@ -98,8 +98,6 @@ describe("ClaimDetailPage", () => {
     );
 
     renderDetail();
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "claim not found",
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("claim not found");
   });
 });

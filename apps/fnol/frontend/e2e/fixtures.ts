@@ -32,10 +32,7 @@ async function programmaticLogin(
 
   const payloadB64 = access_token.split(".")[1];
   const payload = JSON.parse(
-    Buffer.from(
-      payloadB64.replace(/-/g, "+").replace(/_/g, "/"),
-      "base64",
-    ).toString(),
+    Buffer.from(payloadB64.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString(),
   ) as { user_id: string };
 
   await page.goto("/");

@@ -11,9 +11,7 @@ test.skip(
 );
 
 test.describe("Mobile viewport", () => {
-  test("login form fits in the viewport with no horizontal scroll", async ({
-    page,
-  }) => {
+  test("login form fits in the viewport with no horizontal scroll", async ({ page }) => {
     await page.goto("/login");
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth > window.innerWidth,
@@ -21,9 +19,7 @@ test.describe("Mobile viewport", () => {
     expect(overflow).toBe(false);
   });
 
-  test("inputs render with the mobile-readable 16px+ font size", async ({
-    page,
-  }) => {
+  test("inputs render with the mobile-readable 16px+ font size", async ({ page }) => {
     await page.goto("/login");
     const fontSize = await page
       .getByRole("textbox", { name: /username/i })
@@ -32,9 +28,7 @@ test.describe("Mobile viewport", () => {
     expect(fontSize).toBeGreaterThanOrEqual(16);
   });
 
-  test("submit-claim form button is reachable and tappable above the fold", async ({
-    page,
-  }) => {
+  test("submit-claim form button is reachable and tappable above the fold", async ({ page }) => {
     await page.goto("/login");
     await page.getByRole("textbox", { name: /username/i }).fill(ALICE.username);
     await page.getByLabel(/password/i).fill(ALICE.password);

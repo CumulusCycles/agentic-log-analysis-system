@@ -54,9 +54,7 @@ export function StatusCard({ status }: { status: AppStatus }) {
         <h3 className="text-sm font-semibold text-slate-900">{status.name}</h3>
         <StatusBadge status={status.status} />
       </div>
-      <p className="mt-1 text-xs text-slate-500">
-        last seen {formatLastSeen(status.last_seen_at)}
-      </p>
+      <p className="mt-1 text-xs text-slate-500">last seen {formatLastSeen(status.last_seen_at)}</p>
       <div className="mt-4 space-y-1.5">
         <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-slate-400">
           <span>window</span>

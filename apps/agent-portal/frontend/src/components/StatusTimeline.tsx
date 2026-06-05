@@ -1,10 +1,6 @@
 import type { ClaimStatusHistoryOut } from "../types/api";
 
-export function StatusTimeline({
-  history,
-}: {
-  history: ClaimStatusHistoryOut[];
-}) {
+export function StatusTimeline({ history }: { history: ClaimStatusHistoryOut[] }) {
   if (history.length === 0) {
     return <p className="text-sm text-slate-600">No status history.</p>;
   }
@@ -24,9 +20,7 @@ export function StatusTimeline({
             </span>
             <span className="text-xs text-slate-500">by {entry.actor_id}</span>
           </div>
-          {entry.note && (
-            <p className="mt-1 text-sm text-slate-700">{entry.note}</p>
-          )}
+          {entry.note && <p className="mt-1 text-sm text-slate-700">{entry.note}</p>}
         </li>
       ))}
     </ol>

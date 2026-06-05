@@ -16,10 +16,7 @@ export function authRouter(sda: SharedDataAPIClient, logger: Logger): Router {
   // SDA's /auth/login (see reference_constant_time_login_bcrypt memory).
   router.post("/login", async (req, res) => {
     const body = req.body as LoginBody;
-    if (
-      typeof body?.username !== "string" ||
-      typeof body?.password !== "string"
-    ) {
+    if (typeof body?.username !== "string" || typeof body?.password !== "string") {
       res.status(422).json({ detail: "username and password are required" });
       return;
     }

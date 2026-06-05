@@ -15,9 +15,7 @@ export function TopNav() {
   const linkClass = ({ isActive }: { isActive: boolean }): string =>
     [
       "rounded-md px-3 py-1.5 text-sm font-medium",
-      isActive
-        ? "bg-slate-900 text-white"
-        : "text-slate-700 hover:bg-slate-200",
+      isActive ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-200",
     ].join(" ");
 
   return (

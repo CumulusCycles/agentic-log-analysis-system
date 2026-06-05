@@ -22,9 +22,7 @@ export function ClaimDetailPage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(
-          err instanceof HttpError ? err.detail : "failed to load claim",
-        );
+        setError(err instanceof HttpError ? err.detail : "failed to load claim");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -76,22 +74,16 @@ export function ClaimDetailPage() {
             </div>
           </dl>
           {claim.description && (
-            <p className="border-t border-slate-100 pt-4 text-slate-700">
-              {claim.description}
-            </p>
+            <p className="border-t border-slate-100 pt-4 text-slate-700">{claim.description}</p>
           )}
 
           <section className="border-t border-slate-100 pt-4">
             <h2 className="text-sm font-medium text-slate-500">History</h2>
             <ol className="mt-2 space-y-1 text-sm">
               {claim.history.map((entry, idx) => (
-                <li
-                  key={idx}
-                  className="flex justify-between gap-3 text-slate-700"
-                >
+                <li key={idx} className="flex justify-between gap-3 text-slate-700">
                   <span>
-                    {entry.from_status ?? "—"} →{" "}
-                    <strong>{entry.to_status}</strong>
+                    {entry.from_status ?? "—"} → <strong>{entry.to_status}</strong>
                   </span>
                   <span className="text-slate-500">
                     {new Date(entry.changed_at).toLocaleString()}

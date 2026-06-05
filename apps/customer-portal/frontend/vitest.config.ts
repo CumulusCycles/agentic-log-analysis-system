@@ -10,12 +10,6 @@ export default defineConfig({
     setupFiles: ["./src/test-setup.ts"],
     css: false,
     // e2e/ is the Playwright suite — has its own runner.
-    exclude: [
-      "node_modules",
-      "dist",
-      "e2e",
-      "playwright-report",
-      "test-results",
-    ],
+    exclude: ["node_modules", "dist", "e2e", "playwright-report", "test-results"],
   },
 });

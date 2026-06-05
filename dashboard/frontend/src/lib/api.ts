@@ -1,12 +1,7 @@
 // Lightweight fetch wrapper. Production: relative paths (same origin as the
 // FastAPI host). Dev: VITE_DASHBOARD_API_BASE_URL points at http://localhost:4001.
 
-import type {
-  AdminOut,
-  ApiError,
-  LoginRequest,
-  TokenResponse,
-} from "../types/api";
+import type { AdminOut, ApiError, LoginRequest, TokenResponse } from "../types/api";
 import type {
   LogsFilters,
   LogsResponse,
@@ -27,11 +22,7 @@ export class HttpError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  init: RequestInit = {},
-  token?: string,
-): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -75,10 +66,7 @@ function buildLogsQuery(filters: LogsFilters): string {
   return params.toString();
 }
 
-export async function getLogs(
-  token: string,
-  filters: LogsFilters,
-): Promise<LogsResponse> {
+export async function getLogs(token: string, filters: LogsFilters): Promise<LogsResponse> {
   const qs = buildLogsQuery(filters);
   return request<LogsResponse>(`/api/logs?${qs}`, {}, token);
 }

@@ -63,6 +63,7 @@ See ADR-006 for the strategy. Library choices per stack:
 | Router | `react-router-dom` v6 |
 | HTTP | `fetch` (no axios) |
 | Linter | ESLint 9 (flat config) + `typescript-eslint` + `eslint-plugin-react-hooks` + `eslint-plugin-react-refresh` |
+| Formatter | Prettier 3 (root `.prettierrc.json` — `printWidth: 100`, `endOfLine: lf`) — each Node package declares `prettier` + `format` / `format:check` scripts; enforced by per-app `ci-*.yml` |
 
 ## Backend Linting
 

@@ -3,9 +3,7 @@ import { test, expect } from "@playwright/test";
 import { ALICE } from "./fixtures";
 
 test.describe("Authentication", () => {
-  test("successful login navigates to /submit and persists token", async ({
-    page,
-  }) => {
+  test("successful login navigates to /submit and persists token", async ({ page }) => {
     await page.goto("/login");
     await page.getByRole("textbox", { name: /username/i }).fill(ALICE.username);
     await page.getByLabel(/password/i).fill(ALICE.password);
@@ -16,9 +14,7 @@ test.describe("Authentication", () => {
     expect(token).not.toBeNull();
   });
 
-  test("wrong password shows the upstream 401 detail and stays on /login", async ({
-    page,
-  }) => {
+  test("wrong password shows the upstream 401 detail and stays on /login", async ({ page }) => {
     await page.goto("/login");
     await page.getByRole("textbox", { name: /username/i }).fill(ALICE.username);
     await page.getByLabel(/password/i).fill("WRONG");

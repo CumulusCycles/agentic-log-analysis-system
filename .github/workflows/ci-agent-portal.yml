@@ -60,6 +60,9 @@ jobs:
       - name: frontend — lint
         working-directory: apps/agent-portal/frontend
         run: pnpm lint
+      - name: frontend — format:check
+        working-directory: apps/agent-portal/frontend
+        run: pnpm format:check
       - name: frontend — typecheck
         working-directory: apps/agent-portal/frontend
         run: pnpm typecheck

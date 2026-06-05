@@ -5,9 +5,7 @@ test.describe("Log Explorer — semantic search (7d)", () => {
     loggedInPage: page,
   }) => {
     await page.goto("/logs");
-    await expect(
-      page.getByRole("heading", { name: /log explorer/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /log explorer/i })).toBeVisible();
 
     // Wait for the initial /api/logs render so we know we're in tail mode.
     await page.waitForLoadState("networkidle");
@@ -30,9 +28,7 @@ test.describe("Log Explorer — semantic search (7d)", () => {
     await expect(page.getByTestId("load-more")).toHaveCount(0);
   });
 
-  test("clearing the query restores cursor-mode pagination", async ({
-    loggedInPage: page,
-  }) => {
+  test("clearing the query restores cursor-mode pagination", async ({ loggedInPage: page }) => {
     await page.goto("/logs");
     await page.waitForLoadState("networkidle");
 

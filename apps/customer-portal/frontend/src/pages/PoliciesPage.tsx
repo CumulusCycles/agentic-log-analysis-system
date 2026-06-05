@@ -28,9 +28,7 @@ export function PoliciesPage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(
-          err instanceof HttpError ? err.detail : "failed to load policies",
-        );
+        setError(err instanceof HttpError ? err.detail : "failed to load policies");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -70,9 +68,7 @@ export function PoliciesPage() {
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
                       Policy
                     </p>
-                    <h2 className="font-mono text-lg font-semibold">
-                      {policy.policy_number}
-                    </h2>
+                    <h2 className="font-mono text-lg font-semibold">{policy.policy_number}</h2>
                   </div>
                   <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
                     {policy.coverage_type}
@@ -90,9 +86,7 @@ export function PoliciesPage() {
                   </div>
                   <div className="col-span-2">
                     <dt className="text-slate-500">Premium</dt>
-                    <dd className="text-slate-900">
-                      {formatPremium(policy.premium_cents)}
-                    </dd>
+                    <dd className="text-slate-900">{formatPremium(policy.premium_cents)}</dd>
                   </div>
                 </dl>
 
@@ -102,16 +96,11 @@ export function PoliciesPage() {
                   </p>
                   <ul className="mt-2 space-y-1 text-sm">
                     {policy.vehicles.map((v) => (
-                      <li
-                        key={v.vin}
-                        className="flex items-baseline justify-between gap-2"
-                      >
+                      <li key={v.vin} className="flex items-baseline justify-between gap-2">
                         <span className="text-slate-900">
                           {v.year} {v.make} {v.model}
                         </span>
-                        <span className="font-mono text-xs text-slate-500">
-                          {v.vin}
-                        </span>
+                        <span className="font-mono text-xs text-slate-500">{v.vin}</span>
                       </li>
                     ))}
                   </ul>

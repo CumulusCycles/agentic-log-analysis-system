@@ -1,9 +1,7 @@
 import { ALICE, expect, test } from "./fixtures";
 
 test.describe("Submit claim", () => {
-  test("submits a valid claim and navigates to the detail page", async ({
-    loggedInPage: page,
-  }) => {
+  test("submits a valid claim and navigates to the detail page", async ({ loggedInPage: page }) => {
     await page.goto("/submit");
 
     await page.getByLabel(/policy number/i).fill(ALICE.policyNumber);
@@ -11,9 +9,7 @@ test.describe("Submit claim", () => {
 
     // datetime-local takes "YYYY-MM-DDTHH:MM" format.
     await page.getByLabel(/incident date/i).fill("2026-06-01T10:00");
-    await page
-      .getByLabel(/what happened/i)
-      .fill("Rear-ended at intersection (e2e test)");
+    await page.getByLabel(/what happened/i).fill("Rear-ended at intersection (e2e test)");
 
     await page.getByRole("button", { name: /submit claim/i }).click();
 
@@ -31,9 +27,7 @@ test.describe("Submit claim", () => {
     await expect(page).toHaveURL(/\/submit$/);
   });
 
-  test("SDA-side error surfaces in an alert on the form", async ({
-    loggedInPage: page,
-  }) => {
+  test("SDA-side error surfaces in an alert on the form", async ({ loggedInPage: page }) => {
     await page.goto("/submit");
     // Bogus VIN — SDA will validate against the policy and return 400.
     await page.getByLabel(/policy number/i).fill(ALICE.policyNumber);
@@ -46,9 +40,7 @@ test.describe("Submit claim", () => {
     await expect(page).toHaveURL(/\/submit$/);
   });
 
-  test("sign-out clears the token and returns to /login", async ({
-    loggedInPage: page,
-  }) => {
+  test("sign-out clears the token and returns to /login", async ({ loggedInPage: page }) => {
     await page.goto("/submit");
     await page.getByRole("button", { name: /sign out/i }).click();
     await expect(page).toHaveURL(/\/login$/);

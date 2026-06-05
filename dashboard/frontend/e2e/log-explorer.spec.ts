@@ -5,9 +5,7 @@ test.describe("Log Explorer screen (7c)", () => {
     loggedInPage: page,
   }) => {
     await page.goto("/logs");
-    await expect(
-      page.getByRole("heading", { name: /log explorer/i }),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { name: /log explorer/i })).toBeVisible();
     // At least one log row arrives from the live volumes.
     await expect(page.getByTestId("log-row").first()).toBeVisible();
   });
@@ -38,9 +36,7 @@ test.describe("Log Explorer screen (7c)", () => {
     }
   });
 
-  test("clicking a row expands its fields + raw panel", async ({
-    loggedInPage: page,
-  }) => {
+  test("clicking a row expands its fields + raw panel", async ({ loggedInPage: page }) => {
     await page.goto("/logs");
     const firstRow = page.getByTestId("log-row").first();
     await expect(firstRow).toBeVisible();
@@ -54,21 +50,15 @@ test.describe("Log Explorer screen (7c)", () => {
   }) => {
     await page.goto("/logs?app=fnol");
     await expect(page.getByTestId("filter-app-fnol")).toBeChecked();
-    await expect(
-      page.getByTestId("filter-app-shared-data-api"),
-    ).not.toBeChecked();
-    await expect(
-      page.getByTestId("filter-app-customer-portal"),
-    ).not.toBeChecked();
+    await expect(page.getByTestId("filter-app-shared-data-api")).not.toBeChecked();
+    await expect(page.getByTestId("filter-app-customer-portal")).not.toBeChecked();
     await expect(page.getByTestId("filter-app-agent-portal")).not.toBeChecked();
 
     await page.waitForLoadState("networkidle");
     const rows = page.getByTestId("log-row");
     const count = await rows.count();
     if (count > 0) {
-      const apps = await rows.evaluateAll((els) =>
-        els.map((el) => el.getAttribute("data-app")),
-      );
+      const apps = await rows.evaluateAll((els) => els.map((el) => el.getAttribute("data-app")));
       for (const app of apps) expect(app).toBe("fnol");
     }
   });
