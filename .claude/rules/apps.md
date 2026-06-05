@@ -77,6 +77,8 @@ Keep UI minimal — just enough screens to look and feel real.
 
 **HTTP/1.1 only:** the Spring `RestClient` that calls SDA is pinned to `HttpClient.Version.HTTP_1_1` — uvicorn (SDA's ASGI server) does not support HTTP/2 cleartext upgrade and rejects h2c attempts with `"Unsupported upgrade request"` / 400 before the body reaches pydantic.
 
+**Checkstyle:** project ruleset at `apps/agent-portal/checkstyle.xml` (Google Java Style — checkstyle-10.20.2 — with overrides: 4-space indentation, 120-char line length, allowedAbbreviationLength=4, no required Javadoc on types/methods). Declared in `pom.xml` with `maven-checkstyle-plugin 3.6.0` pinned to `checkstyle 10.20.2`, bound to the `verify` Maven phase — so `./mvnw -B verify` (the CI command in `.github/workflows/ci-agent-portal.yml`) enforces it on every PR.
+
 ---
 
 ## Agentic Log Analysis Dashboard (dashboard/)

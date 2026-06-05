@@ -99,11 +99,15 @@ public class SdaClient {
     }
 
     private String extractDetail(String body) {
-        if (body == null || body.isBlank()) return "upstream error";
+        if (body == null || body.isBlank()) {
+            return "upstream error";
+        }
         try {
             JsonNode node = mapper.readTree(body);
             JsonNode d = node.get("detail");
-            if (d != null && d.isTextual()) return d.asText();
+            if (d != null && d.isTextual()) {
+                return d.asText();
+            }
         } catch (IOException ignored) {
             // fall through
         }
