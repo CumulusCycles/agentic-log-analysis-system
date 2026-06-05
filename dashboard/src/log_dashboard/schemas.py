@@ -88,6 +88,11 @@ class AppStatus(BaseModel):
 class StatusResponse(BaseModel):
     as_of: datetime
     apps: list[AppStatus]
+    # PR 3: True iff the Chroma vectorstore exists and has zero docs.
+    # The Overview banner uses this to nudge the operator toward the
+    # Log Generator on a fresh install. False when the vectorstore is
+    # disabled (no OpenAI key) or when count() is unavailable.
+    corpus_empty: bool = False
 
 
 # --- Phase 7d: semantic search ---
@@ -107,3 +112,52 @@ class LogsSearchRequest(BaseModel):
 class LogsSearchResponse(BaseModel):
     entries: list[LogEntry]
     scores: list[float]
+
+
+# --- PR 3: Agitator ---
+
+
+class ScenarioParamOut(BaseModel):
+    name: str
+    minimum: int
+    maximum: int
+    default: int
+
+
+class ScenarioSpecOut(BaseModel):
+    name: str
+    display_name: str
+    description: str
+    target_app: str
+    requires_chaos: bool
+    params: list[ScenarioParamOut]
+
+
+class AgitatorEnvOut(BaseModel):
+    enable_chaos: bool
+
+
+class RunCreateRequest(BaseModel):
+    scenario: str
+    params: dict[str, int] = Field(default_factory=dict)
+
+
+RunState = Literal["running", "succeeded", "failed", "cancelled"]
+
+
+class RunRecordOut(BaseModel):
+    run_id: str
+    scenario: str
+    params: dict[str, int]
+    state: RunState
+    started_at: datetime
+    ended_at: datetime | None = None
+    sent: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    last_status_code: int | None = None
+    last_error: str | None = None
+
+
+class RunListResponse(BaseModel):
+    runs: list[RunRecordOut]

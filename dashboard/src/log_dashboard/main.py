@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from .agitator.runs import RunRegistry
 from .auth.password import hash_password
 from .config import get_settings
 from .exception_handlers import (
@@ -23,7 +24,7 @@ from .ingest.vectorstore import (
 )
 from .ingest.watcher import LogVolumeWatcher
 from .logging_setup import configure_logging, get_logger
-from .routers import auth, health, logs, search, status
+from .routers import agitator, auth, health, logs, search, status
 
 # Paths FastAPI auto-mounts that the SPA catch-all MUST NOT intercept.
 # Swagger UI is intentionally exposed per ADR-001 — the dashboard's audience
@@ -76,6 +77,9 @@ def create_app() -> FastAPI:
         app.state.vectorstore = None
         app.state.watcher = None
         app.state.backfill_complete = False
+        # PR 3: bundled Agitator load driver — in-memory ring buffer of runs.
+        # No persistence by design; restart clears history.
+        app.state.agitator_runs = RunRegistry()
         backfill_task: asyncio.Task[None] | None = None
 
         if is_embeddings_disabled(settings):
@@ -100,6 +104,8 @@ def create_app() -> FastAPI:
             backfill_task.cancel()
         if app.state.watcher is not None:
             app.state.watcher.stop()
+        # Drain any in-flight Agitator runs so shutdown is clean.
+        await app.state.agitator_runs.cancel_all()
 
     app = FastAPI(
         title="Agentic Log Analysis Dashboard",
@@ -116,6 +122,7 @@ def create_app() -> FastAPI:
     app.include_router(logs.router, prefix="/api")
     app.include_router(status.router, prefix="/api")
     app.include_router(search.router, prefix="/api")
+    app.include_router(agitator.router, prefix="/api/agitator")
 
     # Static React build — mounted under /assets/ for hashed bundles, with a
     # catch-all GET that serves index.html for every other unknown path so the

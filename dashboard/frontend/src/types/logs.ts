@@ -51,6 +51,7 @@ export interface AppStatus {
 export interface StatusResponse {
   as_of: string;
   apps: AppStatus[];
+  corpus_empty?: boolean;
 }
 
 export type TimeWindow = "1h" | "24h" | "7d";

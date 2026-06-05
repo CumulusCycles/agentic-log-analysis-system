@@ -51,6 +51,7 @@ Detailed rules are in `.claude/rules/`:
 - **No cloud deployment for the apps:** Local Docker Compose only — no AWS, CDK, no remote app hosting
 - **CI:** GitHub Actions runs lint + unit tests + build on every PR via a single consolidated `.github/workflows/ci.yml` — `dorny/paths-filter@v3` `changes` job + 5 conditional per-app jobs (`shared-data-api`, `fnol`, `customer-portal`, `agent-portal`, `dashboard`). See ADR-012 (supersedes ADR-009). E2E stays local via `/ship`.
 - **GitHub operations:** Always use `gh` CLI
+- **Agitator (PR 3 ✅):** Bundled operator-driven load generator in the dashboard at `/log-generator`. Click a scenario card to drive bounded HTTP traffic at SDA/FNOL/CP/AP; every request tags `X-Source: synthetic`. `DASHBOARD_INGEST_SOURCES` default widens to `prod,synthetic`. See ADR-014 + `.claude/rules/dashboard.md` §Agitator.
 
 ---
 

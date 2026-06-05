@@ -66,12 +66,13 @@ class Settings(BaseSettings):
         alias="DASHBOARD_INGEST_LEVELS",
     )
 
-    # Source filter — only embed prod-tagged entries by default.
-    # "health" → /health, /api/health, /actuator/health (parser detects)
-    # "test"   → reserved for a future cross-app X-Source header PR
-    # "prod"   → everything else (parser default)
+    # Source filter — embed prod- and synthetic-tagged entries by default.
+    # "health"    → /health, /api/health, /actuator/health (parser detects)
+    # "test"      → Playwright suites (per ADR-011); excluded by default
+    # "synthetic" → Agitator-generated traffic (ADR-014); included by default
+    # "prod"      → everything else (parser default)
     dashboard_ingest_sources: frozenset[str] = Field(
-        default=frozenset({"prod"}),
+        default=frozenset({"prod", "synthetic"}),
         alias="DASHBOARD_INGEST_SOURCES",
     )
 
@@ -124,6 +125,75 @@ class Settings(BaseSettings):
     # Caps the wire payload; UI uses next_before for further pages.
     logs_page_default: int = Field(default=100, alias="DASHBOARD_LOGS_PAGE_DEFAULT")
     logs_page_max: int = Field(default=1_000, alias="DASHBOARD_LOGS_PAGE_MAX")
+
+    # --- PR 3 (Agitator): bundled load driver (ADR-014) ---
+    # ENABLE_CHAOS is shared with the four monitored apps (their chaos
+    # middleware also reads it). The dashboard reads it only to know whether
+    # the sda-degraded scenario card should be enabled in the UI.
+    enable_chaos: bool = Field(default=False, alias="ENABLE_CHAOS")
+
+    # Global cap on the number of Agitator runs that may be `running` at once.
+    # Keeps the bundled load driver from saturating the dashboard process.
+    agitator_max_concurrent_runs: int = Field(
+        default=2,
+        alias="AGITATOR_MAX_CONCURRENT_RUNS",
+        ge=1,
+        le=10,
+    )
+
+    # Per-run socket concurrency cap (asyncio.Semaphore size). Scenarios
+    # never open more than this many simultaneous sockets to a target.
+    agitator_default_concurrency: int = Field(
+        default=10,
+        alias="AGITATOR_DEFAULT_CONCURRENCY",
+        ge=1,
+        le=100,
+    )
+
+    # Demo creds Agitator uses to log into FNOL/CP/AP at run start. Defaults
+    # match seed data in apps/shared-data-api seed_data.py.
+    agitator_customer_username: str = Field(
+        default="alice",
+        alias="AGITATOR_CUSTOMER_USERNAME",
+    )
+    agitator_customer_password: str = Field(
+        default="customer",
+        alias="AGITATOR_CUSTOMER_PASSWORD",
+    )
+    agitator_agent_username: str = Field(
+        default="agent1",
+        alias="AGITATOR_AGENT_USERNAME",
+    )
+    agitator_agent_password: str = Field(
+        default="agent",
+        alias="AGITATOR_AGENT_PASSWORD",
+    )
+
+    # Base URLs for the 4 target apps (compose service names, internal ports).
+    shared_data_api_base_url: str = Field(
+        default="http://shared-data-api:8000",
+        alias="SHARED_DATA_API_BASE_URL",
+    )
+    fnol_base_url: str = Field(
+        default="http://fnol-app:8000",
+        alias="AGITATOR_FNOL_BASE_URL",
+    )
+    customer_portal_base_url: str = Field(
+        default="http://customer-portal:3000",
+        alias="AGITATOR_CP_BASE_URL",
+    )
+    agent_portal_base_url: str = Field(
+        default="http://agent-portal:8080",
+        alias="AGITATOR_AP_BASE_URL",
+    )
+
+    # CP's API key, reused for SDA-direct calls in the sda-degraded scenario.
+    # Caller attribution will show as `caller=customer-portal` even though the
+    # Agitator is the producer; the `source=synthetic` tag is the disambiguator.
+    shared_data_api_key_customer_portal: str = Field(
+        default="",
+        alias="SHARED_DATA_API_KEY_CUSTOMER_PORTAL",
+    )
 
 
 @lru_cache(maxsize=1)

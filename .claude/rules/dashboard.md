@@ -92,6 +92,12 @@ Routes land incrementally:
 | `GET` | `/api/status` | Per-app status cards for Overview Dashboard | 7b ✅ |
 | `GET` | `/api/logs` | Paginated log entries for Log Explorer | 7b ✅ |
 | `POST` | `/api/logs/search` | Semantic search over Chroma — body: query + filter clauses; returns LogEntry[] + scores | 7d ✅ |
+| `GET` | `/api/agitator/scenarios` | List available Agitator scenarios | PR 3 ✅ |
+| `GET` | `/api/agitator/env` | Report `ENABLE_CHAOS` so the UI can gate chaos-only cards | PR 3 ✅ |
+| `POST` | `/api/agitator/runs` | Start a bounded scenario run | PR 3 ✅ |
+| `GET` | `/api/agitator/runs` | List recent (up to 50) Agitator runs | PR 3 ✅ |
+| `GET` | `/api/agitator/runs/{run_id}` | Poll one run's counters | PR 3 ✅ |
+| `POST` | `/api/agitator/runs/{run_id}/cancel` | Cancel an in-flight run | PR 3 ✅ |
 | `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response | 7e |
 | `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis | 7e |
 
@@ -113,7 +119,7 @@ The operator-facing `/api/logs` view reads volumes directly and is UNAFFECTED.
 | Knob | Default | Where set |
 |---|---|---|
 | `DASHBOARD_INGEST_LEVELS` | `WARN,ERROR` | `.env` (CSV) |
-| `DASHBOARD_INGEST_SOURCES` | `prod` | `.env` (CSV) |
+| `DASHBOARD_INGEST_SOURCES` | `prod,synthetic` | `.env` (CSV) — widened in PR 3 to admit Agitator traffic; ADR-014 |
 | `DASHBOARD_INGEST_DRY_RUN` | `false` | `.env` (bool) |
 
 `source` is set by the apps' request-logger middleware from the `X-Source`
@@ -122,14 +128,42 @@ header (default `prod`) per ADR-011. The parser's `_infer_source` precedence:
 - Explicit `source=<value>` in the log line → honored
 - Otherwise → `source="prod"`
 
-Allowed vocabulary: `prod` (default), `synthetic` (Agitator, PR 3), `test`
+Allowed vocabulary: `prod` (default), `synthetic` (Agitator, PR 3 ✅), `test`
 (Playwright `extraHTTPHeaders`), `health` (parser-derived).
 
-The default `(level ∈ {WARN, ERROR}) AND (source = prod)` predicate keeps healthcheck heartbeat, INFO business events, and Playwright E2E traffic out of Chroma — sharp signal, ~$0 ongoing cost.
+The default `(level ∈ {WARN, ERROR}) AND (source ∈ {prod, synthetic})` predicate keeps healthcheck heartbeat, INFO business events, and Playwright E2E traffic out of Chroma — sharp signal, ~$0 ongoing cost. Agitator traffic is admitted by default so a `docker compose up` + scenario click is enough to populate Chroma.
 
 `DASHBOARD_INGEST_DRY_RUN=true` makes `upsert_entries` short-circuit before any embedder call — operator-safe preview of what the filter would pass without spending tokens. Backfill + watcher still log `parsed`, `passed_filter`, `embedded` so the filter behavior is visible.
 
 Cost-saver gate: `upsert_entries` queries Chroma for existing IDs (`store._collection.get(ids=..., include=[])`) BEFORE the embedder is called. Content-hash IDs (`{app}:{sha1(raw)[:16]}`) make restarts against a populated Chroma volume cost $0.
+
+---
+
+## Agitator (PR 3 ✅)
+
+Operator-driven load generator bundled into the dashboard (ADR-014).
+Lives at `dashboard/src/log_dashboard/agitator/` + `routers/agitator.py` +
+`dashboard/frontend/src/pages/LogGenerator.tsx`.
+
+| Invariant | Why |
+|---|---|
+| Operator-button-only — never auto-fires | Cost determinism + demo flow |
+| Every request tags `X-Source: synthetic` at a single seam (`http_client.build_client`) | One enforcement point so no scenario can drift |
+| Scenarios are bounded — finite count AND finite duration | Caps cost; cancellation is `asyncio.Task.cancel()` |
+| Global concurrent-run cap (`AGITATOR_MAX_CONCURRENT_RUNS=2`) | Keeps the dashboard process responsive |
+| Same scenario cannot double-launch while a prior run is `running` | Prevents accidental hammering |
+| Run state lives in-memory (`RunRegistry`, ring buffer of 50) | Restart clears history; durable signal lives in Chroma + log volumes |
+| Agitator's own logs are INFO (`agitator_run_started` / `agitator_run_complete`) — dropped by ingest gate | Zero Chroma cost from the Agitator's own observability |
+| `_sanitize_error` strips credential-shaped tokens before storing `last_error` | Defence-in-depth per the NEVER LOG CREDENTIALS rule |
+| `sda-degraded` requires `ENABLE_CHAOS=true` — router returns 409 otherwise; UI greys the card | Chaos is a dev-only switch per ADR-013 |
+
+Starter scenarios: `auth-spike`, `payload-fuzz`, `policy-not-found`,
+`claim-burst`, `sda-degraded`. Full scenario table + design notes in
+ADR-014.
+
+`/api/status` gains a `corpus_empty: bool` flag (Chroma count == 0 with
+the vectorstore wired up). The Overview UI shows a one-line banner with
+a "Open Log Generator" link when true.
 
 ---
 
