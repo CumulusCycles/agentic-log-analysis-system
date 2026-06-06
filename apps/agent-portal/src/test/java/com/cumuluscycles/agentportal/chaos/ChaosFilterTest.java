@@ -72,17 +72,42 @@ class ChaosFilterTest {
         }
 
         @Test
-        void errorDirectiveReturnsStatusWithoutHandler(CapturedOutput output) throws Exception {
+        void errorDirective5xxLogsAtErrorLevel(CapturedOutput output) throws Exception {
+            // PR 4c: 5xx chaos returns are escalated to ERROR so the
+            // dashboard's proactive scan sees ERROR-tier signal in Chroma.
             mvc.perform(get("/api/claims")
                             .header("X-Chaos", "error:503")
                             .header("Authorization", "Bearer " + TestTokens.valid()))
                     .andExpect(status().is(503))
                     .andExpect(content().json("{\"detail\":\"chaos\"}"));
-            assertThat(output.getOut())
-                    .contains("chaos_honored")
+            String chaosLine = output.getOut().lines()
+                    .filter(line -> line.contains("chaos_honored"))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("no chaos_honored log line"));
+            assertThat(chaosLine)
+                    .contains("ERROR")
                     .contains("directive=error:503")
                     .contains("status=503");
             // SDA must not have been called when chaos short-circuits
+            verifyNoInteractions(sdaClient);
+        }
+
+        @Test
+        void errorDirective4xxLogsAtWarnLevel(CapturedOutput output) throws Exception {
+            // 4xx stays WARN — operator-driven client error, not a server failure.
+            mvc.perform(get("/api/claims")
+                            .header("X-Chaos", "error:418")
+                            .header("Authorization", "Bearer " + TestTokens.valid()))
+                    .andExpect(status().is(418))
+                    .andExpect(content().json("{\"detail\":\"chaos\"}"));
+            String chaosLine = output.getOut().lines()
+                    .filter(line -> line.contains("chaos_honored"))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("no chaos_honored log line"));
+            assertThat(chaosLine)
+                    .contains("WARN")
+                    .contains("directive=error:418")
+                    .contains("status=418");
             verifyNoInteractions(sdaClient);
         }
 

@@ -52,6 +52,12 @@ export interface StatusResponse {
   as_of: string;
   apps: AppStatus[];
   corpus_empty?: boolean;
+  // Phase 7e (PR 4c): proactive scan findings + loop metadata. Older
+  // backends won't ship these, so all four are optional on the wire.
+  proactive_findings?: import("./proactive").ProactiveFinding[];
+  scan_enabled?: boolean;
+  last_scan_at?: string | null;
+  next_scan_at?: string | null;
 }
 
 export type TimeWindow = "1h" | "24h" | "7d";

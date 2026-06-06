@@ -3,13 +3,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
+from ..agent.proactive import FindingsBuffer
 from ..auth.jwt import get_current_admin
 from ..config import Settings, get_settings
 from ..ingest.reader import LogReaderError, read_recent_entries
 from ..ingest.rollup import compute_app_status
 from ..ingest.spec import APP_LOGS
 from ..logging_setup import get_logger
-from ..schemas import AppStatus, LevelCounts, StatusResponse
+from ..schemas import AppStatus, LevelCounts, ProactiveFinding, StatusResponse
 
 router = APIRouter(tags=["status"])
 log = get_logger("status")
@@ -51,7 +52,33 @@ async def get_status(
     # PR 3: corpus_empty drives the Overview "go run the Agitator" banner.
     # Only true when the vectorstore is wired up AND has zero docs — degraded
     # mode (no OpenAI key) reports False so the banner doesn't dangle.
-    return StatusResponse(as_of=now, apps=apps, corpus_empty=_corpus_empty(request))
+    findings, last_scan_at, next_scan_at = _proactive_state(
+        request, settings.proactive_scan_max_findings
+    )
+    return StatusResponse(
+        as_of=now,
+        apps=apps,
+        corpus_empty=_corpus_empty(request),
+        proactive_findings=findings,
+        scan_enabled=settings.proactive_scan_enabled,
+        last_scan_at=last_scan_at,
+        next_scan_at=next_scan_at,
+    )
+
+
+def _proactive_state(
+    request: Request, max_findings: int
+) -> tuple[list[ProactiveFinding], datetime | None, datetime | None]:
+    """Read the proactive-scan ring buffer + loop timestamps off app.state.
+
+    The buffer is created unconditionally during lifespan (PR 4c), so the
+    `is None` branch should never fire in production — kept as a defensive
+    guard for tests that build a partially-initialised app.
+    """
+    buffer: FindingsBuffer | None = getattr(request.app.state, "findings_buffer", None)
+    if buffer is None:
+        return [], None, None
+    return buffer.recent(max_findings), buffer.last_scan_at, buffer.next_scan_at
 
 
 def _corpus_empty(request: Request) -> bool:

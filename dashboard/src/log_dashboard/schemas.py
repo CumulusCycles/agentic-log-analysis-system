@@ -96,6 +96,18 @@ class StatusResponse(BaseModel):
     # Log Generator on a fresh install. False when the vectorstore is
     # disabled (no OpenAI key) or when count() is unavailable.
     corpus_empty: bool = False
+    # PR 4c: proactive scan findings + loop status. The Overview page
+    # renders `proactive_findings` (top-N newest first) inline above the
+    # status grid. `scan_enabled` mirrors `DASHBOARD_PROACTIVE_SCAN_ENABLED`
+    # so the UI knows whether to show an empty-state hint when no findings
+    # exist yet. `last_scan_at` / `next_scan_at` are written by the scan
+    # loop after each iteration. ProactiveFinding is defined later in the
+    # module (PR 4c block); StatusResponse.model_rebuild() at the bottom
+    # resolves the forward reference.
+    proactive_findings: list["ProactiveFinding"] = Field(default_factory=list)
+    scan_enabled: bool = False
+    last_scan_at: datetime | None = None
+    next_scan_at: datetime | None = None
 
 
 # --- Phase 7d: semantic search ---
@@ -265,3 +277,37 @@ class ErrorDetailResponse(BaseModel):
 
     entry: LogEntry
     analysis: AgentAnalysis
+
+
+# --- Phase 7e (PR 4c): proactive background scan ---
+
+
+ProactiveSeverity = Literal["info", "warn", "error"]
+
+
+class ProactiveFinding(BaseModel):
+    """One anomaly the proactive scan loop surfaced.
+
+    `id` is `"proactive:{ulid}"` — opaque to the client; used as the React
+    list key. `summary` is the sanitised final AIMessage from the agent.
+    `severity` is derived deterministically from the cited entries' levels
+    (any ERROR → error, else any WARN → warn, else info) — NOT from the LLM.
+    `citations` reuses the PR 4a Citation type so a finding's links navigate
+    to `/errors/:id` identically to a chat answer's citations. `dry_run` is
+    True if the scan ran against `_DryRunChatModel`; today the loop skips
+    invocation entirely when DRY_RUN=true, so this is always False, but the
+    field is kept in the schema for the policy flip we may make later.
+    """
+
+    id: str
+    scan_started_at: datetime
+    scan_completed_at: datetime
+    summary: str
+    severity: ProactiveSeverity
+    citations: list[Citation] = Field(default_factory=list)
+    dry_run: bool = False
+
+
+# Resolve the forward reference inside StatusResponse.proactive_findings now
+# that ProactiveFinding is in module scope.
+StatusResponse.model_rebuild()

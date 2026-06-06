@@ -54,7 +54,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 | Agitator PR 3 | Agitator bundled into dashboard — operator-triggered bounded scenarios (auth-spike, payload-fuzz, policy-not-found, claim-burst, sda-degraded); `X-Source: synthetic` tagging; new `/log-generator` UI; ADR-014 | ✅ |
 | 7e-PR4a | Dashboard LangGraph agent — `POST /api/chat` + AI Chat UI; 5-node StateGraph; safe-by-default dry-run; credential redaction; LangSmith metadata; ADR-015. Bundled cross-cutting X-Source propagation across SDA/FNOL/CP/AP (contextvars / AsyncLocalStorage / MDC) + outbound HTTP-client forwarding so SDA's WARN/ERROR domain events carry the originating source — Chroma can now distinguish prod/synthetic/test instead of mislabeling everything as prod | ✅ |
 | 7e-PR4b | Dashboard `GET /api/errors/{id}` + Error Detail UI; threads agent into Suggested Fix via the same compiled graph as `/api/chat`; SSE streaming on `/api/chat` with per-node status events; content-hash `LogEntry.id` everywhere; embed-summary table after every OpenAI upsert | ✅ |
-| 7e-PR4c | Dashboard proactive background scan — surfaces anomalies automatically | ⬜ |
+| 7e-PR4c | Dashboard proactive background scan — surfaces anomalies automatically on the Overview screen. Bundled: chaos middleware level split (5xx → ERROR per ADR-013 amendment) + new `error-burst` Agitator scenario. ADR-016. Closes Phase 7. | ✅ |
 
 **Status:** ✅ Done · ⬜ Todo · 🔄 In Progress
 
@@ -275,10 +275,67 @@ docker compose logs log-dashboard | grep embedding_complete | jq -r \
 | `/api/logs`, `/api/status` (Log Explorer, Overview) | Log volumes directly | None | Zero — no OpenAI |
 | `/api/logs/search` (semantic search) | Chroma | WARN+ERROR ∩ `prod`/`synthetic` only | OpenAI embed cost for ingestion + 1 query embedding per call |
 | `/api/errors/{id}` (Error Detail + Suggested Fix) | Chroma | Same gate + WARN+ERROR only | One agent run per click — dry-run by default (`DASHBOARD_LLM_DRY_RUN=true`) |
+| Proactive scan loop (PR 4c — opt-in) | Chroma | Same gate | One agent run per cycle when enabled AND `DRY_RUN=false` |
 
 So healthcheck noise, Playwright E2E traffic, INFO success events, and full-dedup
 restarts all cost **zero**. Real Chroma spend only happens when WARN+ERROR `prod` or
 `synthetic` lines arrive that aren't already indexed.
+
+### Proactive Scan (PR 4c)
+
+The dashboard can scan the recent log corpus on a schedule and surface findings
+inline on the Overview screen without anyone asking. This closes Phase 7.
+
+**Opt-in chain** — BOTH must flip from default for real scans to fire:
+
+| Env var | Default | Flip to | Effect |
+|---|---|---|---|
+| `DASHBOARD_LLM_DRY_RUN` | `true`  | `false` | Use real OpenAI (canned response in dry-run) |
+| `DASHBOARD_PROACTIVE_SCAN_ENABLED` | `false` | `true`  | Start the background loop on dashboard boot |
+
+Edit both in `.env` (do not commit) and restart `log-dashboard`:
+
+```bash
+docker compose up -d --build log-dashboard
+```
+
+Either flag alone is safe:
+
+- `DRY_RUN=true` + `SCAN_ENABLED=true` → loop wakes on schedule, logs
+  `proactive_scan_skipped reason=llm_dry_run`, and goes back to sleep — zero cost.
+  Useful for verifying the loop scheduling without paid spend.
+- `DRY_RUN=false` + `SCAN_ENABLED=false` → no loop. Chat still works
+  (operator-driven, real OpenAI). No background spend.
+
+**Tuning** (all optional, env defaults shown):
+
+```
+DASHBOARD_PROACTIVE_SCAN_INTERVAL_SECONDS=900   # 15 min — loop cadence (60..86400)
+DASHBOARD_PROACTIVE_SCAN_LOOKBACK_MINUTES=30    # how far back each scan looks (5..1440)
+DASHBOARD_PROACTIVE_SCAN_MAX_FINDINGS=5         # top-N surfaced on /api/status (1..20)
+```
+
+**Driving ERROR-tier signal on demand.** Once `ENABLE_CHAOS=true`, the new
+`error-burst` Agitator scenario sends `X-Chaos: error:500` against SDA `/policies`.
+The chaos middleware logs `chaos_honored` at ERROR (5xx → ERROR per ADR-013
+2026-06-06 amendment), the ingest gate admits it into Chroma, and the next scan
+cycle picks it up. Click **Log Generator → Error burst** in the dashboard.
+
+**Reading findings.** When a scan finds an anomaly, it appears as a card on the
+Overview screen above the per-app status grid:
+
+- Severity pill (info/warn/error) — color-coded from the underlying citation levels
+- 1–2 sentence summary from the agent
+- Citation links — each click navigates to `/errors/:id` for the agent's per-error
+  Suggested Fix analysis
+
+Findings are restart-lossy by design — same posture as Agitator runs. The
+durable signal lives in Chroma + the log volumes.
+
+**Cost ballpark.** With both flags on at 15-min cadence, expect ~96 scans/day.
+At gpt-4o list prices and PR 4a cost caps (≤4 tool calls + ≤2 LLM calls per
+scan), worst case is ~$3/day. Raise the interval to 1 hour for ~$0.72/day.
+See ADR-016 for the full cost analysis.
 
 ---
 

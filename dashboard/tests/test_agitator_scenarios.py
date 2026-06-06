@@ -20,6 +20,7 @@ from log_dashboard.agitator.auth import AppSession
 from log_dashboard.agitator.runs import RunRecord, RunRegistry
 from log_dashboard.agitator.scenarios.auth_spike import AuthSpike
 from log_dashboard.agitator.scenarios.claim_burst import ClaimBurst
+from log_dashboard.agitator.scenarios.error_burst import ErrorBurst
 from log_dashboard.agitator.scenarios.payload_fuzz import PayloadFuzz
 from log_dashboard.agitator.scenarios.policy_not_found import PolicyNotFound
 from log_dashboard.agitator.scenarios.sda_degraded import SdaDegraded
@@ -82,6 +83,7 @@ def _patch_build_client(monkeypatch, captured: list[httpx.Request]):
     from log_dashboard.agitator.scenarios import (
         auth_spike,
         claim_burst,
+        error_burst,
         payload_fuzz,
         policy_not_found,
         sda_degraded,
@@ -117,6 +119,18 @@ def _patch_build_client(monkeypatch, captured: list[httpx.Request]):
         if request.url.path.startswith("/fnol/"):
             return httpx.Response(404, json={"detail": "not found"})
         if request.url.path == "/policies":
+            # Simulate the chaos middleware so scenarios that send
+            # `X-Chaos: error:<status>` get the matching status back
+            # (mirrors what the live SDA returns when ENABLE_CHAOS=true).
+            # `slow:<ms>` is a no-op in tests — sda-degraded still gets 200.
+            chaos = request.headers.get("X-Chaos", "")
+            if chaos.startswith("error:"):
+                try:
+                    status = int(chaos.split(":", 1)[1])
+                    if 400 <= status <= 599:
+                        return httpx.Response(status, json={"detail": "chaos"})
+                except (ValueError, IndexError):
+                    pass
             return httpx.Response(200, json=[])
         return httpx.Response(200, json={})
 
@@ -141,7 +155,15 @@ def _patch_build_client(monkeypatch, captured: list[httpx.Request]):
         )
 
     # Patch every importer.
-    for module in (hc, auth_spike, payload_fuzz, policy_not_found, claim_burst, sda_degraded):
+    for module in (
+        hc,
+        auth_spike,
+        payload_fuzz,
+        policy_not_found,
+        claim_burst,
+        sda_degraded,
+        error_burst,
+    ):
         monkeypatch.setattr(module, "build_client", _build_mock)
 
 
@@ -267,6 +289,47 @@ async def test_sda_degraded_sets_x_chaos_header(
         assert req.headers.get("X-Source") == "synthetic"
         assert req.headers.get("X-Chaos") == "slow:500"
         assert req.headers.get("X-API-Key") == "fake-api-key"
+
+
+async def test_error_burst_sets_x_chaos_error_header(
+    monkeypatch: pytest.MonkeyPatch, settings, registry
+) -> None:
+    """PR 4c: error-burst sends `X-Chaos: error:500` on every request so the
+    target app's chaos middleware logs `chaos_honored` at ERROR level
+    (5xx → ERROR per the PR 4c level split). `X-Source: synthetic` is set
+    at the same seam as every other scenario."""
+    captured: list[httpx.Request] = []
+    _patch_build_client(monkeypatch, captured)
+    await _add_running(registry, "eb1")
+
+    scenario = ErrorBurst(
+        settings=settings,
+        session=_fake_session(),
+        registry=registry,
+        run_id="eb1",
+        params={"count": 3, "duration_s": 1},
+    )
+    await scenario.run()
+
+    assert len(captured) == 3
+    for req in captured:
+        assert req.headers.get("X-Source") == "synthetic"
+        assert req.headers.get("X-Chaos") == "error:500"
+        assert req.headers.get("X-API-Key") == "fake-api-key"
+        # Targets /policies — same path as sda-degraded so caller + path
+        # correlation works across the two chaos scenarios.
+        assert req.url.path == "/policies"
+
+    # The mock handler simulates the chaos middleware: `X-Chaos: error:500`
+    # returns 500, which matches error-burst's success criterion. All 3
+    # requests count as `succeeded` — confirms the scenario's status-code
+    # check (`response.status_code == _CHAOS_ERROR_STATUS`) actually runs.
+    record = await registry.get("eb1")
+    assert record is not None
+    assert record.sent == 3
+    assert record.succeeded == 3
+    assert record.failed == 0
+    assert record.last_status_code == 500
 
 
 async def test_auth_spike_cancellation_stops_remaining_fires(

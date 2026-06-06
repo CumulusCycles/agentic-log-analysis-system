@@ -148,3 +148,105 @@ async def test_status_corpus_empty_false_when_vectorstore_populated(
     response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
     assert response.status_code == 200
     assert response.json()["corpus_empty"] is False
+
+
+# --- PR 4c: proactive scan findings + loop metadata ---
+
+
+async def test_status_defaults_to_empty_findings_and_scan_disabled(
+    client, valid_token, log_volume
+) -> None:
+    """Out-of-the-box: scan disabled, no findings, no scan timestamps."""
+    _seed_all_apps_healthy(log_volume)
+    response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
+    body = response.json()
+    assert body["proactive_findings"] == []
+    assert body["scan_enabled"] is False
+    assert body["last_scan_at"] is None
+    assert body["next_scan_at"] is None
+
+
+async def test_status_surfaces_findings_from_buffer_newest_first(
+    app_instance, client, valid_token, log_volume
+) -> None:
+    """Injecting findings into the buffer surfaces them via /api/status,
+    newest-first, capped by settings.proactive_scan_max_findings."""
+    from datetime import UTC, datetime
+
+    from log_dashboard.schemas import Citation, LogLevel, ProactiveFinding
+
+    _seed_all_apps_healthy(log_volume)
+    buffer = app_instance.state.findings_buffer
+    cited = Citation(
+        id="fnol:abcdef0123456789",
+        timestamp=datetime(2026, 6, 6, tzinfo=UTC),
+        level=LogLevel.ERROR,
+        app="fnol",
+        event="chaos_honored",
+        raw="status=500",
+        score=0.9,
+    )
+    for i in range(3):
+        buffer.append(
+            ProactiveFinding(
+                id=f"proactive:f{i}",
+                scan_started_at=datetime(2026, 6, 6, 12, i, tzinfo=UTC),
+                scan_completed_at=datetime(2026, 6, 6, 12, i, 1, tzinfo=UTC),
+                summary=f"finding {i}",
+                severity="error",
+                citations=[cited],
+                dry_run=False,
+            )
+        )
+    buffer.last_scan_at = datetime(2026, 6, 6, 12, 3, tzinfo=UTC)
+    buffer.next_scan_at = datetime(2026, 6, 6, 12, 18, tzinfo=UTC)
+
+    response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
+    body = response.json()
+    findings = body["proactive_findings"]
+    # Newest-first ordering: f2, f1, f0.
+    assert [f["id"] for f in findings] == ["proactive:f2", "proactive:f1", "proactive:f0"]
+    assert findings[0]["severity"] == "error"
+    assert findings[0]["citations"][0]["id"] == "fnol:abcdef0123456789"
+    assert body["last_scan_at"] == "2026-06-06T12:03:00Z"
+    assert body["next_scan_at"] == "2026-06-06T12:18:00Z"
+
+
+async def test_status_caps_findings_at_max_findings_setting(
+    app_instance, client, valid_token, log_volume
+) -> None:
+    """When the buffer holds more than `proactive_scan_max_findings`, only the
+    top-N newest are surfaced. Defends against operator surprise when a noisy
+    period fills the buffer — UI never shows more than the configured cap."""
+    from datetime import UTC, datetime
+
+    from log_dashboard.schemas import ProactiveFinding
+
+    _seed_all_apps_healthy(log_volume)
+    buffer = app_instance.state.findings_buffer
+    # Settings default for `proactive_scan_max_findings` is 5; inject 8 findings
+    # spanning ordered timestamps so we can verify both the cap AND ordering.
+    for i in range(8):
+        buffer.append(
+            ProactiveFinding(
+                id=f"proactive:cap{i}",
+                scan_started_at=datetime(2026, 6, 6, 13, i, tzinfo=UTC),
+                scan_completed_at=datetime(2026, 6, 6, 13, i, 1, tzinfo=UTC),
+                summary=f"cap finding {i}",
+                severity="info",
+                citations=[],
+                dry_run=False,
+            )
+        )
+
+    response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
+    findings = response.json()["proactive_findings"]
+    # Exactly 5 (default cap), newest-first → cap7, cap6, cap5, cap4, cap3.
+    assert len(findings) == 5
+    assert [f["id"] for f in findings] == [
+        "proactive:cap7",
+        "proactive:cap6",
+        "proactive:cap5",
+        "proactive:cap4",
+        "proactive:cap3",
+    ]

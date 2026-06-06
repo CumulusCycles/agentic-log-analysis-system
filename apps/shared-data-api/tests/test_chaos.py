@@ -67,10 +67,10 @@ async def test_chaos_slow_delays_and_continues(monkeypatch, mongo_db, pg_session
 
 
 @pytest.mark.asyncio
-async def test_chaos_error_returns_status_without_handler(
-    monkeypatch, mongo_db, pg_session_factory
-):
-    """error:<status> returns that status with detail=chaos and skips the handler."""
+async def test_chaos_error_5xx_logs_at_error_level(monkeypatch, mongo_db, pg_session_factory):
+    """error:<5xx> returns that status with detail=chaos, skips the handler,
+    and logs `chaos_honored` at ERROR level so the dashboard's proactive
+    scan (PR 4c) sees an ERROR-tier signal in Chroma."""
     app = _build_app(monkeypatch, enable_chaos=True)
     async with await _client(app) as client:
         with structlog.testing.capture_logs() as captured:
@@ -79,8 +79,25 @@ async def test_chaos_error_returns_status_without_handler(
     assert resp.json() == {"detail": "chaos"}
     honored = [e for e in captured if e.get("event") == "chaos_honored"]
     assert len(honored) == 1
+    assert honored[0]["log_level"] == "error"
     assert honored[0]["status"] == 503
     assert honored[0]["directive"] == "error:503"
+
+
+@pytest.mark.asyncio
+async def test_chaos_error_4xx_logs_at_warning_level(monkeypatch, mongo_db, pg_session_factory):
+    """error:<4xx> stays at WARN — a chaos-driven 418 is operator action,
+    not a server failure. Keeps 4xx out of the ERROR-tier proactive scan
+    signal."""
+    app = _build_app(monkeypatch, enable_chaos=True)
+    async with await _client(app) as client:
+        with structlog.testing.capture_logs() as captured:
+            resp = await client.get("/health", headers={"X-Chaos": "error:418"})
+    assert resp.status_code == 418
+    honored = [e for e in captured if e.get("event") == "chaos_honored"]
+    assert len(honored) == 1
+    assert honored[0]["log_level"] == "warning"
+    assert honored[0]["status"] == 418
 
 
 @pytest.mark.asyncio

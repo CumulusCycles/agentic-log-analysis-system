@@ -10,7 +10,8 @@
    - `slow:<ms>` — sleep `<ms>` (clamped to `0..60000`), then continue to the handler normally. Produces slow-call cascades downstream.
    - `error:<status>` — return immediate JSON `{"detail": "chaos"}` with HTTP `<status>` (`400..599`). Skips the handler entirely.
 4. Malformed or out-of-range directives are rejected with HTTP `400` and a `chaos_directive_invalid` WARN log. Honored directives emit a `chaos_honored` WARN log on every fire.
-5. Chaos events log at **WARN** so they pass the dashboard's 7d ingest filter (`DASHBOARD_INGEST_LEVELS=WARN,ERROR`) into Chroma. The PR 4 LangGraph agent needs to see induced chaos events to recognize cross-app cascades.
+5. Chaos events log at **WARN** by default so they pass the dashboard's 7d ingest filter (`DASHBOARD_INGEST_LEVELS=WARN,ERROR`) into Chroma. The PR 4 LangGraph agent needs to see induced chaos events to recognize cross-app cascades.
+   - **Amended 2026-06-06 (PR 4c):** `chaos_honored` for the `error:<5xx>` branch logs at **ERROR** instead of WARN. The `slow:` branch and `error:<4xx>` branch stay at WARN. See "2026-06-06 amendment" below.
 6. Stack position per app:
    - **SDA:** added BEFORE the API-key middleware (so the API-key check wraps chaos, i.e. chaos runs AFTER auth). Unauthenticated requests with `X-Chaos` are rejected by the API-key 401 before chaos sees them.
    - **FNOL / CP:** added immediately after the request-logger middleware. JWT is a route-level dependency, so chaos and JWT execute in the same dispatch path; chaos cannot bypass JWT route protection because chaos runs inside the dispatcher but routes still apply their own auth.
@@ -76,6 +77,25 @@ Request -> JwtAuthenticationFilter (order=1, /api/*)
         -> handler
 ```
 `/actuator/*` skips ChaosFilter entirely. JWT auth fails first if the bearer is missing or invalid.
+
+## 2026-06-06 amendment — level split on `error:<status>`
+
+**What changed.** When `X-Chaos: error:<n>` is honored, the chaos middleware now logs `chaos_honored` at **ERROR** level if `500 ≤ n ≤ 599`, and at **WARN** otherwise. The `slow:<ms>` branch and the `chaos_directive_invalid` branch are unchanged — both still WARN.
+
+**Why.** PR 4c's proactive background scan reuses the LangGraph agent to look for anomalies in the Chroma corpus. Before this amendment the corpus was effectively WARN-only — the hardened apps don't escalate 5xx to ERROR-level logs in their request loggers, so anomaly heuristics keyed off ERROR misfired. With chaos as the operator's deliberate failure-driving tool, escalating chaos-driven 5xx returns to ERROR gives the proactive scan ERROR-tier signal in Chroma on demand. 4xx stays WARN because an operator-driven 418 is not a server failure — it's expected client-error simulation.
+
+**Where.** One conditional swap per app in the same `error:` branch:
+- `apps/shared-data-api/src/shared_data_api/middleware/chaos.py` (`log_method = log.error if 500 <= n <= 599 else log.warning`)
+- `apps/fnol/src/fnol/middleware/chaos.py` (same pattern)
+- `apps/customer-portal/src/middleware/chaos.ts` (`const logMethod = parsed.n >= 500 && parsed.n < 600 ? logger.error : logger.warn`)
+- `apps/agent-portal/src/main/java/com/cumuluscycles/agentportal/chaos/ChaosFilter.java` (`if (parsed.n() >= 500 && parsed.n() < 600) log.error(...) else log.warn(...)`)
+
+**Downstream effects.**
+- The dashboard's `chaos_honored` parser entry in `docs/tech/log-events.md` notes that level varies by status. The ingest gate's level filter (`WARN,ERROR` default) admits both, so Chroma sees both severities.
+- A new Agitator scenario `error-burst` (PR 4c, ADR-016) targets SDA `/policies` with `X-Chaos: error:500` so operators can drive ERROR-tier signal into Chroma on demand. Mirrors `sda-degraded` structurally.
+- The chaos tests in all four apps gain a 5xx-ERROR + 4xx-WARN assertion pair. Existing slow + invalid-directive tests are unchanged.
+
+**Backward compatibility.** No env-var or directive grammar change. A scenario that previously sent `X-Chaos: error:418` still gets WARN; one that sent `X-Chaos: error:500` now gets ERROR instead of WARN. The dashboard's ingest gate admits both, so Chroma content is a strict superset of what the pre-amendment middleware produced.
 
 ## References
 

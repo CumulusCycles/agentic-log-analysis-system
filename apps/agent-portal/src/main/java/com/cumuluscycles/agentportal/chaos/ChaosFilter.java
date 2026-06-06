@@ -76,9 +76,18 @@ public class ChaosFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
-        log.warn("chaos_honored directive={} status={} method={} path={} source={}",
-                directive, parsed.n(), request.getMethod(), request.getRequestURI(),
-                com.cumuluscycles.agentportal.logging.SourceContext.currentSource());
+        // Split level by status class so 5xx is ERROR-tier signal in Chroma
+        // (PR 4c proactive scan needs it). 4xx stays WARN: a chaos-driven
+        // 418 is operator action, not a server failure.
+        if (parsed.n() >= 500 && parsed.n() < 600) {
+            log.error("chaos_honored directive={} status={} method={} path={} source={}",
+                    directive, parsed.n(), request.getMethod(), request.getRequestURI(),
+                    com.cumuluscycles.agentportal.logging.SourceContext.currentSource());
+        } else {
+            log.warn("chaos_honored directive={} status={} method={} path={} source={}",
+                    directive, parsed.n(), request.getMethod(), request.getRequestURI(),
+                    com.cumuluscycles.agentportal.logging.SourceContext.currentSource());
+        }
         respond(response, parsed.n(), Map.of("detail", "chaos"));
     }
 

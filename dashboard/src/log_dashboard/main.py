@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .agent.graph import build_agent_graph
+from .agent.proactive import FindingsBuffer, run_proactive_scan_loop
 from .agent.sessions import SessionIndex
 from .agitator.runs import RunRegistry
 from .auth.password import hash_password
@@ -113,11 +114,39 @@ def create_app() -> FastAPI:
             settings, app.state.vectorstore, agent_checkpointer
         )
 
+        # Phase 7e (PR 4c): proactive background scan. The findings buffer
+        # is created unconditionally so `/api/status` can always report
+        # `proactive_findings: []` + `scan_enabled` without state checks.
+        # The loop task only starts when the operator opts in via
+        # `DASHBOARD_PROACTIVE_SCAN_ENABLED=true` — dry-run is a soft gate
+        # the loop applies per-iteration so the scheduling stays visible
+        # even when DRY_RUN=true.
+        app.state.findings_buffer = FindingsBuffer()
+        proactive_task: asyncio.Task[None] | None = None
+        if settings.proactive_scan_enabled:
+            proactive_task = asyncio.create_task(run_proactive_scan_loop(app, settings))
+            log.info(
+                "proactive_scan_loop_started",
+                interval_seconds=settings.proactive_scan_interval_seconds,
+                lookback_minutes=settings.proactive_scan_lookback_minutes,
+                dry_run=settings.dashboard_llm_dry_run,
+            )
+
         log.info("startup_complete")
         yield
 
         if backfill_task is not None and not backfill_task.done():
             backfill_task.cancel()
+        if proactive_task is not None and not proactive_task.done():
+            proactive_task.cancel()
+            # Drain the task so an in-flight `graph.ainvoke` (or any LangSmith
+            # trace it owns) finalises before we tear down dependent state
+            # (vectorstore, session_index). Without the await, cancel() only
+            # signals — the task can keep running past lifespan exit.
+            try:
+                await proactive_task
+            except asyncio.CancelledError:
+                pass
         if app.state.watcher is not None:
             app.state.watcher.stop()
         # Drain any in-flight Agitator runs so shutdown is clean.
