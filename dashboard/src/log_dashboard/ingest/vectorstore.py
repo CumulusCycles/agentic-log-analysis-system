@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 from collections import Counter
 from datetime import datetime
 from typing import Any
@@ -112,6 +113,9 @@ def upsert_entries(
     # considered. Per-app — the callers (backfill + watcher) always pass a
     # single-app batch, so `entries[0].app` is the canonical app name.
     level_counts: Counter[str] = Counter()
+    # `page_content` strings for every entry that crossed the OpenAI
+    # boundary in this call — used post-loop to compute tokens + USD.
+    embedded_page_contents: list[str] = []
     app_name = entries[0].app
     for i in range(0, len(entries), batch_size):
         chunk = entries[i : i + batch_size]
@@ -125,15 +129,28 @@ def upsert_entries(
             continue
         new_entries = [pair[0] for pair in new_pairs]
         new_ids = [pair[1] for pair in new_pairs]
+        page_contents = [make_page_content(e) for e in new_entries]
         docs = [
-            Document(page_content=make_page_content(e), metadata=make_metadata(e))
-            for e in new_entries
+            Document(page_content=page_contents[idx], metadata=make_metadata(e))
+            for idx, e in enumerate(new_entries)
         ]
         store.add_documents(documents=docs, ids=new_ids)
         embedded += len(new_entries)
         level_counts.update(e.level.value for e in new_entries)
+        embedded_page_contents.extend(page_contents)
     if embedded > 0:
-        _emit_embed_summary(app_name, level_counts, embedded)
+        batch_tokens = _count_embedding_tokens(embedded_page_contents)
+        batch_cost = batch_tokens * _OPENAI_EMBEDDING_USD_PER_TOKEN
+        cumulative = _accumulate_session_spend(batch_tokens, batch_cost)
+        _emit_embed_summary(
+            app_name,
+            level_counts,
+            embedded,
+            batch_tokens=batch_tokens,
+            batch_cost_usd=batch_cost,
+            session_tokens=cumulative.tokens,
+            session_cost_usd=cumulative.cost_usd,
+        )
     return embedded
 
 
@@ -142,20 +159,87 @@ def upsert_entries(
 # across calls — easier to scan visually in `docker compose logs`.
 _EMBED_SUMMARY_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
 
+# OpenAI `text-embedding-3-small` list price (2026-Q1): $0.02 per 1M tokens.
+# Hard-coded because (a) it's a published price, not a secret, and (b)
+# fetching it dynamically would itself cost a request. Update when OpenAI
+# publishes new pricing.
+_OPENAI_EMBEDDING_USD_PER_TOKEN = 0.02 / 1_000_000
 
-def _emit_embed_summary(app: str, level_counts: Counter[str], total: int) -> None:
+
+class _SessionSpend:
+    """Process-lifetime cumulative spend tracker.
+
+    Single instance (`_SESSION_SPEND`) shared across watcher threads + the
+    backfill task. Watcher emits run on the watchdog Observer thread pool,
+    so the lock guards against torn reads when two apps embed in parallel.
+    """
+
+    def __init__(self) -> None:
+        self.tokens: int = 0
+        self.cost_usd: float = 0.0
+        self._lock = threading.Lock()
+
+    def add(self, tokens: int, cost_usd: float) -> _SessionSpendSnapshot:
+        with self._lock:
+            self.tokens += tokens
+            self.cost_usd += cost_usd
+            return _SessionSpendSnapshot(tokens=self.tokens, cost_usd=self.cost_usd)
+
+
+class _SessionSpendSnapshot:
+    __slots__ = ("tokens", "cost_usd")
+
+    def __init__(self, *, tokens: int, cost_usd: float) -> None:
+        self.tokens = tokens
+        self.cost_usd = cost_usd
+
+
+_SESSION_SPEND = _SessionSpend()
+
+
+def _accumulate_session_spend(tokens: int, cost_usd: float) -> _SessionSpendSnapshot:
+    return _SESSION_SPEND.add(tokens, cost_usd)
+
+
+def _count_embedding_tokens(page_contents: list[str]) -> int:
+    """Sum tiktoken `cl100k_base` token counts across the embedded strings.
+
+    `text-embedding-3-small` uses `cl100k_base` (same as gpt-3.5-turbo and
+    text-embedding-ada-002). Falls back to character-count/4 if tiktoken
+    can't load the encoding — better than crashing the watcher.
+    """
+    try:
+        import tiktoken
+
+        enc = tiktoken.get_encoding("cl100k_base")
+        return sum(len(enc.encode(c)) for c in page_contents)
+    except Exception:  # noqa: BLE001 — never crash the watcher to estimate cost
+        return sum(len(c) // 4 for c in page_contents)
+
+
+def _emit_embed_summary(
+    app: str,
+    level_counts: Counter[str],
+    total: int,
+    *,
+    batch_tokens: int,
+    batch_cost_usd: float,
+    session_tokens: int,
+    session_cost_usd: float,
+) -> None:
     """Log + print a level-count summary after every OpenAI embed call.
 
     Emits two surfaces:
       1. A structured `embedding_complete` event (JSON via structlog) — the
          dashboard's own ingestion pipeline picks this up like any other
-         log line, so the operator can grep for it.
+         log line, so the operator can grep for it. Carries token + USD
+         counters for both this batch and the cumulative session.
       2. A human-readable ASCII table to stdout — distinct from the JSON
          stream so an operator tailing the container logs sees it at a
          glance after each upsert.
 
     Per `feedback_never_log_credentials`, neither surface includes the raw
-    log lines — only counts.
+    log lines — only counts and synthesised totals.
     """
     counts_dict = dict(level_counts)
     log.info(
@@ -163,36 +247,74 @@ def _emit_embed_summary(app: str, level_counts: Counter[str], total: int) -> Non
         app=app,
         level_counts=counts_dict,
         total=total,
+        batch_tokens=batch_tokens,
+        batch_cost_usd=round(batch_cost_usd, 8),
+        session_tokens=session_tokens,
+        session_cost_usd=round(session_cost_usd, 8),
     )
     # `flush=True` because uvicorn's stdout is line-buffered under Docker and
     # we want the table visible immediately, not buffered behind the next log.
-    print(_format_embed_summary(app, level_counts, total), flush=True, file=sys.stdout)
+    print(
+        _format_embed_summary(
+            app,
+            level_counts,
+            total,
+            batch_tokens=batch_tokens,
+            batch_cost_usd=batch_cost_usd,
+            session_tokens=session_tokens,
+            session_cost_usd=session_cost_usd,
+        ),
+        flush=True,
+        file=sys.stdout,
+    )
 
 
-def _format_embed_summary(app: str, level_counts: Counter[str], total: int) -> str:
-    """ASCII table — fixed-width so columns align in any terminal."""
+def _format_embed_summary(
+    app: str,
+    level_counts: Counter[str],
+    total: int,
+    *,
+    batch_tokens: int,
+    batch_cost_usd: float,
+    session_tokens: int,
+    session_cost_usd: float,
+) -> str:
+    """ASCII table — fixed-width so columns align in any terminal.
+
+    Includes per-batch counts + tokens + USD AND the cumulative session
+    spend so the operator can see "what did this upsert cost?" and "what
+    have I paid since startup?" in a single glance.
+    """
     bar = "=" * 56
-    sep = "+" + "-" * 9 + "+" + "-" * 9 + "+"
+    sep = "+" + "-" * 9 + "+" + "-" * 18 + "+"
     lines = [
         "",
         bar,
         f" Chroma embedding complete — {app}",
         bar,
         sep,
-        f"| {'Level':<7} | {'Count':>7} |",
+        f"| {'Level':<7} | {'Count':>16} |",
         sep,
     ]
     for level in _EMBED_SUMMARY_LEVELS:
         count = level_counts.get(level, 0)
-        lines.append(f"| {level:<7} | {count:>7} |")
+        lines.append(f"| {level:<7} | {count:>16} |")
     # Surface any level the parser produced that we don't have a canonical
     # row for (future-proof against e.g. CRITICAL/FATAL being added).
     for level in sorted(level_counts):
         if level not in _EMBED_SUMMARY_LEVELS:
-            lines.append(f"| {level:<7} | {level_counts[level]:>7} |")
+            lines.append(f"| {level:<7} | {level_counts[level]:>16} |")
     lines.append(sep)
-    lines.append(f"| {'TOTAL':<7} | {total:>7} |")
+    lines.append(f"| {'TOTAL':<7} | {total:>16} |")
     lines.append(sep)
+    lines.append(f"| {'Tokens':<7} | {batch_tokens:>16,} |")
+    lines.append(f"| {'Cost':<7} | {f'${batch_cost_usd:.6f}':>16} |")
+    lines.append(sep)
+    # Cumulative session totals — separate footer block so the columns of
+    # the per-batch table stay clean.
+    lines.append(
+        f" Session total (since startup): {session_tokens:,} tokens · " f"${session_cost_usd:.6f}"
+    )
     lines.append(bar)
     lines.append("")
     return "\n".join(lines)
@@ -242,6 +364,12 @@ def metadata_to_log_entry(md: dict[str, Any]) -> LogEntry | None:
     Returns None on shape error; the caller decides what status to surface.
     """
     try:
+        # `source` is read back from Chroma metadata (PR 4b fix). Without
+        # this the LogEntry.source default of "prod" silently overrides
+        # whatever the parser tagged at ingest, so Agitator-tagged
+        # `synthetic` and parser-derived `health` / `unknown` would all
+        # round-trip to "prod" — losing the provenance signal that
+        # ADR-011's X-Source propagation works hard to preserve.
         return LogEntry(
             id=str(md.get("id") or ""),
             timestamp=_parse_ts(md.get("timestamp_iso")),
@@ -250,6 +378,7 @@ def metadata_to_log_entry(md: dict[str, Any]) -> LogEntry | None:
             event=str(md.get("event") or ""),
             fields=_fields_from_metadata(md),
             raw=str(md.get("raw") or ""),
+            source=str(md.get("source") or "prod"),
         )
     except (ValueError, KeyError, TypeError) as exc:
         log.warning(

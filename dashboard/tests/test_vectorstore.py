@@ -6,11 +6,25 @@ import pytest
 
 from log_dashboard.config import Settings
 from log_dashboard.ingest.vectorstore import (
+    _SESSION_SPEND,
     build_vectorstore,
     is_embeddings_disabled,
+    metadata_to_log_entry,
     upsert_entries,
 )
 from log_dashboard.schemas import LogEntry, LogLevel
+
+
+@pytest.fixture(autouse=True)
+def _reset_session_spend():
+    """`_SESSION_SPEND` is module-level state; reset around every test so
+    one test's spend doesn't leak into the next test's session-total
+    assertions."""
+    _SESSION_SPEND.tokens = 0
+    _SESSION_SPEND.cost_usd = 0.0
+    yield
+    _SESSION_SPEND.tokens = 0
+    _SESSION_SPEND.cost_usd = 0.0
 
 
 def _settings(**over) -> Settings:
@@ -171,10 +185,64 @@ def test_upsert_entries_prints_level_count_table_after_embedding(
     assert "ERROR" in captured.out
     assert "TOTAL" in captured.out
     # Counts: 1 INFO, 1 WARN, 2 ERROR, 0 DEBUG, total 4.
-    assert "| INFO    |       1 |" in captured.out
-    assert "| WARN    |       1 |" in captured.out
-    assert "| ERROR   |       2 |" in captured.out
-    assert "| TOTAL   |       4 |" in captured.out
+    assert "| INFO    |                1 |" in captured.out
+    assert "| WARN    |                1 |" in captured.out
+    assert "| ERROR   |                2 |" in captured.out
+    assert "| TOTAL   |                4 |" in captured.out
+    # Spend rows: 4 entries → some tokens > 0, some USD > 0.
+    assert "Tokens" in captured.out
+    assert "Cost" in captured.out
+    assert "$" in captured.out  # USD prefix on the cost row
+    # Session-spend footer.
+    assert "Session total (since startup)" in captured.out
+
+
+def test_upsert_entries_accumulates_session_spend_across_calls(fake_vectorstore, capfd) -> None:
+    """Two successive upserts (different content) drive the running session
+    total — the second table's session row should show MORE tokens than
+    the first."""
+    upsert_entries(fake_vectorstore, [_entry(0)])
+    first = capfd.readouterr().out
+    upsert_entries(fake_vectorstore, [_entry(1), _entry(2)])
+    second = capfd.readouterr().out
+
+    # Both tables include the session footer.
+    assert "Session total (since startup)" in first
+    assert "Session total (since startup)" in second
+
+    # Extract the session token count from each footer.
+    def _session_tokens(text: str) -> int:
+        for line in text.splitlines():
+            if "Session total" in line:
+                # Format: " Session total (since startup): N,NNN tokens · $0.xxxxxx"
+                return int(line.split(":", 1)[1].strip().split()[0].replace(",", ""))
+        raise AssertionError("no session footer in output")
+
+    assert _session_tokens(second) > _session_tokens(first)
+
+
+def test_metadata_to_log_entry_round_trips_source_field(fake_vectorstore) -> None:
+    """The `source` field on a parsed entry must survive the Chroma
+    metadata write → read round-trip. Pre-PR-4b bug: the reader dropped
+    `source`, so the LogEntry.source="prod" default silently overrode
+    whatever the parser had tagged (synthetic / health / unknown)."""
+    from log_dashboard.ingest.embeddings import make_metadata
+
+    entry = LogEntry(
+        id="fnol:test-rt",
+        timestamp=datetime(2026, 6, 5, 12, 0, 0, tzinfo=UTC),
+        level=LogLevel.WARN,
+        app="fnol",
+        event="sda_upstream_rejected",
+        fields={"target": "/auth/login"},
+        raw='{"event":"sda_upstream_rejected","source":"synthetic"}',
+        source="synthetic",
+    )
+    md = make_metadata(entry)
+    assert md["source"] == "synthetic"  # written correctly
+    recovered = metadata_to_log_entry(md)
+    assert recovered is not None
+    assert recovered.source == "synthetic"  # read back correctly (PR 4b fix)
 
 
 def test_upsert_entries_no_table_when_nothing_embedded(fake_vectorstore, capfd) -> None:
