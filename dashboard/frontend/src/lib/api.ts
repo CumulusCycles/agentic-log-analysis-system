@@ -18,6 +18,7 @@ import type {
   LogsSearchResponse,
   StatusResponse,
 } from "../types/logs";
+import type { ChromaStatsResponse } from "../types/vectorstore";
 
 const BASE_URL = import.meta.env.VITE_DASHBOARD_API_BASE_URL ?? "";
 
@@ -131,6 +132,12 @@ export async function postChat(token: string, body: ChatRequest): Promise<ChatRe
 
 export async function getError(token: string, entryId: string): Promise<ErrorDetailResponse> {
   return request<ErrorDetailResponse>(`/api/errors/${encodeURIComponent(entryId)}`, {}, token);
+}
+
+// --- Vectorstore Stats tab ---
+
+export async function getChromaStats(token: string): Promise<ChromaStatsResponse> {
+  return request<ChromaStatsResponse>("/api/chroma/stats", {}, token);
 }
 
 // --- Phase 7e (PR 4b): SSE chat streaming ---

@@ -27,7 +27,7 @@ from .ingest.vectorstore import (
 )
 from .ingest.watcher import LogVolumeWatcher
 from .logging_setup import configure_logging, get_logger
-from .routers import agitator, auth, chat, errors, health, logs, search, status
+from .routers import agitator, auth, chat, chroma_stats, errors, health, logs, search, status
 
 # Paths FastAPI auto-mounts that the SPA catch-all MUST NOT intercept.
 # Swagger UI is intentionally exposed per ADR-001 — the dashboard's audience
@@ -173,6 +173,7 @@ def create_app() -> FastAPI:
     app.include_router(agitator.router, prefix="/api/agitator")
     app.include_router(chat.router, prefix="/api")
     app.include_router(errors.router, prefix="/api")
+    app.include_router(chroma_stats.router, prefix="/api")
 
     # Static React build — mounted under /assets/ for hashed bundles, with a
     # catch-all GET that serves index.html for every other unknown path so the

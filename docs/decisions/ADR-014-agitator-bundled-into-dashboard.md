@@ -68,8 +68,15 @@ The default `DASHBOARD_INGEST_SOURCES` widens from `{"prod"}` to `{"prod", "synt
 | `policy-not-found` | FNOL | 30 × 20s | 404 INFO traffic (not embedded — for /api/logs view) | No |
 | `claim-burst` | FNOL | 200 × 60s | 201 INFO traffic + Postgres rows | No |
 | `sda-degraded` | SDA | 240 × 120s | `chaos_honored` WARN cascade | **Yes** |
+| `error-burst` | SDA | 120 × 60s | `chaos_honored` ERROR cascade (5xx → ERROR per ADR-013 amendment) | **Yes** |
+| `cp-read-burst` | Customer Portal | 100 × 30s | INFO traffic at CP + SDA via `/policies/me` proxy reads | No |
+| `cp-degraded` | Customer Portal | 80 × 60s | `chaos_honored` WARN cascade at CP | **Yes** |
+| `ap-read-burst` | Agent Portal | 100 × 30s | INFO traffic at AP + SDA via `/api/claims` proxy reads | No |
+| `ap-degraded` | Agent Portal | 80 × 60s | `chaos_honored` WARN cascade at AP | **Yes** |
 
 `policy-not-found` produces INFO only — kept in the pack because operators benefit from seeing 404 traffic in the Log Explorer when validating filters, not because it drives the LangGraph corpus.
+
+`cp-read-burst` and `ap-read-burst` similarly produce INFO only — they exist so every app has at least one non-chaos card on the Log Generator (operators can demo CP/AP working end-to-end without flipping `ENABLE_CHAOS`).
 
 ## Auth model
 

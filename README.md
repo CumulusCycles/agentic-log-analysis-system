@@ -177,7 +177,7 @@ The Agitator runs bundled inside the dashboard — no separate process to deploy
 [http://localhost:4001/log-generator](http://localhost:4001/log-generator) after logging in
 with the admin credentials from `.env`.
 
-Five built-in scenarios:
+Ten built-in scenarios, one+ per app:
 
 | Scenario | What it does | Logs produced | Needs chaos? |
 |---|---|---|---|
@@ -186,6 +186,11 @@ Five built-in scenarios:
 | `policy-not-found` | Reads against unknown policy numbers | WARN `policy_not_found` | No |
 | `claim-burst` | Valid claim submissions at high rate | INFO `claim_created` (filtered from Chroma) | No |
 | `sda-degraded` | 240 reads with `X-Chaos: slow:500` over 120s | WARN `chaos_honored` | **Yes** — see below |
+| `error-burst` | 120 reads with `X-Chaos: error:500` over 60s | ERROR `chaos_honored` (5xx → ERROR per ADR-013 amendment) | **Yes** |
+| `cp-read-burst` | 100 GETs against CP `/policies/me` over 30s | INFO at CP + SDA (no DB writes) | No |
+| `cp-degraded` | 80 GETs against CP `/policies/me` with `X-Chaos: slow:300` over 60s | WARN `chaos_honored` at CP | **Yes** |
+| `ap-read-burst` | 100 GETs against AP `/api/claims` over 30s | INFO at AP + SDA (no DB writes) | No |
+| `ap-degraded` | 80 GETs against AP `/api/claims` with `X-Chaos: slow:300` over 60s | WARN `chaos_honored` at AP | **Yes** |
 
 Every scenario is **operator-button-only** — never auto-fires. Each scenario is bounded
 (finite count + finite duration). Cancellation is a single click; the global cap is 2
@@ -315,6 +320,18 @@ docker compose logs log-dashboard | grep embedding_complete | jq -r \
 So healthcheck noise, Playwright E2E traffic, INFO success events, and full-dedup
 restarts all cost **zero**. Real Chroma spend only happens when WARN+ERROR `prod` or
 `synthetic` lines arrive that aren't already indexed.
+
+### Vectorstore Stats tab
+
+Visit [http://localhost:4001/vectorstore-stats](http://localhost:4001/vectorstore-stats)
+after logging in to see what's actually embedded in Chroma:
+
+- Total document count + embedding model + vector dimensions
+- Breakdowns by app, level, source, top-10 events, and last-30-days time series
+- Polls `GET /api/chroma/stats` every 30s; bar charts are pure Tailwind (no JS chart library)
+
+Backed by `GET /api/chroma/stats` — a single `_collection.get(include=["metadatas"])` call;
+no OpenAI traffic. 503 when the vectorstore is unavailable (placeholder `OPENAI_API_KEY`).
 
 ### Proactive Scan (PR 4c)
 
