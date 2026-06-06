@@ -18,8 +18,12 @@ import pytest
 
 from log_dashboard.agitator.auth import AppSession
 from log_dashboard.agitator.runs import RunRecord, RunRegistry
+from log_dashboard.agitator.scenarios.ap_degraded import ApDegraded
+from log_dashboard.agitator.scenarios.ap_read_burst import ApReadBurst
 from log_dashboard.agitator.scenarios.auth_spike import AuthSpike
 from log_dashboard.agitator.scenarios.claim_burst import ClaimBurst
+from log_dashboard.agitator.scenarios.cp_degraded import CpDegraded
+from log_dashboard.agitator.scenarios.cp_read_burst import CpReadBurst
 from log_dashboard.agitator.scenarios.error_burst import ErrorBurst
 from log_dashboard.agitator.scenarios.payload_fuzz import PayloadFuzz
 from log_dashboard.agitator.scenarios.policy_not_found import PolicyNotFound
@@ -81,8 +85,12 @@ def _patch_build_client(monkeypatch, captured: list[httpx.Request]):
 
     from log_dashboard.agitator import http_client as hc
     from log_dashboard.agitator.scenarios import (
+        ap_degraded,
+        ap_read_burst,
         auth_spike,
         claim_burst,
+        cp_degraded,
+        cp_read_burst,
         error_burst,
         payload_fuzz,
         policy_not_found,
@@ -103,6 +111,9 @@ def _patch_build_client(monkeypatch, captured: list[httpx.Request]):
                     }
                 ],
             )
+        if request.url.path == "/api/claims":
+            # AP read scenarios pull claim summaries. Return a small list.
+            return httpx.Response(200, json=[{"id": "CLM-1", "status": "REPORTED"}])
         if request.url.path.endswith("/auth/login"):
             return httpx.Response(401, json={"detail": "invalid credentials"})
         if request.url.path == "/fnol/submit":
@@ -157,7 +168,11 @@ def _patch_build_client(monkeypatch, captured: list[httpx.Request]):
     # Patch every importer.
     for module in (
         hc,
+        ap_degraded,
+        ap_read_burst,
         auth_spike,
+        cp_degraded,
+        cp_read_burst,
         payload_fuzz,
         policy_not_found,
         claim_burst,
@@ -402,3 +417,115 @@ async def test_claim_burst_no_policy_marks_all_failed(
     assert record is not None
     assert record.failed == 4
     assert record.sent == 0  # no /fnol/submit calls actually issued
+
+
+async def test_cp_read_burst_hits_cp_policies_me_with_jwt_and_no_chaos(
+    monkeypatch: pytest.MonkeyPatch, settings, registry
+) -> None:
+    """cp-read-burst targets CP /policies/me, authenticates with cp_jwt,
+    sets X-Source: synthetic, and DOES NOT send any X-Chaos header."""
+    captured: list[httpx.Request] = []
+    _patch_build_client(monkeypatch, captured)
+    await _add_running(registry, "cprb1")
+
+    scenario = CpReadBurst(
+        settings=settings,
+        session=_fake_session(),
+        registry=registry,
+        run_id="cprb1",
+        params={"count": 4, "duration_s": 1},
+    )
+    await scenario.run()
+
+    assert len(captured) == 4
+    for req in captured:
+        assert req.url.path == "/policies/me"
+        assert req.headers.get("X-Source") == "synthetic"
+        assert req.headers.get("Authorization") == "Bearer fake-cp"
+        assert "X-Chaos" not in req.headers
+
+    record = await registry.get("cprb1")
+    assert record is not None
+    assert record.sent == 4
+    assert record.succeeded == 4
+
+
+async def test_cp_degraded_sets_x_chaos_slow_header(
+    monkeypatch: pytest.MonkeyPatch, settings, registry
+) -> None:
+    """cp-degraded sets `X-Chaos: slow:300` on every request and uses cp_jwt."""
+    captured: list[httpx.Request] = []
+    _patch_build_client(monkeypatch, captured)
+    await _add_running(registry, "cpd1")
+
+    scenario = CpDegraded(
+        settings=settings,
+        session=_fake_session(),
+        registry=registry,
+        run_id="cpd1",
+        params={"count": 3, "duration_s": 1},
+    )
+    await scenario.run()
+
+    assert len(captured) == 3
+    for req in captured:
+        assert req.url.path == "/policies/me"
+        assert req.headers.get("X-Source") == "synthetic"
+        assert req.headers.get("X-Chaos") == "slow:300"
+        assert req.headers.get("Authorization") == "Bearer fake-cp"
+
+
+async def test_ap_read_burst_hits_ap_api_claims_with_jwt_and_no_chaos(
+    monkeypatch: pytest.MonkeyPatch, settings, registry
+) -> None:
+    """ap-read-burst targets AP /api/claims, authenticates with ap_jwt,
+    sets X-Source: synthetic, and DOES NOT send any X-Chaos header."""
+    captured: list[httpx.Request] = []
+    _patch_build_client(monkeypatch, captured)
+    await _add_running(registry, "aprb1")
+
+    scenario = ApReadBurst(
+        settings=settings,
+        session=_fake_session(),
+        registry=registry,
+        run_id="aprb1",
+        params={"count": 4, "duration_s": 1},
+    )
+    await scenario.run()
+
+    assert len(captured) == 4
+    for req in captured:
+        assert req.url.path == "/api/claims"
+        assert req.headers.get("X-Source") == "synthetic"
+        assert req.headers.get("Authorization") == "Bearer fake-ap"
+        assert "X-Chaos" not in req.headers
+
+    record = await registry.get("aprb1")
+    assert record is not None
+    assert record.sent == 4
+    assert record.succeeded == 4
+
+
+async def test_ap_degraded_sets_x_chaos_slow_header(
+    monkeypatch: pytest.MonkeyPatch, settings, registry
+) -> None:
+    """ap-degraded sets `X-Chaos: slow:300` on every request and uses ap_jwt."""
+    captured: list[httpx.Request] = []
+    _patch_build_client(monkeypatch, captured)
+    await _add_running(registry, "apd1")
+
+    scenario = ApDegraded(
+        settings=settings,
+        session=_fake_session(),
+        registry=registry,
+        run_id="apd1",
+        params={"count": 3, "duration_s": 1},
+    )
+    await scenario.run()
+
+    assert len(captured) == 3
+    for req in captured:
+        assert req.url.path == "/api/claims"
+        assert req.headers.get("X-Source") == "synthetic"
+        assert req.headers.get("X-Chaos") == "slow:300"
+        assert req.headers.get("Authorization") == "Bearer fake-ap"

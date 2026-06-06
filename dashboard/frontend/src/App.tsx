@@ -10,6 +10,7 @@ import { LogGenerator } from "./pages/LogGenerator";
 import { LoginPage } from "./pages/LoginPage";
 import { LogExplorer } from "./pages/LogExplorer";
 import { Overview } from "./pages/Overview";
+import { VectorstoreStats } from "./pages/VectorstoreStats";
 
 function HomeRedirect() {
   const { token } = useAuth();
@@ -67,6 +68,16 @@ export function App() {
               <RequireAuth>
                 <Layout>
                   <LogGenerator />
+                </Layout>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/vectorstore-stats"
+            element={
+              <RequireAuth>
+                <Layout>
+                  <VectorstoreStats />
                 </Layout>
               </RequireAuth>
             }

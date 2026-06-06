@@ -100,6 +100,7 @@ Routes land incrementally:
 | `POST` | `/api/agitator/runs/{run_id}/cancel` | Cancel an in-flight run | PR 3 ✅ |
 | `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response. `streaming: true` upgrades the response to SSE: one `event: node` per agent node, terminating `event: complete` mirrors the JSON `ChatResponse` shape. Pre-flight rejections (401 / 413 / 503) still return JSON. | 7e (PR 4a + 4b SSE) ✅ |
 | `GET` | `/api/errors/{id}` | Full error detail + LangGraph "Suggested Fix". JWT-gated. ID shape: `{app}:{sha1(raw)[:16]}` (same as Chroma doc ID). 400 on malformed ID; 404 when the entry isn't in Chroma (only WARN+ERROR pass the ingest gate); 503 when OPENAI_API_KEY is the placeholder. | 7e (PR 4b) ✅ |
+| `GET` | `/api/chroma/stats` | Aggregated stats over the Chroma collection — total count, by_app, by_level, by_source, by_event (top 10), by_day (last 30 days). Single `_collection.get(include=["metadatas"])` call; no OpenAI. 503 when vectorstore unavailable. Backs the Vectorstore Stats tab. | post-7e ✅ |
 
 Swagger UI (`/docs`, `/redoc`, `/openapi.json`) is exposed — the dashboard's
 audience is the admin/operator, and Swagger is a strict diagnostic win.
@@ -157,9 +158,13 @@ Lives at `dashboard/src/log_dashboard/agitator/` + `routers/agitator.py` +
 | `_sanitize_error` strips credential-shaped tokens before storing `last_error` | Defence-in-depth per the NEVER LOG CREDENTIALS rule |
 | `sda-degraded` requires `ENABLE_CHAOS=true` — router returns 409 otherwise; UI greys the card | Chaos is a dev-only switch per ADR-013 |
 
-Starter scenarios: `auth-spike`, `payload-fuzz`, `policy-not-found`,
-`claim-burst`, `sda-degraded`. Full scenario table + design notes in
-ADR-014.
+Scenarios (10 total, one+ per app):
+- **FNOL**: `auth-spike`, `payload-fuzz`, `policy-not-found`, `claim-burst`
+- **SDA**: `sda-degraded` (slow chaos), `error-burst` (error:500 chaos)
+- **Customer Portal**: `cp-read-burst`, `cp-degraded` (slow chaos)
+- **Agent Portal**: `ap-read-burst`, `ap-degraded` (slow chaos)
+
+Full scenario table + design notes in ADR-014.
 
 `/api/status` gains a `corpus_empty: bool` flag (Chroma count == 0 with
 the vectorstore wired up). The Overview UI shows a one-line banner with

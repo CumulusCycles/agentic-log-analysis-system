@@ -67,7 +67,7 @@ async def test_routes_require_admin_jwt(client) -> None:
     assert response.status_code == 401
 
 
-async def test_list_scenarios_returns_six_specs(client, valid_token) -> None:
+async def test_list_scenarios_returns_all_specs(client, valid_token) -> None:
     response = await client.get(
         "/api/agitator/scenarios",
         headers={"Authorization": f"Bearer {valid_token}"},
@@ -75,6 +75,7 @@ async def test_list_scenarios_returns_six_specs(client, valid_token) -> None:
     assert response.status_code == 200
     body = response.json()
     names = {s["name"] for s in body}
+    # 6 originals + 4 CP/AP scenarios = 10 total, covering every target app.
     assert names == {
         "auth-spike",
         "payload-fuzz",
@@ -82,14 +83,27 @@ async def test_list_scenarios_returns_six_specs(client, valid_token) -> None:
         "claim-burst",
         "sda-degraded",
         "error-burst",
+        "cp-read-burst",
+        "cp-degraded",
+        "ap-read-burst",
+        "ap-degraded",
     }
-    # Both chaos scenarios require ENABLE_CHAOS=true; the other four do not.
-    chaos_names = {"sda-degraded", "error-burst"}
+    # The four `*-degraded` + `error-burst` scenarios require ENABLE_CHAOS=true;
+    # the rest don't.
+    chaos_names = {"sda-degraded", "error-burst", "cp-degraded", "ap-degraded"}
     for spec in body:
         if spec["name"] in chaos_names:
             assert spec["requires_chaos"] is True, spec["name"]
         else:
             assert spec["requires_chaos"] is False, spec["name"]
+    # Every target app is represented.
+    target_apps = {s["target_app"] for s in body}
+    assert target_apps == {
+        "shared-data-api",
+        "fnol",
+        "customer-portal",
+        "agent-portal",
+    }
 
 
 async def test_env_reports_enable_chaos(client, valid_token) -> None:
@@ -130,6 +144,32 @@ async def test_start_error_burst_when_chaos_disabled_returns_409(
     response = await client.post(
         "/api/agitator/runs",
         json={"scenario": "error-burst"},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 409
+    assert "ENABLE_CHAOS" in response.json()["detail"]
+
+
+async def test_start_cp_degraded_when_chaos_disabled_returns_409(
+    client, valid_token, stub_bootstrap
+) -> None:
+    """cp-degraded requires ENABLE_CHAOS=true; the router returns 409 otherwise."""
+    response = await client.post(
+        "/api/agitator/runs",
+        json={"scenario": "cp-degraded"},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 409
+    assert "ENABLE_CHAOS" in response.json()["detail"]
+
+
+async def test_start_ap_degraded_when_chaos_disabled_returns_409(
+    client, valid_token, stub_bootstrap
+) -> None:
+    """ap-degraded requires ENABLE_CHAOS=true; the router returns 409 otherwise."""
+    response = await client.post(
+        "/api/agitator/runs",
+        json={"scenario": "ap-degraded"},
         headers={"Authorization": f"Bearer {valid_token}"},
     )
     assert response.status_code == 409

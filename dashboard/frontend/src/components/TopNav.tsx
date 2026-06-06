@@ -38,6 +38,9 @@ export function TopNav() {
             <NavLink to="/log-generator" className={linkClass}>
               Log Generator
             </NavLink>
+            <NavLink to="/vectorstore-stats" className={linkClass}>
+              Vectorstore Stats
+            </NavLink>
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm">

@@ -311,3 +311,42 @@ class ProactiveFinding(BaseModel):
 # Resolve the forward reference inside StatusResponse.proactive_findings now
 # that ProactiveFinding is in module scope.
 StatusResponse.model_rebuild()
+
+
+# --- Vectorstore Stats tab — GET /api/chroma/stats ---
+
+
+class DayCount(BaseModel):
+    """One day's embedded-document count, UTC."""
+
+    date: str  # "YYYY-MM-DD"
+    count: int
+
+
+class EventCount(BaseModel):
+    """One row of the top-N event-name breakdown."""
+
+    event: str
+    count: int
+
+
+class ChromaStatsResponse(BaseModel):
+    """Aggregated stats over the Chroma collection — what's actually embedded.
+
+    Computed in-process from a single `_collection.get(include=["metadatas"])`
+    call; no OpenAI traffic. The shape is stable across empty + populated
+    states so the UI can render the same scaffolding regardless. `as_of` is
+    a single snapshot time — counts can shift between fields if ingestion
+    is active during the request, but the jitter is acceptable for a stats
+    tab.
+    """
+
+    total_count: int
+    by_app: dict[str, int] = Field(default_factory=dict)
+    by_level: dict[str, int] = Field(default_factory=dict)
+    by_source: dict[str, int] = Field(default_factory=dict)
+    by_event: list[EventCount] = Field(default_factory=list)  # top 10, descending
+    by_day: list[DayCount] = Field(default_factory=list)  # last 30 days, ascending
+    embedding_model: str
+    dimensions: int
+    as_of: datetime
