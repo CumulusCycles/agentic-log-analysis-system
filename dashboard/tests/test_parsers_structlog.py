@@ -1,3 +1,4 @@
+from log_dashboard.ingest.embeddings import make_doc_id
 from log_dashboard.ingest.parsers import parse_structlog_line
 from log_dashboard.schemas import LogLevel
 
@@ -11,7 +12,11 @@ def test_parses_sda_request_line() -> None:
     )
     entry = parse_structlog_line(app="shared-data-api", seq=0, line=line)
     assert entry is not None
-    assert entry.id == "shared-data-api:0"
+    # `id` is content-hash-derived (PR 4b) so /errors/{id} URLs are stable
+    # across requests and match the Chroma document ID.
+    assert entry.id == make_doc_id("shared-data-api", line)
+    assert entry.id.startswith("shared-data-api:")
+    assert len(entry.id.split(":", 1)[1]) == 16
     assert entry.app == "shared-data-api"
     assert entry.event == "request"
     assert entry.level is LogLevel.INFO

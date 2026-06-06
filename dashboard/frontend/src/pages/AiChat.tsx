@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { HttpError, postChat } from "../lib/api";
+import { postChatStream } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import type { ChatResponse, Citation } from "../types/chat";
+import type { Citation } from "../types/chat";
 
 interface ChatTurn {
   user: string;
@@ -13,14 +13,35 @@ interface ChatTurn {
   toolBudgetExhausted: boolean;
 }
 
+// Per-node copy shown above the answer while the agent is mid-stream.
+// Keyed on the node names emitted by the backend `_stream_chat_events`
+// SSE generator (see routers/chat.py).
+const NODE_STATUS_COPY: Record<string, string> = {
+  ingest: "Reading your question…",
+  analyze: "Analysing…",
+  correlate: "Searching logs…",
+  predict: "Synthesising…",
+  respond: "Drafting answer…",
+};
+
 export function AiChat() {
   const { token, logout } = useAuth();
   const [input, setInput] = useState("");
   const [history, setHistory] = useState<ChatTurn[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  // Cancel any in-flight stream on unmount so the fetch reader doesn't
+  // keep a dangling reference after navigation.
+  useEffect(() => {
+    return () => {
+      controllerRef.current?.abort();
+    };
+  }, []);
 
   // Scroll to the newest turn after every history update. Guard for
   // jsdom (Vitest), which doesn't implement Element.scrollIntoView.
@@ -29,45 +50,61 @@ export function AiChat() {
     if (target && typeof target.scrollIntoView === "function") {
       target.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [history, pending]);
+  }, [history, pending, streamStatus]);
 
   const submit = useCallback(
-    async (e: React.FormEvent) => {
+    (e: React.FormEvent) => {
       e.preventDefault();
       const trimmed = input.trim();
       if (!trimmed || !token || pending) return;
+
+      // Abort any in-flight stream at the call site rather than relying on
+      // an effect cleanup. In React 18 StrictMode the mount-only cleanup
+      // can race with a submit() that's already begun; aborting here
+      // guarantees a clean handoff.
+      controllerRef.current?.abort();
+
       setError(null);
       setPending(true);
-      try {
-        const response: ChatResponse = await postChat(token, {
-          message: trimmed,
-          session_id: sessionId ?? undefined,
-        });
-        setSessionId(response.session_id);
-        setHistory((prev) => [
-          ...prev,
-          {
-            user: trimmed,
-            assistant: response.answer,
-            citations: response.citations,
-            dryRun: response.dry_run,
-            toolBudgetExhausted: response.tool_budget_exhausted,
+      setStreamStatus(NODE_STATUS_COPY.ingest);
+
+      controllerRef.current = postChatStream(
+        token,
+        { message: trimmed, session_id: sessionId ?? undefined },
+        {
+          onNode: (ev) => {
+            const label = NODE_STATUS_COPY[ev.node];
+            if (label) setStreamStatus(label);
           },
-        ]);
-        setInput("");
-      } catch (err) {
-        if (err instanceof HttpError && err.status === 401) {
-          logout();
-          return;
-        }
-        if (err instanceof HttpError) {
-          setError(`${err.status}: ${err.detail}`);
-        } else {
-          setError("request failed");
-        }
-      } finally {
-        setPending(false);
-      }
+          onComplete: (ev) => {
+            setSessionId(ev.session_id);
+            setHistory((prev) => [
+              ...prev,
+              {
+                user: trimmed,
+                assistant: ev.answer,
+                citations: ev.citations,
+                dryRun: ev.dry_run,
+                toolBudgetExhausted: ev.tool_budget_exhausted,
+              },
+            ]);
+            setInput("");
+            setStreamStatus(null);
+            setPending(false);
+            controllerRef.current = null;
+          },
+          onError: (detail, status) => {
+            if (status === 401) {
+              logout();
+              return;
+            }
+            setError(status > 0 ? `${status}: ${detail}` : detail);
+            setStreamStatus(null);
+            setPending(false);
+            controllerRef.current = null;
+          },
+        },
+      );
     },
     [input, token, pending, sessionId, logout],
   );
@@ -106,7 +143,7 @@ export function AiChat() {
         {history.map((turn, i) => (
           <ChatTurnView key={i} turn={turn} />
         ))}
-        {pending && <ThinkingIndicator />}
+        {pending && <ThinkingIndicator status={streamStatus} />}
         <div ref={bottomRef} />
       </div>
 
@@ -197,10 +234,19 @@ function CitationsRow({ citations }: { citations: Citation[] }) {
   );
 }
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ status }: { status: string | null }) {
   return (
-    <div className="flex items-center gap-2" aria-label="agent is thinking">
+    <div
+      className="flex items-center gap-2"
+      aria-label="agent is thinking"
+      data-testid="thinking-indicator"
+    >
       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Agent</span>
+      {status && (
+        <span className="text-xs text-slate-600" data-testid="stream-status">
+          {status}
+        </span>
+      )}
       <span className="thinking-dots" aria-hidden="true">
         <span>.</span>
         <span>.</span>

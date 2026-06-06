@@ -1,34 +1,42 @@
 """POST /api/chat — LangGraph agent invocation.
 
-Flow per request:
-1. Validate body (ChatRequest); 422 if `streaming=true` (forward-compat reservation)
-2. Sanitise the user message (defence-in-depth — `ingest_node` also runs the
-   sanitiser, but doing it here too means the token-count + log line in this
-   router never see the raw secret)
-3. Token-count via tiktoken against `gpt-4o`'s `o200k_base` encoding;
-   413 if over `settings.llm_max_input_tokens_per_request`
-4. Mint or reuse `session_id` → derive LangGraph `thread_id`
-5. Touch the SessionIndex (LRU eviction if over cap)
-6. `await graph.ainvoke(state, config={'configurable': {'thread_id': ...},
-   'metadata': {...}})` — metadata flows to LangSmith for filtering
-7. Catch `openai.APIError` → 502
-8. Build ChatResponse: final AIMessage content + citations + dry_run +
-   tool_budget_exhausted + session_id
+Two response shapes share the same agent invocation:
+
+- Non-streaming (`streaming=false`, default) — `await graph.ainvoke(...)`,
+  returns JSON `ChatResponse` once the final node runs.
+- Streaming (`streaming=true`, PR 4b) — `graph.astream(stream_mode="updates")`
+  yields one SSE `event: node` per node completion plus a single
+  `event: complete` with the same fields the JSON path would have returned.
+  Frontend renders per-node status (`thinking… → searching logs… → …`)
+  while the agent runs, then swaps in the final answer.
+
+Shared pre-flight (auth, sanitisation, token cap, session minting) runs
+before either path branches — early rejections always return JSON so the
+client doesn't need an SSE parser to read `401 / 413 / 503`.
 """
 
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from langchain_core.messages import AIMessage, HumanMessage
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage
 
+from ..agent.responses import (
+    count_tokens,
+    extract_answer,
+    extract_citations,
+    is_openai_api_error,
+)
 from ..agent.sessions import new_session_id, thread_id_for
 from ..auth.jwt import get_current_admin
 from ..config import Settings, get_settings
-from ..credentials import sanitize_log_raw, sanitize_user_input
+from ..credentials import sanitize_user_input
 from ..logging_setup import get_logger
-from ..schemas import ChatRequest, ChatResponse, Citation
+from ..schemas import ChatRequest, ChatResponse
 
 if TYPE_CHECKING:
     from langgraph.graph.state import CompiledStateGraph
@@ -42,6 +50,11 @@ log = get_logger("chat")
 # doesn't balloon the log file. The query itself is admin input, not a
 # credential, but bounded log lines are easier to consume downstream.
 _LOG_PREVIEW_LIMIT = 200
+
+# Counters surfaced to the client per node. Keeping the per-node payload
+# small means the SSE stream stays under a kilobyte for the whole 5-node
+# loop — the full state would balloon as the LLM messages accumulate.
+_NODE_STATUS_FIELDS = ("tool_budget_remaining", "tool_budget_exhausted")
 
 
 def _get_graph(request: Request) -> CompiledStateGraph:
@@ -64,51 +77,44 @@ def _get_session_index(request: Request) -> SessionIndex:
     return idx
 
 
-def _count_tokens(text: str, model: str) -> int:
-    """Tiktoken count for `text` against `model`'s encoding.
-
-    Falls back to `o200k_base` (gpt-4o family) for unknown model strings so
-    we still get a usable estimate. Wrapped here so the router doesn't need
-    to know about tiktoken's specifics.
-    """
-    import tiktoken
-
-    try:
-        enc = tiktoken.encoding_for_model(model)
-    except KeyError:
-        enc = tiktoken.get_encoding("o200k_base")
-    return len(enc.encode(text))
-
-
-@router.post("/chat", response_model=ChatResponse)
+@router.post(
+    "/chat",
+    # The endpoint returns either a JSON `ChatResponse` (default) or an
+    # SSE `text/event-stream` (when `streaming=true`). `response_model=None`
+    # tells FastAPI not to infer a single Pydantic response schema; the
+    # `responses` dict documents both content types in the OpenAPI surface
+    # so Swagger users can see the polymorphism.
+    response_model=None,
+    responses={
+        200: {
+            "content": {
+                "application/json": {},
+                "text/event-stream": {},
+            },
+        },
+    },
+)
 async def post_chat(
     body: ChatRequest,
     request: Request,
     payload: dict[str, Any] = Depends(get_current_admin),
     settings: Settings = Depends(get_settings),
-) -> ChatResponse:
-    # Forward-compatibility reservation — streaming arrives in PR 4b. Rejected
-    # here rather than in a `model_validator` so the rejection doesn't drag a
-    # raw `ValueError` instance into the validation handler's `ctx` field.
-    if body.streaming:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="streaming responses are not supported in PR 4a — set streaming=false",
-        )
-
+) -> Response:
     # Sanitise the message BEFORE token counting + logging. Defence-in-depth:
     # `ingest_node` runs the same sanitiser, but this router never sees the
     # raw secret in its preview log line.
     message_sanitised = sanitize_user_input(body.message)
 
     # Cost guard. Counted against the chat model's encoding so we reject
-    # before the LangGraph dispatcher spends anything.
-    token_count = _count_tokens(message_sanitised, settings.openai_chat_model)
+    # before the LangGraph dispatcher spends anything. Applies to both
+    # streaming and non-streaming paths.
+    token_count = count_tokens(message_sanitised, settings.openai_chat_model)
     if token_count > settings.llm_max_input_tokens_per_request:
         log.info(
             "chat_rejected_token_cap",
             tokens=token_count,
             cap=settings.llm_max_input_tokens_per_request,
+            streaming=body.streaming,
         )
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -131,6 +137,7 @@ async def post_chat(
             "session_id": session_id,
             "jwt_sub": jwt_sub,
             "dry_run": settings.dashboard_llm_dry_run,
+            "streaming": body.streaming,
         },
     }
 
@@ -138,6 +145,7 @@ async def post_chat(
         "chat_started",
         session_id=session_id,
         dry_run=settings.dashboard_llm_dry_run,
+        streaming=body.streaming,
         message_preview=_truncate(message_sanitised),
         tokens=token_count,
     )
@@ -155,14 +163,34 @@ async def post_chat(
         "tool_budget_exhausted": False,
     }
 
+    if body.streaming:
+        return StreamingResponse(
+            _stream_chat_events(
+                graph=graph,
+                initial_state=initial_state,
+                config=config,
+                session_id=session_id,
+                default_dry_run=settings.dashboard_llm_dry_run,
+                request=request,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                # Defensive: ensures any forward proxy between FastAPI and the
+                # browser (none in this stack today; one day there will be)
+                # doesn't buffer the chunks before flushing.
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     try:
         result = await graph.ainvoke(initial_state, config=config)
     except Exception as exc:
         # Surface OpenAI / upstream LLM failures as 502; everything else
         # (programming errors, schema issues) bubbles to the global 500
-        # handler. We import openai lazily so dry-run installs don't pay
-        # the import cost.
-        if _is_openai_api_error(exc):
+        # handler. `is_openai_api_error` imports `openai` lazily so dry-run
+        # installs don't pay the import cost.
+        if is_openai_api_error(exc):
             log.warning(
                 "chat_upstream_failure",
                 session_id=session_id,
@@ -174,8 +202,8 @@ async def post_chat(
             ) from exc
         raise
 
-    answer = _extract_answer(result)
-    citations = _extract_citations(result)
+    answer = extract_answer(result)
+    citations = extract_citations(result)
     dry_run = bool(result.get("dry_run", settings.dashboard_llm_dry_run))
     tool_budget_exhausted = bool(result.get("tool_budget_exhausted", False))
 
@@ -196,69 +224,123 @@ async def post_chat(
     )
 
 
-def _extract_answer(state: dict[str, Any]) -> str:
-    """Pull the final AIMessage content and sanitise it.
+async def _stream_chat_events(
+    *,
+    graph: CompiledStateGraph,
+    initial_state: dict[str, Any],
+    config: dict[str, Any],
+    session_id: str,
+    default_dry_run: bool,
+    request: Request,
+) -> AsyncIterator[bytes]:
+    """SSE generator — one `event: node` per node, one `event: complete` at end.
 
-    Inputs entering the graph are already sanitised in `ingest_node`, and
-    tool-returned `raw` fields are sanitised in `query_logs`, so a clean
-    LLM cannot generate a secret it never saw. The sanitiser runs again
-    here as defence-in-depth — matches the ADR-015 §8 promise that the
-    response body never carries a credential.
+    Per-node payload is a status snapshot (not the full state) so the wire
+    cost stays bounded; the final answer + citations land in `event: complete`
+    via the same `ChatResponse` shape the non-streaming path emits, so the
+    two surfaces cannot drift.
+
+    Client-disconnect handling: between node emissions we check
+    `request.is_disconnected()` and break out before the next graph step
+    runs. The existing tool-call cap already bounds spend, but a client
+    that disconnects mid-stream shouldn't keep burning OpenAI tokens just
+    to populate a checkpoint nobody will read.
+
+    Upstream LLM failures during the stream emit a single `event: error`
+    then close cleanly — the frontend's onError handler tears down the
+    fetch-reader.
     """
-    messages = state.get("messages") or []
-    for msg in reversed(messages):
-        if isinstance(msg, AIMessage) and not getattr(msg, "tool_calls", None):
-            content = msg.content
-            if isinstance(content, str):
-                return sanitize_log_raw(content)
-            # ChatOpenAI may return content as a list of blocks; flatten.
-            if isinstance(content, list):
-                return sanitize_log_raw("".join(str(b) for b in content))
-            return sanitize_log_raw(str(content))
-    return ""
-
-
-def _extract_citations(state: dict[str, Any]) -> list[Citation]:
-    """Re-shape the agent's CitedLogEntry list into the API Citation schema.
-
-    Both schemas mirror a subset of `LogEntry`; the difference is `timestamp`
-    is an ISO string in CitedLogEntry (tool-message-safe) and a `datetime`
-    in Citation (Pydantic serialises it back to ISO in the response).
-    """
-    from datetime import datetime
-
-    citations: list[Citation] = []
-    for entry in state.get("citations") or []:
-        try:
-            ts_raw = entry.timestamp
-            ts = datetime.fromisoformat(ts_raw.replace("Z", "+00:00")) if ts_raw else None
-        except (ValueError, AttributeError):
-            ts = None
-        if ts is None:
-            continue
-        citations.append(
-            Citation(
-                id=entry.id,
-                timestamp=ts,
-                level=entry.level,
-                app=entry.app,
-                event=entry.event,
-                # Defence-in-depth — `query_logs` already sanitised this,
-                # but running the sanitiser once more ensures any future
-                # bypass cannot leak a credential into the response.
-                raw=sanitize_log_raw(entry.raw),
-                score=entry.score,
-            )
-        )
-    return citations
-
-
-def _is_openai_api_error(exc: BaseException) -> bool:
+    aborted = False
     try:
-        from openai import APIError
-    except ImportError:
-        return False
-    return isinstance(exc, APIError)
+        async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
+            # `stream_mode="updates"` yields {node_name: partial_state_update}.
+            # In this graph each step only ever updates one node at a time,
+            # but we iterate the dict to stay correct if that ever changes.
+            for node_name, partial in chunk.items():
+                payload: dict[str, Any] = {"node": node_name}
+                for field in _NODE_STATUS_FIELDS:
+                    if field in partial:
+                        payload[field] = partial[field]
+                # `correlate` adds citations; surface a running count so the
+                # UI can show "found 3 related entries" mid-stream.
+                if "citations" in partial:
+                    payload["citation_count"] = len(partial["citations"] or [])
+                yield _sse_event("node", payload)
+            if await request.is_disconnected():
+                # Stop iterating the graph — no point producing tokens for a
+                # gone client. We do NOT emit `event: error` because the
+                # client is gone; just exit the generator.
+                aborted = True
+                log.info(
+                    "chat_stream_aborted_client_disconnected",
+                    session_id=session_id,
+                )
+                return
+    except Exception as exc:
+        if is_openai_api_error(exc):
+            log.warning(
+                "chat_upstream_failure",
+                session_id=session_id,
+                error_class=type(exc).__name__,
+                streaming=True,
+            )
+            yield _sse_event(
+                "error",
+                {"detail": "upstream LLM unavailable — try again shortly"},
+            )
+            return
+        # Programming / schema errors — still emit a structured close so the
+        # client doesn't see a half-closed connection without explanation.
+        log.warning(
+            "chat_stream_failed",
+            session_id=session_id,
+            error_class=type(exc).__name__,
+        )
+        yield _sse_event("error", {"detail": "stream failed unexpectedly"})
+        return
+
+    if aborted:
+        return
+
+    # The accumulated state lives in the checkpointer; fetch it once after
+    # the stream completes so we can re-use the same response shape the
+    # non-streaming path emits. `snapshot.values` may be empty or missing if
+    # the graph errored before any checkpoint was written.
+    snapshot = await graph.aget_state(config)
+    final: dict[str, Any] = snapshot.values if snapshot is not None and snapshot.values else {}
+    answer = extract_answer(final)
+    citations = extract_citations(final)
+    dry_run = bool(final.get("dry_run", default_dry_run))
+    tool_budget_exhausted = bool(final.get("tool_budget_exhausted", False))
+
+    log.info(
+        "chat_complete",
+        session_id=session_id,
+        dry_run=dry_run,
+        citation_count=len(citations),
+        tool_budget_exhausted=tool_budget_exhausted,
+        streaming=True,
+    )
+
+    # Re-use ChatResponse's serializer so the SSE `complete` event mirrors
+    # the JSON `POST /api/chat` body exactly. Adding a non-JSON-native field
+    # to Citation/ChatResponse in the future cannot cause the two surfaces
+    # to drift — they go through the same Pydantic encoder.
+    complete = ChatResponse(
+        answer=answer,
+        citations=citations,
+        session_id=session_id,
+        dry_run=dry_run,
+        tool_budget_exhausted=tool_budget_exhausted,
+    )
+    yield _sse_event("complete", complete.model_dump(mode="json"))
+
+
+def _sse_event(event: str, data: dict[str, Any]) -> bytes:
+    """Format one SSE event. Keep the encoding here, not at call sites."""
+    # `default=str` covers datetime + any stray non-JSON-native types (e.g.
+    # if a future node adds a UUID to the state dict).
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n".encode()
 
 
 def _truncate(text: str) -> str:

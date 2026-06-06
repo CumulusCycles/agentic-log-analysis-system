@@ -120,6 +120,82 @@ def test_upsert_entries_skips_already_indexed_to_avoid_re_embedding() -> None:
     assert embedder.embed_documents_calls == 2  # one more batch fired
 
 
+def test_upsert_entries_prints_level_count_table_after_embedding(
+    fake_vectorstore, capfd, caplog
+) -> None:
+    """Any time OpenAI is invoked to embed log lines, the operator gets a
+    level-count summary table on stdout AND a structured `embedding_complete`
+    log event. Mirrors the user request — visibility into what was paid for.
+    """
+    entries = [
+        _entry(0),  # INFO
+        LogEntry(
+            id="fnol:warn1",
+            timestamp=datetime(2026, 6, 5, 12, 0, 0, tzinfo=UTC),
+            level=LogLevel.WARN,
+            app="fnol",
+            event="request",
+            fields={},
+            raw='{"event":"request","level":"warning"}',
+        ),
+        LogEntry(
+            id="fnol:err1",
+            timestamp=datetime(2026, 6, 5, 12, 1, 0, tzinfo=UTC),
+            level=LogLevel.ERROR,
+            app="fnol",
+            event="request_failed",
+            fields={},
+            raw='{"event":"request_failed","level":"error"}',
+        ),
+        LogEntry(
+            id="fnol:err2",
+            timestamp=datetime(2026, 6, 5, 12, 2, 0, tzinfo=UTC),
+            level=LogLevel.ERROR,
+            app="fnol",
+            event="request_failed",
+            fields={},
+            raw='{"event":"request_failed","level":"error","second":true}',
+        ),
+    ]
+    embedded = upsert_entries(fake_vectorstore, entries)
+    assert embedded == 4
+
+    # The ASCII table goes to stdout via print().
+    captured = capfd.readouterr()
+    assert "Chroma embedding complete" in captured.out
+    assert "fnol" in captured.out
+    # Standard rows present even when count is 0 → consistent shape.
+    assert "DEBUG" in captured.out
+    assert "INFO" in captured.out
+    assert "WARN" in captured.out
+    assert "ERROR" in captured.out
+    assert "TOTAL" in captured.out
+    # Counts: 1 INFO, 1 WARN, 2 ERROR, 0 DEBUG, total 4.
+    assert "| INFO    |       1 |" in captured.out
+    assert "| WARN    |       1 |" in captured.out
+    assert "| ERROR   |       2 |" in captured.out
+    assert "| TOTAL   |       4 |" in captured.out
+
+
+def test_upsert_entries_no_table_when_nothing_embedded(fake_vectorstore, capfd) -> None:
+    """Re-running an upsert with all-deduped entries skips the table — there
+    is no OpenAI call to summarise."""
+    entries = [_entry(0), _entry(1)]
+    upsert_entries(fake_vectorstore, entries)  # first run prints
+    capfd.readouterr()  # drain
+    second = upsert_entries(fake_vectorstore, entries)
+    captured = capfd.readouterr()
+    assert second == 0
+    assert "Chroma embedding complete" not in captured.out
+
+
+def test_upsert_entries_no_table_on_dry_run(fake_vectorstore, capfd) -> None:
+    """Dry-run short-circuits before any OpenAI call — no table either."""
+    upsert_entries(fake_vectorstore, [_entry(0), _entry(1)], dry_run=True)
+    captured = capfd.readouterr()
+    assert "Chroma embedding complete" not in captured.out
+
+
 def test_upsert_entries_handles_empty_list() -> None:
     # No-op guard so the watcher can safely call this with no new lines.
     import chromadb

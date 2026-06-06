@@ -38,10 +38,13 @@ class LogLevel(str, Enum):
 class LogEntry(BaseModel):
     """One parsed line from one of the four log volumes.
 
-    `id` is `{app}:{seq}` where seq is monotonic within one /api/logs response.
-    `fields` carries the heterogeneous structured payload (caller, user, method,
-    path, status, duration_ms, claim_id, ...). `raw` preserves the original
-    line so the future Error Detail screen (7e) can render it verbatim.
+    `id` is `{app}:{sha1(raw)[:16]}` — content-stable across runs, set by the
+    parser via `ingest.embeddings.make_doc_id`. Same identifier Chroma uses for
+    the embedded document, which is what makes `GET /api/errors/{id}` a single
+    O(1) Chroma metadata lookup (Phase 7e PR 4b). `fields` carries the
+    heterogeneous structured payload (caller, user, method, path, status,
+    duration_ms, claim_id, ...). `raw` preserves the original line so the
+    Error Detail screen renders it verbatim.
 
     `source` tags the provenance of the line so the embedding pipeline can
     skip noise. Set by each app's request-logger middleware from the
@@ -201,16 +204,16 @@ class ChatRequest(BaseModel):
 
     `session_id` is generated server-side on the first call (omit it). Echo
     it back on subsequent calls to share the InMemorySaver thread (carries
-    conversation history). `streaming=true` is rejected with 422 in PR 4a —
-    the field exists so the contract is forward-compatible with SSE in 4b.
+    conversation history). `streaming=true` (PR 4b) switches the response to
+    Server-Sent Events — one `event: node` per agent node + one
+    `event: complete` carrying the final answer + citations. Authentication,
+    token-cap rejection, and other pre-flight errors return JSON in both
+    modes so the client doesn't need an SSE parser to read `401 / 413 / 503`.
     """
 
     message: str = Field(min_length=1, max_length=4000)
     session_id: str | None = None
     streaming: bool = False
-    # Streaming rejection is enforced in `routers/chat.py` via HTTPException(422)
-    # instead of a model_validator — the validator's ValueError lands in the
-    # validation handler's `ctx` field, which can't be JSON-serialised.
 
 
 class ChatResponse(BaseModel):
@@ -231,3 +234,34 @@ class ChatResponse(BaseModel):
     session_id: str
     dry_run: bool = False
     tool_budget_exhausted: bool = False
+
+
+# --- Phase 7e (PR 4b): Error Detail ---
+
+
+class AgentAnalysis(BaseModel):
+    """LangGraph agent's response when invoked on a single error.
+
+    Same shape as `ChatResponse` minus the chat-specific `session_id` — the
+    Error Detail flow mints an ephemeral session per click that the client
+    cannot continue, so exposing it would be misleading. `dry_run` and
+    `tool_budget_exhausted` carry forward so the UI can surface the same
+    caveats it surfaces on chat.
+    """
+
+    answer: str
+    citations: list[Citation] = Field(default_factory=list)
+    dry_run: bool = False
+    tool_budget_exhausted: bool = False
+
+
+class ErrorDetailResponse(BaseModel):
+    """`GET /api/errors/{id}` response.
+
+    `entry` is the full log entry reconstructed from Chroma metadata —
+    `raw` carries the original line so the UI doesn't need a second call.
+    `analysis` is the agent's Suggested Fix.
+    """
+
+    entry: LogEntry
+    analysis: AgentAnalysis

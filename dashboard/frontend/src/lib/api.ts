@@ -10,6 +10,7 @@ import type {
 } from "../types/agitator";
 import type { AdminOut, ApiError, LoginRequest, TokenResponse } from "../types/api";
 import type { ChatRequest, ChatResponse } from "../types/chat";
+import type { ErrorDetailResponse } from "../types/errors";
 import type {
   LogsFilters,
   LogsResponse,
@@ -124,4 +125,144 @@ export async function cancelRun(token: string, runId: string): Promise<RunRecord
 
 export async function postChat(token: string, body: ChatRequest): Promise<ChatResponse> {
   return request<ChatResponse>("/api/chat", { method: "POST", body: JSON.stringify(body) }, token);
+}
+
+// --- Phase 7e (PR 4b): Error Detail ---
+
+export async function getError(token: string, entryId: string): Promise<ErrorDetailResponse> {
+  return request<ErrorDetailResponse>(`/api/errors/${encodeURIComponent(entryId)}`, {}, token);
+}
+
+// --- Phase 7e (PR 4b): SSE chat streaming ---
+
+export interface ChatStreamNodeEvent {
+  node: string;
+  tool_budget_remaining?: number;
+  tool_budget_exhausted?: boolean;
+  citation_count?: number;
+}
+
+export interface ChatStreamCompleteEvent {
+  answer: string;
+  citations: ChatResponse["citations"];
+  session_id: string;
+  dry_run: boolean;
+  tool_budget_exhausted: boolean;
+}
+
+export interface ChatStreamHandlers {
+  onNode?: (event: ChatStreamNodeEvent) => void;
+  onComplete?: (event: ChatStreamCompleteEvent) => void;
+  onError?: (detail: string, status: number) => void;
+}
+
+/**
+ * Stream a chat response via SSE. Returns an AbortController so the caller
+ * can cancel on unmount. Uses `fetch` + ReadableStream because EventSource
+ * is GET-only (the chat endpoint takes a JSON body via POST).
+ *
+ * Pre-flight errors (401, 413) come back as a non-SSE JSON response — they
+ * surface through `onError` before any node event fires. Mid-stream
+ * upstream-LLM failures arrive as `event: error\ndata: {"detail": "..."}`
+ * and also route to `onError`.
+ */
+export function postChatStream(
+  token: string,
+  body: ChatRequest,
+  handlers: ChatStreamHandlers,
+): AbortController {
+  const controller = new AbortController();
+
+  void (async () => {
+    try {
+      const response = await fetch(`${BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ ...body, streaming: true }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let detail = `request failed (${response.status})`;
+        try {
+          const errBody = (await response.json()) as ApiError;
+          detail = errBody.detail ?? detail;
+        } catch {
+          /* non-JSON */
+        }
+        handlers.onError?.(detail, response.status);
+        return;
+      }
+
+      if (!response.body) {
+        handlers.onError?.("response body missing", 0);
+        return;
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+
+      const dispatch = (block: string) => {
+        const parsed = parseSseBlock(block);
+        if (!parsed) return;
+        if (parsed.event === "node") {
+          handlers.onNode?.(parsed.data as ChatStreamNodeEvent);
+        } else if (parsed.event === "complete") {
+          handlers.onComplete?.(parsed.data as ChatStreamCompleteEvent);
+        } else if (parsed.event === "error") {
+          const detail = (parsed.data as { detail?: string }).detail ?? "stream error";
+          handlers.onError?.(detail, 0);
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        // Keep the final (possibly incomplete) chunk in the buffer.
+        buffer = parts.pop() ?? "";
+        for (const part of parts) dispatch(part);
+      }
+      // Flush any trailing partial UTF-8 + dispatch a final event that
+      // arrived without a `\n\n` terminator. Uvicorn sometimes closes the
+      // stream after the last byte without a final blank line — without
+      // this the `complete` event would silently vanish.
+      buffer += decoder.decode();
+      if (buffer.trim()) dispatch(buffer);
+    } catch (err) {
+      if ((err as { name?: string }).name === "AbortError") return;
+      handlers.onError?.((err as Error).message ?? "stream failed", 0);
+    }
+  })();
+
+  return controller;
+}
+
+function parseSseBlock(block: string): { event: string; data: unknown } | null {
+  const trimmed = block.trim();
+  if (!trimmed) return null;
+  let event = "";
+  const dataLines: string[] = [];
+  for (const line of trimmed.split("\n")) {
+    if (line.startsWith("event:")) {
+      event = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trim());
+    }
+  }
+  if (!event || dataLines.length === 0) return null;
+  try {
+    // Per the WHATWG SSE spec, multi-line `data:` fields are joined by
+    // newline (not by concatenation). Our backend emits single-line JSON
+    // today, but joining with `\n` is forward-compat for pretty-printed
+    // payloads — and a 1-char fix.
+    return { event, data: JSON.parse(dataLines.join("\n")) };
+  } catch {
+    return null;
+  }
 }
