@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from ..schemas import LogEntry, LogLevel
+from .embeddings import make_doc_id
 from .spec import LogFormat
 
 # Logback default pattern: `YYYY-MM-DD HH:mm:ss.SSS LEVEL --- [thread] class : message`
@@ -113,8 +114,13 @@ def _make_entry(
     raw: str,
     source: str,
 ) -> LogEntry:
+    # `seq` is retained on the parser API as a caller-side counter for
+    # diagnostics; the LogEntry.id itself is content-hash-derived so a
+    # /errors/{id} URL is stable across requests and matches the Chroma
+    # document ID. PR 4b (Phase 7e).
+    del seq
     return LogEntry(
-        id=f"{app}:{seq}",
+        id=make_doc_id(app=app, raw=raw),
         timestamp=timestamp,
         level=level,
         app=app,

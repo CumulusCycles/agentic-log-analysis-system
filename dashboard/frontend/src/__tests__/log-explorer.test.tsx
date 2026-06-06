@@ -104,4 +104,42 @@ describe("LogExplorer", () => {
     expect(url).toMatch(/app=fnol(&|$)/);
     expect(url).not.toMatch(/customer-portal/);
   });
+
+  it("renders a View Error Detail link on WARN+ERROR rows when expanded", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(
+          response([
+            entry({ id: "fnol:aaaa111122223333", level: "ERROR" }),
+            entry({ id: "fnol:bbbb111122223333", level: "WARN" }),
+            entry({ id: "fnol:cccc111122223333", level: "INFO" }),
+          ]),
+        ),
+      );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+
+    // Wait for rows to render.
+    await waitFor(() => expect(screen.getAllByTestId("log-row").length).toBe(3));
+    const rows = screen.getAllByTestId("log-row");
+
+    // Expand the ERROR row — link present.
+    await userEvent.click(rows[0]);
+    let links = screen.getAllByTestId("view-detail-link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", "/errors/fnol%3Aaaaa111122223333");
+
+    // Collapse, expand WARN — link present.
+    await userEvent.click(rows[0]);
+    await userEvent.click(rows[1]);
+    links = screen.getAllByTestId("view-detail-link");
+    expect(links).toHaveLength(1);
+
+    // Collapse, expand INFO — link must NOT render.
+    await userEvent.click(rows[1]);
+    await userEvent.click(rows[2]);
+    expect(screen.queryByTestId("view-detail-link")).toBeNull();
+  });
 });

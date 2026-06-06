@@ -1,4 +1,5 @@
 import { Fragment, useState } from "react";
+import { Link } from "react-router-dom";
 
 import type { LogEntry } from "../types/logs";
 
@@ -18,6 +19,10 @@ function formatTs(iso: string): string {
 
 function ExpandedRow({ entry, colSpan }: { entry: LogEntry; colSpan: number }) {
   const fieldEntries = Object.entries(entry.fields);
+  // Error Detail (PR 4b) is only meaningful for entries that pass the
+  // WARN+ERROR ingest gate — those are the only IDs Chroma knows about.
+  // INFO/DEBUG rows stay with the inline-expand UX from PR 4a.
+  const hasErrorDetail = entry.level === "WARN" || entry.level === "ERROR";
   return (
     <tr data-testid="log-row-expanded" className="bg-slate-50">
       <td colSpan={colSpan} className="px-4 py-3">
@@ -43,6 +48,18 @@ function ExpandedRow({ entry, colSpan }: { entry: LogEntry; colSpan: number }) {
               {entry.raw}
             </pre>
           </div>
+          {hasErrorDetail && (
+            <div>
+              <Link
+                to={`/errors/${encodeURIComponent(entry.id)}`}
+                data-testid="view-detail-link"
+                className="inline-flex items-center gap-1 rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                onClick={(e) => e.stopPropagation()}
+              >
+                View Error Detail →
+              </Link>
+            </div>
+          )}
         </div>
       </td>
     </tr>

@@ -98,8 +98,8 @@ Routes land incrementally:
 | `GET` | `/api/agitator/runs` | List recent (up to 50) Agitator runs | PR 3 ✅ |
 | `GET` | `/api/agitator/runs/{run_id}` | Poll one run's counters | PR 3 ✅ |
 | `POST` | `/api/agitator/runs/{run_id}/cancel` | Cancel an in-flight run | PR 3 ✅ |
-| `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response | 7e (PR 4a) ✅ |
-| `GET` | `/api/errors/{id}` | Full error detail + LangGraph analysis | 7e (PR 4b) |
+| `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response. `streaming: true` upgrades the response to SSE: one `event: node` per agent node, terminating `event: complete` mirrors the JSON `ChatResponse` shape. Pre-flight rejections (401 / 413 / 503) still return JSON. | 7e (PR 4a + 4b SSE) ✅ |
+| `GET` | `/api/errors/{id}` | Full error detail + LangGraph "Suggested Fix". JWT-gated. ID shape: `{app}:{sha1(raw)[:16]}` (same as Chroma doc ID). 400 on malformed ID; 404 when the entry isn't in Chroma (only WARN+ERROR pass the ingest gate); 503 when OPENAI_API_KEY is the placeholder. | 7e (PR 4b) ✅ |
 
 Swagger UI (`/docs`, `/redoc`, `/openapi.json`) is exposed — the dashboard's
 audience is the admin/operator, and Swagger is a strict diagnostic win.
@@ -182,12 +182,25 @@ the design rationale.
 | `DASHBOARD_LLM_DRY_RUN=true` is the **default** (safe-by-default) | Cost-safety asymmetry — see ADR-015 §5 |
 | Dry-run uses a custom `_DryRunChatModel` (subclass of `BaseChatModel`) that scripts: tool_call → ToolMessage → canned final answer | Exercises the FULL graph topology in tests without any network call |
 | `analyze` + `predict` share `_invoke_llm_with_tools`; separate nodes only for the rule's 5-name palette | Single implementation, two graph slots, no duplicated logic |
-| Non-streaming `POST /api/chat`; `streaming: true` is 422'd (forward-compat for PR 4b SSE) | Keeps test surface clean; the contract is additive |
+| `POST /api/chat` defaults to non-streaming JSON; `streaming: true` returns SSE (PR 4b — see additions block below). Both paths run the same graph, so the response shape can't drift. | Additive contract; pre-flight errors (401 / 413 / 503) always return JSON |
 | Cost caps (3): `LLM_MAX_TOOL_CALLS_PER_REQUEST=4`, `LLM_MAX_INPUT_TOKENS_PER_REQUEST=8000` (tiktoken `o200k_base`), `LLM_MAX_MESSAGES_PER_SESSION=40` | Deterministic in-graph bounds; no advisory middleware |
 | Credential redaction in NEW `credentials.py` — `sanitize_user_input` + `sanitize_log_raw` cover Bearer/X-API-Key/password/JWT-shape/DSN | Defence-in-depth at BOTH input (router + ingest_node) AND output (tool `raw` field) |
 | Agitator's `_sanitize_error` is **NOT** modified in this PR — dedupe deferred to a follow-up chore PR | Scope discipline per `feedback_remediation_pr_granularity` |
 | LangSmith metadata: every `ainvoke` carries `{session_id, jwt_sub, dry_run}` | Filterable in LangSmith UI |
 | Proactive-loop background scan is deferred to **PR 4c** — no stub shipped in 4a | Avoids dead-code YAGNI; ~3 lines of lifespan glue in PR 4c |
+
+### PR 4b additions
+
+| Invariant | Why |
+|---|---|
+| `LogEntry.id` is `{app}:{sha1(raw)[:16]}` everywhere — parser + Chroma + frontend | One stable identifier so `/errors/:id` URLs survive across requests + restarts; matches the Chroma doc ID so `GET /api/errors/{id}` is a single O(1) `_collection.get` |
+| `GET /api/errors/{id}` reuses the same compiled graph as `/api/chat` — synthesises a `HumanMessage` and invokes via `graph.ainvoke` | One code path; all 4a cost caps + redaction + dry-run + LangSmith metadata apply transparently. Ephemeral `session_id` per click, registered with `SessionIndex` so the LRU evicts it |
+| `lookup_entry_by_id` + `metadata_to_log_entry` live in `ingest/vectorstore.py` (PR 4b moved the conversion helper there) | Search router (`Document` path) and errors router (`_collection.get` path) share one inverse-of-`make_metadata` function — cannot drift |
+| `routers/chat.py` SSE path uses `graph.astream(stream_mode="updates")` + Starlette `StreamingResponse(media_type="text/event-stream")` + `X-Accel-Buffering: no` header. Frontend reads via `fetch` + `response.body.getReader()` (EventSource is GET-only) | No new server-side deps (no `sse-starlette`); no new client deps; per-node payloads are status snapshots, not full messages |
+| Agent response adapters (`extract_answer`, `extract_citations`, `count_tokens`, `is_openai_api_error`) live in `agent/responses.py` and are shared by both routers | Single source of truth for output shape — JSON `ChatResponse`, SSE `complete` event, and `ErrorDetailResponse.analysis` all run through the same sanitisation + reshape |
+| Defence-in-depth: errors route sanitises `entry.raw` BEFORE returning it AND before sending it to the LLM | A credential planted in a log line by an upstream-app bug never crosses into the response body OR the LangSmith trace |
+| Every OpenAI Chroma upsert prints a per-app level-count summary table to stdout (with per-batch tokens + USD + cumulative session spend) + emits a structured `embedding_complete` log event carrying `batch_tokens` / `batch_cost_usd` / `session_tokens` / `session_cost_usd` | Operator-visible — answers "what did I just pay OpenAI to embed?" and "what have I spent since startup?" without parsing JSON. Cost is computed from tiktoken `cl100k_base` token count × `text-embedding-3-small` list price ($0.02 / 1M tokens). Skipped on dry-run and on full-dedup batches (no embed = no table). |
+| `metadata_to_log_entry` round-trips `LogEntry.source` from Chroma metadata | Without this, Agitator-tagged `synthetic`, parser-derived `health`, and Playwright-tagged `test` (when admitted) all silently fall back to the `LogEntry.source = "prod"` default on read — destroying the provenance signal ADR-011's X-Source propagation works to preserve. PR 4b fix. |
 
 ---
 

@@ -3,19 +3,18 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from ..auth.jwt import get_current_admin
 from ..ingest.spec import APP_NAMES
+from ..ingest.vectorstore import metadata_to_log_entry
 from ..logging_setup import get_logger
-from ..schemas import LogEntry, LogLevel, LogsSearchRequest, LogsSearchResponse
+from ..schemas import LogEntry, LogsSearchRequest, LogsSearchResponse
 
 if TYPE_CHECKING:
     from langchain_chroma import Chroma
-    from langchain_core.documents import Document
 
 router = APIRouter(tags=["search"])
 log = get_logger("search")
@@ -65,7 +64,7 @@ async def search_logs(
     entries: list[LogEntry] = []
     scores: list[float] = []
     for doc, score in results:
-        entry = _document_to_entry(doc)
+        entry = metadata_to_log_entry(doc.metadata or {})
         if entry is None:
             continue
         entries.append(entry)
@@ -110,54 +109,6 @@ def _build_where(req: LogsSearchRequest) -> dict[str, Any] | None:
     if len(clauses) == 1:
         return clauses[0]
     return {"$and": clauses}
-
-
-def _document_to_entry(doc: Document) -> LogEntry | None:
-    """Reconstruct a `LogEntry` from a Chroma `Document`. The metadata schema
-    is the one written by `ingest.embeddings.make_metadata`."""
-    md = doc.metadata or {}
-    try:
-        return LogEntry(
-            id=str(md.get("id") or ""),
-            timestamp=_parse_ts(md.get("timestamp_iso")),
-            level=LogLevel(str(md.get("level", "INFO"))),
-            app=str(md.get("app") or ""),
-            event=str(md.get("event") or ""),
-            fields=_fields_from_metadata(md),
-            raw=str(md.get("raw") or ""),
-        )
-    except (ValueError, KeyError, TypeError) as exc:
-        log.warning(
-            "search_skip_malformed_doc",
-            error_class=type(exc).__name__,
-        )
-        return None
-
-
-def _parse_ts(value: object) -> datetime:
-    if isinstance(value, datetime):
-        return value
-    if isinstance(value, str) and value:
-        return datetime.fromisoformat(value)
-    raise ValueError("missing timestamp_iso")
-
-
-def _fields_from_metadata(md: dict[str, Any]) -> dict[str, Any]:
-    """Recover the small subset of `fields` we stored in metadata.
-
-    We don't round-trip the full `fields` dict (Chroma metadata is scalars-only),
-    only the items we duplicated at ingestion time. The `raw` field on the
-    LogEntry preserves the original line — 7e's Error Detail screen will use
-    that for the full picture.
-    """
-    out: dict[str, Any] = {}
-    logger = md.get("logger")
-    if isinstance(logger, str) and logger:
-        out["logger"] = logger
-    if md.get("has_stack_trace"):
-        # We don't store the trace itself; flag presence so the UI knows.
-        out["has_stack_trace"] = True
-    return out
 
 
 def _truncate(text: str) -> str:

@@ -5,6 +5,7 @@ import { RequireAuth } from "./components/RequireAuth";
 import { useAuth } from "./lib/auth";
 import { AuthProvider } from "./lib/auth-context";
 import { AiChat } from "./pages/AiChat";
+import { ErrorDetail } from "./pages/ErrorDetail";
 import { LogGenerator } from "./pages/LogGenerator";
 import { LoginPage } from "./pages/LoginPage";
 import { LogExplorer } from "./pages/LogExplorer";
@@ -36,6 +37,16 @@ export function App() {
               <RequireAuth>
                 <Layout>
                   <LogExplorer />
+                </Layout>
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/errors/:id"
+            element={
+              <RequireAuth>
+                <Layout>
+                  <ErrorDetail />
                 </Layout>
               </RequireAuth>
             }
