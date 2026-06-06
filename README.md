@@ -163,6 +163,125 @@ application logs, and the Chroma vector store are permanently lost**. Use plain
 
 ---
 
+## Operating the dashboard
+
+Once the stack is up, the dashboard exposes a `/log-generator` screen that lets an operator
+drive bounded load against the four monitored apps so the agent has something to analyse.
+This section is the user-facing operator guide; design rationale lives in
+[ADR-014](docs/decisions/ADR-014-agitator-bundled-into-dashboard.md) and
+[ADR-013](docs/decisions/ADR-013-chaos-middleware.md).
+
+### Driving load with the Agitator
+
+The Agitator runs bundled inside the dashboard — no separate process to deploy. Open
+[http://localhost:4001/log-generator](http://localhost:4001/log-generator) after logging in
+with the admin credentials from `.env`.
+
+Five built-in scenarios:
+
+| Scenario | What it does | Logs produced | Needs chaos? |
+|---|---|---|---|
+| `auth-spike` | N login attempts with bad credentials against FNOL | WARN `login_failed` + `sda_upstream_rejected` (FNOL + SDA) | No |
+| `payload-fuzz` | Malformed claim submissions against FNOL | WARN `request_validation_error` | No |
+| `policy-not-found` | Reads against unknown policy numbers | WARN `policy_not_found` | No |
+| `claim-burst` | Valid claim submissions at high rate | INFO `claim_created` (filtered from Chroma) | No |
+| `sda-degraded` | 240 reads with `X-Chaos: slow:500` over 120s | WARN `chaos_honored` | **Yes** — see below |
+
+Every scenario is **operator-button-only** — never auto-fires. Each scenario is bounded
+(finite count + finite duration). Cancellation is a single click; the global cap is 2
+concurrent runs. Run history persists in-memory only — the dashboard restart clears it,
+which is fine because the durable signal lives in Chroma + the log volumes.
+
+Every Agitator request tags `X-Source: synthetic` so the dashboard's ingest gate
+(`DASHBOARD_INGEST_SOURCES=prod,synthetic`) admits it into Chroma. Playwright E2E traffic
+gets `X-Source: test` which the same gate drops — so test runs don't pollute the corpus.
+This is per [ADR-011](docs/decisions/ADR-011-x-source-header-convention.md).
+
+### Chaos middleware (dev-only)
+
+The `sda-degraded` scenario above — and any direct `curl` with `X-Chaos: slow:<ms>` or
+`X-Chaos: error:<status>` — only fires when **each app** has `ENABLE_CHAOS=true` in its
+container env. The dashboard itself is exempt (it's the observer, not a target).
+
+**To enable:**
+
+1. Edit `.env` and set `ENABLE_CHAOS=true`
+2. Restart only the chaos-aware containers (no need to recycle Chroma / Postgres / Mongo /
+   dashboard):
+   ```bash
+   docker compose up -d shared-data-api fnol-app customer-portal agent-portal
+   ```
+3. The `/log-generator` UI un-greys the `sda-degraded` card once it sees the new state.
+
+**To disable:** flip back to `ENABLE_CHAOS=false` and re-run the same `docker compose up
+-d` command. The default is `false` — flip it back when done experimenting.
+
+The chaos middleware sits behind auth at every app (SDA: after `APIKeyMiddleware`; AP:
+`FilterRegistrationBean` order 20 > JWT order 1) so chaos cannot bypass security. AP scopes
+chaos to `/api/*` only, so `/actuator/health` is never disturbed.
+
+### Reading the embed-summary table
+
+Every time the dashboard's watcher (or backfill) sends new log lines to OpenAI for
+embedding, you'll see a table like this in `docker compose logs log-dashboard`:
+
+```
+========================================================
+ Chroma embedding complete — shared-data-api
+========================================================
++---------+------------------+
+| Level   |            Count |
++---------+------------------+
+| DEBUG   |                0 |
+| INFO    |                0 |
+| WARN    |                1 |
+| ERROR   |                0 |
++---------+------------------+
+| TOTAL   |                1 |
++---------+------------------+
+| Tokens  |               49 |
+| Cost    |        $0.000001 |
++---------+------------------+
+ Session total (since startup): 404 tokens · $0.000008
+========================================================
+```
+
+- **Level rows:** count of entries per level that just hit OpenAI. Only WARN + ERROR are
+  embedded by default — the `DASHBOARD_INGEST_LEVELS=WARN,ERROR` gate drops INFO/DEBUG
+  before the embedder is called.
+- **TOTAL:** the count actually paid for in this batch (post-dedup; if a line was already in
+  Chroma it doesn't appear here).
+- **Tokens + Cost:** computed via `tiktoken cl100k_base` × `text-embedding-3-small` list
+  price ($0.02 per 1M tokens — update the constant in
+  `dashboard/src/log_dashboard/ingest/vectorstore.py` if OpenAI re-prices).
+- **Session total:** cumulative since dashboard container startup. A restart resets this
+  counter (the spend itself doesn't persist anywhere durable).
+
+If `TOTAL` is zero, the operator never sees this table — there's no embed call to
+summarise. Dry-run mode (`DASHBOARD_INGEST_DRY_RUN=true`) also short-circuits before
+printing.
+
+The same fields land in a structured `embedding_complete` log event for grep-ability:
+
+```bash
+docker compose logs log-dashboard | grep embedding_complete | jq -r \
+  '"\(.app) batch=$\(.batch_cost_usd) session=$\(.session_cost_usd)"'
+```
+
+### What ends up in Chroma vs. the log volumes
+
+| Surface | Reads | Filters | Cost |
+|---|---|---|---|
+| `/api/logs`, `/api/status` (Log Explorer, Overview) | Log volumes directly | None | Zero — no OpenAI |
+| `/api/logs/search` (semantic search) | Chroma | WARN+ERROR ∩ `prod`/`synthetic` only | OpenAI embed cost for ingestion + 1 query embedding per call |
+| `/api/errors/{id}` (Error Detail + Suggested Fix) | Chroma | Same gate + WARN+ERROR only | One agent run per click — dry-run by default (`DASHBOARD_LLM_DRY_RUN=true`) |
+
+So healthcheck noise, Playwright E2E traffic, INFO success events, and full-dedup
+restarts all cost **zero**. Real Chroma spend only happens when WARN+ERROR `prod` or
+`synthetic` lines arrive that aren't already indexed.
+
+---
+
 ## Development Workflow
 
 - **Branch:** always `feature/<name>` or `fix/<name>` — never commit to `main`
