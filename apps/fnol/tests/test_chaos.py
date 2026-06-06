@@ -58,7 +58,9 @@ async def test_chaos_slow_delays_and_continues(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_chaos_error_returns_status(monkeypatch):
+async def test_chaos_error_5xx_logs_at_error_level(monkeypatch):
+    """error:<5xx> -> response carries the status AND log level is ERROR so
+    the dashboard's proactive scan (PR 4c) sees ERROR-tier signal."""
     client, manager = await _make_client(monkeypatch, enable_chaos=True)
     try:
         with structlog.testing.capture_logs() as captured:
@@ -67,7 +69,26 @@ async def test_chaos_error_returns_status(monkeypatch):
         assert resp.json() == {"detail": "chaos"}
         honored = [e for e in captured if e.get("event") == "chaos_honored"]
         assert len(honored) == 1
+        assert honored[0]["log_level"] == "error"
         assert honored[0]["status"] == 502
+    finally:
+        await client.aclose()
+        await manager.__aexit__(None, None, None)
+
+
+@pytest.mark.asyncio
+async def test_chaos_error_4xx_logs_at_warning_level(monkeypatch):
+    """error:<4xx> stays WARN — operator-driven client error, not a server
+    failure."""
+    client, manager = await _make_client(monkeypatch, enable_chaos=True)
+    try:
+        with structlog.testing.capture_logs() as captured:
+            resp = await client.get("/health", headers={"X-Chaos": "error:418"})
+        assert resp.status_code == 418
+        honored = [e for e in captured if e.get("event") == "chaos_honored"]
+        assert len(honored) == 1
+        assert honored[0]["log_level"] == "warning"
+        assert honored[0]["status"] == 418
     finally:
         await client.aclose()
         await manager.__aexit__(None, None, None)

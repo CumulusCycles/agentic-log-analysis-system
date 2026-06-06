@@ -22,8 +22,9 @@ function buildSpyApp(overrides: Partial<Config> = {}) {
   const logger = makeLogger(cfg.LOG_FILE_PATH);
   logger.silent = true;
   const warnSpy = vi.spyOn(logger, "warn");
+  const errorSpy = vi.spyOn(logger, "error");
   const { express: app } = buildApp({ cfg, logger });
-  return { app, warnSpy };
+  return { app, warnSpy, errorSpy };
 }
 
 function eventOf(spy: ReturnType<typeof vi.spyOn>, name: string) {
@@ -66,17 +67,36 @@ describe("CP chaos — directives", () => {
     });
   });
 
-  it("error:<status> returns that status with detail=chaos", async () => {
-    const { app, warnSpy } = buildSpyApp({ ENABLE_CHAOS: true });
+  it("error:<5xx> returns that status AND logs chaos_honored at ERROR level", async () => {
+    // PR 4c: 5xx chaos returns are escalated to ERROR so the dashboard's
+    // proactive scan sees ERROR-tier signal in Chroma.
+    const { app, warnSpy, errorSpy } = buildSpyApp({ ENABLE_CHAOS: true });
     const resp = await request(app).get("/health").set("X-Chaos", "error:503");
     expect(resp.status).toBe(503);
     expect(resp.body).toEqual({ detail: "chaos" });
-    const call = eventOf(warnSpy, "chaos_honored");
-    expect(call?.[1]).toMatchObject({
+    const errCall = eventOf(errorSpy, "chaos_honored");
+    expect(errCall?.[1]).toMatchObject({
       event: "chaos_honored",
       directive: "error:503",
       status: 503,
     });
+    // ...and chaos_honored MUST NOT also have fired at WARN.
+    expect(eventOf(warnSpy, "chaos_honored")).toBeFalsy();
+  });
+
+  it("error:<4xx> stays at WARN level", async () => {
+    // Operator-driven 4xx is not a server failure — keep it WARN so the
+    // proactive scan's ERROR-tier signal stays sharp.
+    const { app, warnSpy, errorSpy } = buildSpyApp({ ENABLE_CHAOS: true });
+    const resp = await request(app).get("/health").set("X-Chaos", "error:418");
+    expect(resp.status).toBe(418);
+    const warnCall = eventOf(warnSpy, "chaos_honored");
+    expect(warnCall?.[1]).toMatchObject({
+      event: "chaos_honored",
+      directive: "error:418",
+      status: 418,
+    });
+    expect(eventOf(errorSpy, "chaos_honored")).toBeFalsy();
   });
 
   it.each([

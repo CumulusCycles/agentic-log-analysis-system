@@ -115,6 +115,12 @@ if a future test mistakenly flips the flag, because `conftest.py`'s
 default Settings have dry-run on AND a `fail_if_openai_invoked` fixture
 monkeypatches `ChatOpenAI.__init__` to raise.
 
+**2026-06-06 update:** ADR-016 extends this asymmetry to the proactive
+scan loop. When `DASHBOARD_LLM_DRY_RUN=true`, the background loop wakes
+on schedule, logs `proactive_scan_skipped reason=llm_dry_run`, and skips
+graph invocation entirely. Real scans require BOTH `DASHBOARD_LLM_DRY_RUN=false`
+AND `DASHBOARD_PROACTIVE_SCAN_ENABLED=true`. Either flag alone is safe.
+
 ### 6. Non-streaming response
 
 `POST /api/chat` returns a single JSON `ChatResponse`. The graph runs

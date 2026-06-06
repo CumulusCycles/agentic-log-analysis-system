@@ -151,6 +151,38 @@ class Settings(BaseSettings):
         default=200, alias="DASHBOARD_SESSION_INDEX_MAX", ge=10, le=10_000
     )
 
+    # --- Phase 7e (PR 4c): proactive background scan + ERROR-tier chaos path ---
+    #
+    # The scan loop wakes on the configured interval, synthesises a "scan for
+    # anomalies" prompt, invokes the SAME compiled LangGraph used by /api/chat,
+    # and appends any non-NO_ANOMALIES result to an in-process ring buffer
+    # surfaced via /api/status. Findings are restart-lossy by design (same
+    # posture as RunRegistry).
+    #
+    # Real scans require BOTH `proactive_scan_enabled=True` AND
+    # `dashboard_llm_dry_run=False`. Either alone is safe — dry-run makes the
+    # loop log `proactive_scan_skipped reason=llm_dry_run` and continue without
+    # touching OpenAI. ADR-016 documents the safety asymmetry.
+    proactive_scan_enabled: bool = Field(default=False, alias="DASHBOARD_PROACTIVE_SCAN_ENABLED")
+    proactive_scan_interval_seconds: int = Field(
+        default=900,
+        alias="DASHBOARD_PROACTIVE_SCAN_INTERVAL_SECONDS",
+        ge=60,
+        le=86_400,
+    )
+    proactive_scan_lookback_minutes: int = Field(
+        default=30,
+        alias="DASHBOARD_PROACTIVE_SCAN_LOOKBACK_MINUTES",
+        ge=5,
+        le=1440,
+    )
+    proactive_scan_max_findings: int = Field(
+        default=5,
+        alias="DASHBOARD_PROACTIVE_SCAN_MAX_FINDINGS",
+        ge=1,
+        le=20,
+    )
+
     # --- Phase 7b: log ingestion ---
 
     # Mount root for the 4 read-only log volumes. Tests override to point at

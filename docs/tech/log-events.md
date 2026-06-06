@@ -48,7 +48,7 @@ event-specific fields below.
 |---|---|---|---|
 | `api_key_collision` | `middleware/api_key.py` | `apps`, `message` | Two or more apps configured with the same `X-API-Key` value (detected at middleware init) |
 | `chaos_directive_invalid` | `middleware/chaos.py` | `directive_raw`, `reason`, `method`, `path` | `X-Chaos` header value did not parse as `slow:<0..60000>` or `error:<400..599>`. 400 returned. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
-| `chaos_honored` | `middleware/chaos.py` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos middleware honored an `X-Chaos` directive. `delay_ms` present for `slow:N`; `status` present for `error:N`. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
+| `chaos_honored` | `middleware/chaos.py` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos middleware honored an `X-Chaos` directive. **Level varies by status** (per ADR-013 2026-06-06 amendment): logged at **ERROR** when `status ∈ [500, 599]`; at **WARN** otherwise (4xx returns + every `slow:` honor). `delay_ms` present for `slow:N`; `status` present for `error:N`. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
 | `claim_validation_rejected` | `services/claims_service.py` | `rule`, plus rule-specific identifiers (`caller`, `jwt_app`, `jwt_role`, `jwt_user_id`, `policy_number`, `vin`, `payload_customer_id`, `policy_owner_customer_id`, `incident_at`, `effective_date`, `expiration_date`) | Any business-rule rejection inside `POST /claims`. `rule` ∈ {`caller_must_be_fnol`, `jwt_app_mismatch`, `role_must_be_customer`, `impersonation_blocked`, `policy_not_found`, `customer_does_not_own_policy`, `vin_not_on_policy`, `incident_in_future`, `incident_outside_policy_window`} |
 | `claims_seed_skipped` | `seeds/seed.py` | `reason` | Seed routine skipped (idempotent — DB not empty) |
 | `frontend_dist_missing` | `main.py` | `expected` | SPA `dist/` not present at startup (local dev or test) |
@@ -146,7 +146,7 @@ is included on enrichment events for parser-friendly key (winston's
 | Event | Where | Fields | Trigger |
 |---|---|---|---|
 | `chaos_directive_invalid` | `middleware/chaos.ts` | `directive_raw`, `reason`, `method`, `path` | `X-Chaos` header value did not parse. 400 returned. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
-| `chaos_honored` | `middleware/chaos.ts` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos middleware honored an `X-Chaos` directive. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
+| `chaos_honored` | `middleware/chaos.ts` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos middleware honored an `X-Chaos` directive. **Level varies by status** (per ADR-013 2026-06-06 amendment): logged at **ERROR** when `status ∈ [500, 599]`; at **WARN** otherwise. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
 | `frontend_dist_missing` | `app.ts` | `expected` | SPA `dist/` not present at startup |
 | `sda_upstream_rejected` | `clients/sda-client.ts` | `target`, `status`, `detail` | SDA returned 4xx/5xx on an axios call. `detail` parsed from response body |
 | `sda_upstream_unreachable` | `clients/sda-client.ts` | `target`, `error_class` | Transport failure (no `err.response`) |
@@ -183,7 +183,7 @@ The dashboard's parser tokenizes `key=value` pairs from the message.
 | Event | Where | Fields | Trigger |
 |---|---|---|---|
 | `chaos_directive_invalid` | `chaos/ChaosFilter.java` | `directive_raw`, `reason`, `method`, `path` | `X-Chaos` header value did not parse. 400 returned. Only fires when `app.chaos.enabled=true` (i.e. `ENABLE_CHAOS=true`). See ADR-013 |
-| `chaos_honored` | `chaos/ChaosFilter.java` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos filter honored an `X-Chaos` directive. Only fires when `app.chaos.enabled=true`. See ADR-013 |
+| `chaos_honored` | `chaos/ChaosFilter.java` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos filter honored an `X-Chaos` directive. **Level varies by status** (per ADR-013 2026-06-06 amendment): logged at **ERROR** when `status ∈ [500, 599]`; at **WARN** otherwise. Only fires when `app.chaos.enabled=true`. See ADR-013 |
 | `sda_upstream_rejected` | `sda/SdaClient.java` (in `throwSda`) | `target`, `status`, `detail` | SDA returned 4xx/5xx on a `RestClient` call |
 | `sda_upstream_unreachable` | `sda/SdaClient.java` (in `invoke`) | `target`, `error_class` | Spring `ResourceAccessException` (transport failure) |
 

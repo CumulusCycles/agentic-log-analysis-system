@@ -187,7 +187,7 @@ the design rationale.
 | Credential redaction in NEW `credentials.py` — `sanitize_user_input` + `sanitize_log_raw` cover Bearer/X-API-Key/password/JWT-shape/DSN | Defence-in-depth at BOTH input (router + ingest_node) AND output (tool `raw` field) |
 | Agitator's `_sanitize_error` is **NOT** modified in this PR — dedupe deferred to a follow-up chore PR | Scope discipline per `feedback_remediation_pr_granularity` |
 | LangSmith metadata: every `ainvoke` carries `{session_id, jwt_sub, dry_run}` | Filterable in LangSmith UI |
-| Proactive-loop background scan is deferred to **PR 4c** — no stub shipped in 4a | Avoids dead-code YAGNI; ~3 lines of lifespan glue in PR 4c |
+| Proactive-loop background scan shipped in **PR 4c** ✅ — see the Proactive Scan block below | Closes Phase 7. |
 
 ### PR 4b additions
 
@@ -201,6 +201,42 @@ the design rationale.
 | Defence-in-depth: errors route sanitises `entry.raw` BEFORE returning it AND before sending it to the LLM | A credential planted in a log line by an upstream-app bug never crosses into the response body OR the LangSmith trace |
 | Every OpenAI Chroma upsert prints a per-app level-count summary table to stdout (with per-batch tokens + USD + cumulative session spend) + emits a structured `embedding_complete` log event carrying `batch_tokens` / `batch_cost_usd` / `session_tokens` / `session_cost_usd` | Operator-visible — answers "what did I just pay OpenAI to embed?" and "what have I spent since startup?" without parsing JSON. Cost is computed from tiktoken `cl100k_base` token count × `text-embedding-3-small` list price ($0.02 / 1M tokens). Skipped on dry-run and on full-dedup batches (no embed = no table). |
 | `metadata_to_log_entry` round-trips `LogEntry.source` from Chroma metadata | Without this, Agitator-tagged `synthetic`, parser-derived `health`, and Playwright-tagged `test` (when admitted) all silently fall back to the `LogEntry.source = "prod"` default on read — destroying the provenance signal ADR-011's X-Source propagation works to preserve. PR 4b fix. |
+
+---
+
+## Proactive Scan (PR 4c ✅)
+
+Phase 7e's final slice — closes Phase 7. Background loop in
+`dashboard/src/log_dashboard/agent/proactive.py` + lifespan wiring +
+findings ride on `/api/status`. ADR-016 captures the design rationale.
+
+| Invariant | Why |
+|---|---|
+| Loop skips invocation entirely when `DASHBOARD_LLM_DRY_RUN=true` — logs `proactive_scan_skipped reason=llm_dry_run`. **Real scans require the opt-in chain: `DRY_RUN=false` AND `SCAN_ENABLED=true`.** | Cost-safety asymmetry from ADR-015 §5 extends to the background loop. Either flag alone is safe — dry-run lets you verify scheduling without paid spend. |
+| Loop is opt-in via `DASHBOARD_PROACTIVE_SCAN_ENABLED=false` default; lifespan only schedules the task when true. `task.cancel()` on shutdown. | Asymmetric: forgotten env var → no loop, no spend. Mirrors the dry-run asymmetry. |
+| Reuses the SAME compiled graph `app.state.agent_graph` that backs `/api/chat` + `GET /api/errors/{id}` | One code path; every PR 4a cost cap, credential redaction, dry-run, and LangSmith metadata tag applies transparently. |
+| `_run_one_scan` synthesises a HumanMessage from `PROACTIVE_SCAN_PROMPT` (in `agent/proactive_prompt.py`) with `{lookback_minutes}` interpolated | Prompt held in its own module so the wording can evolve without churning `proactive.py`; testable in isolation. |
+| Agent answers with `NO_ANOMALIES` sentinel for quiet scans → `_run_one_scan` returns `None`, buffer untouched | Sentinel keeps the buffer quiet during steady-state. Strip + startswith check tolerates trailing whitespace. |
+| `jwt_sub = "system:proactive-scan"` (constant) on every scan invocation | Filterable in LangSmith without conflating with real admin chat sessions. |
+| Findings stored in `FindingsBuffer` (`collections.deque(maxlen=50)`) on `app.state.findings_buffer` — restart-lossy by design | Same posture as Agitator's `RunRegistry`. Durable signal lives in Chroma + log volumes. Buffer is the running commentary. |
+| Buffer is created unconditionally during lifespan (even when scan is off) | `/api/status` always serialises `proactive_findings: []` + `scan_enabled` without state-check branches. |
+| `StatusResponse` gains 4 fields: `proactive_findings`, `scan_enabled`, `last_scan_at`, `next_scan_at` — all backwards-compatible defaults | No new endpoint. Findings poll piggybacks on the 15s status poll. Older frontends ignore the new fields and keep working. |
+| Frontend `ProactiveFindingsPanel` renders nothing when scan is OFF AND no findings; renders an empty-state hint when scan is ON but quiet; renders findings inline (top-5 newest first) above the status grid | Keeps Overview clean for operators who haven't opted in; gives feedback the loop is alive when it is. |
+| Citations deep-link via `<Link to={`/errors/${citation.id}`}>` to the PR 4b error-detail route | One end-to-end click from a finding to the agent's per-error analysis. |
+| Severity is derived deterministically from the citation set (any ERROR → error, else any WARN → warn, else info) — NOT from the LLM | UI pill color is grounded in actual log levels, not the LLM's narrative tone. |
+| Findings buffer growth bounded at `maxlen=50` even though `/api/status` only surfaces top-N (default 5) | Defence-in-depth — even a pathological scan rate cannot OOM the process. |
+| Loop survives iteration failure: any exception during `_run_one_scan` is logged as `proactive_scan_iteration_failed` and the loop continues. Only `asyncio.CancelledError` propagates. | One bad scan must not stop the proactive surface from ever scanning again. |
+| New Agitator scenario `error-burst` (requires `ENABLE_CHAOS=true`) sends `X-Chaos: error:500` against SDA `/policies` so operators can drive ERROR-tier signal into Chroma on demand | Mirrors `sda-degraded` structurally. The proactive scan needs ERROR-tier signal in Chroma; the chaos middleware level split (ADR-013 2026-06-06 amendment) makes that work end-to-end. |
+| Chaos middleware (`apps/*/middleware/chaos.*`) splits `chaos_honored` log level by status class: `error:<5xx>` → ERROR, `error:<4xx>` → WARN, `slow:` and invalid stay WARN. Per ADR-013 2026-06-06 amendment. | Without ERROR-tier chaos signal in Chroma, the proactive scan is half-blind — `project_no_error_path_in_apps` documents why. |
+
+### Settings (defaults documented in `.env.example`)
+
+| Env var | Default | Range |
+|---|---|---|
+| `DASHBOARD_PROACTIVE_SCAN_ENABLED` | `false` | bool |
+| `DASHBOARD_PROACTIVE_SCAN_INTERVAL_SECONDS` | `900` (15 min) | 60..86400 |
+| `DASHBOARD_PROACTIVE_SCAN_LOOKBACK_MINUTES` | `30` | 5..1440 |
+| `DASHBOARD_PROACTIVE_SCAN_MAX_FINDINGS` | `5` | 1..20 |
 
 ---
 

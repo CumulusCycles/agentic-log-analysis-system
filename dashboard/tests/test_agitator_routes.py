@@ -67,7 +67,7 @@ async def test_routes_require_admin_jwt(client) -> None:
     assert response.status_code == 401
 
 
-async def test_list_scenarios_returns_five_specs(client, valid_token) -> None:
+async def test_list_scenarios_returns_six_specs(client, valid_token) -> None:
     response = await client.get(
         "/api/agitator/scenarios",
         headers={"Authorization": f"Bearer {valid_token}"},
@@ -81,11 +81,15 @@ async def test_list_scenarios_returns_five_specs(client, valid_token) -> None:
         "policy-not-found",
         "claim-burst",
         "sda-degraded",
+        "error-burst",
     }
-    sda = next(s for s in body if s["name"] == "sda-degraded")
-    assert sda["requires_chaos"] is True
-    others = [s for s in body if s["name"] != "sda-degraded"]
-    assert all(s["requires_chaos"] is False for s in others)
+    # Both chaos scenarios require ENABLE_CHAOS=true; the other four do not.
+    chaos_names = {"sda-degraded", "error-burst"}
+    for spec in body:
+        if spec["name"] in chaos_names:
+            assert spec["requires_chaos"] is True, spec["name"]
+        else:
+            assert spec["requires_chaos"] is False, spec["name"]
 
 
 async def test_env_reports_enable_chaos(client, valid_token) -> None:
@@ -112,6 +116,20 @@ async def test_start_sda_degraded_when_chaos_disabled_returns_409(
     response = await client.post(
         "/api/agitator/runs",
         json={"scenario": "sda-degraded"},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 409
+    assert "ENABLE_CHAOS" in response.json()["detail"]
+
+
+async def test_start_error_burst_when_chaos_disabled_returns_409(
+    client, valid_token, stub_bootstrap
+) -> None:
+    """PR 4c: error-burst is the second chaos-gated scenario. Same 409
+    contract as sda-degraded when ENABLE_CHAOS=false."""
+    response = await client.post(
+        "/api/agitator/runs",
+        json={"scenario": "error-burst"},
         headers={"Authorization": f"Bearer {valid_token}"},
     )
     assert response.status_code == 409

@@ -88,8 +88,11 @@ class ChaosMiddleware(BaseHTTPMiddleware):
                 path=request.url.path,
             )
             return await call_next(request)
-        # kind == "error"
-        log.warning(
+        # kind == "error" — split level by status class so 5xx is ERROR-tier
+        # signal in Chroma (PR 4c proactive scan needs it). 4xx stays WARN:
+        # a chaos-driven 418 is operator action, not a server failure.
+        log_method = log.error if 500 <= n <= 599 else log.warning
+        log_method(
             "chaos_honored",
             directive=directive,
             status=n,

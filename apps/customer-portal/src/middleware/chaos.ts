@@ -76,7 +76,11 @@ export function chaos(cfg: Config, logger: Logger) {
       next();
       return;
     }
-    logger.warn("chaos_honored", {
+    // Split level by status class so 5xx is ERROR-tier signal in Chroma
+    // (PR 4c proactive scan needs it). 4xx stays WARN: a chaos-driven 418
+    // is operator action, not a server failure.
+    const logMethod = parsed.n >= 500 && parsed.n < 600 ? logger.error : logger.warn;
+    logMethod("chaos_honored", {
       event: "chaos_honored",
       directive,
       status: parsed.n,
