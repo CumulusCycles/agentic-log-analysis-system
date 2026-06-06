@@ -228,6 +228,7 @@ findings ride on `/api/status`. ADR-016 captures the design rationale.
 | Loop survives iteration failure: any exception during `_run_one_scan` is logged as `proactive_scan_iteration_failed` and the loop continues. Only `asyncio.CancelledError` propagates. | One bad scan must not stop the proactive surface from ever scanning again. |
 | New Agitator scenario `error-burst` (requires `ENABLE_CHAOS=true`) sends `X-Chaos: error:500` against SDA `/policies` so operators can drive ERROR-tier signal into Chroma on demand | Mirrors `sda-degraded` structurally. The proactive scan needs ERROR-tier signal in Chroma; the chaos middleware level split (ADR-013 2026-06-06 amendment) makes that work end-to-end. |
 | Chaos middleware (`apps/*/middleware/chaos.*`) splits `chaos_honored` log level by status class: `error:<5xx>` → ERROR, `error:<4xx>` → WARN, `slow:` and invalid stay WARN. Per ADR-013 2026-06-06 amendment. | Without ERROR-tier chaos signal in Chroma, the proactive scan is half-blind — `project_no_error_path_in_apps` documents why. |
+| **Live-validated 2026-06-06** — chaos middleware level split confirmed per-app (SDA / FNOL / CP / AP); `corpus_empty` flipped to false within seconds of the first WARN traffic; embed-summary tables emitted as documented in `README.md`; 4 Playwright E2E suites green (135 passed / 0 failed) on the same stack. | Audit-trail breadcrumb that the design above actually ran end-to-end on the live stack, not just in unit tests. |
 
 ### Settings (defaults documented in `.env.example`)
 

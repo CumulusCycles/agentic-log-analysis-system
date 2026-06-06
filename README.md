@@ -223,7 +223,11 @@ chaos to `/api/*` only, so `/actuator/health` is never disturbed.
 ### Reading the embed-summary table
 
 Every time the dashboard's watcher (or backfill) sends new log lines to OpenAI for
-embedding, you'll see a table like this in `docker compose logs log-dashboard`:
+embedding, you'll see a table in `docker compose logs log-dashboard`. Two real shapes
+captured during a 2026-06-06 live validation run illustrate what to expect.
+
+**Typical (size-1) batch — what you see most of the time.** The file watcher
+fires once per new log line, so most batches contain a single entry:
 
 ```
 ========================================================
@@ -234,17 +238,48 @@ embedding, you'll see a table like this in `docker compose logs log-dashboard`:
 +---------+------------------+
 | DEBUG   |                0 |
 | INFO    |                0 |
-| WARN    |                1 |
-| ERROR   |                0 |
+| WARN    |                0 |
+| ERROR   |                1 |
 +---------+------------------+
 | TOTAL   |                1 |
 +---------+------------------+
-| Tokens  |               49 |
+| Tokens  |               44 |
 | Cost    |        $0.000001 |
 +---------+------------------+
- Session total (since startup): 404 tokens · $0.000008
+ Session total (since startup): 6,980 tokens · $0.000140
 ========================================================
 ```
+
+**Occasional coalesced batch — what you see during traffic bursts.** When new
+lines arrive faster than the watcher's debounce window, the watcher buffers
+and submits a multi-entry batch in one OpenAI call:
+
+```
+========================================================
+ Chroma embedding complete — customer-portal
+========================================================
++---------+------------------+
+| Level   |            Count |
++---------+------------------+
+| DEBUG   |                0 |
+| INFO    |                0 |
+| WARN    |                0 |
+| ERROR   |               20 |
++---------+------------------+
+| TOTAL   |               20 |
++---------+------------------+
+| Tokens  |              920 |
+| Cost    |        $0.000018 |
++---------+------------------+
+ Session total (since startup): 19,155 tokens · $0.000383
+========================================================
+```
+
+**Cost expectation.** A full Agitator + cross-app chaos run (~340 WARN+ERROR
+lines across all 4 apps) costs about **$0.0006** in embedding tokens on
+`text-embedding-3-small`. Ongoing steady-state traffic in normal operation
+is far less — most batches are size 1 and the per-batch cost rounds to a
+fraction of a cent.
 
 - **Level rows:** count of entries per level that just hit OpenAI. Only WARN + ERROR are
   embedded by default — the `DASHBOARD_INGEST_LEVELS=WARN,ERROR` gate drops INFO/DEBUG
