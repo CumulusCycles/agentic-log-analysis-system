@@ -4,6 +4,8 @@
 
 **Closes Phase 7.** Final slice of the 7e LangGraph work.
 
+**Validated end-to-end 2026-06-06:** chaos-driven ERROR-tier signal flowed through the ingest gate into Chroma (170 SDA WARN+ERROR lines via `error-burst` + the WARN scenarios; 60 FNOL/CP/AP ERROR lines via direct `X-Chaos: error:500` curls), confirming the proactive scan has ERROR-tier corpus to anomaly-detect against when `SCAN_ENABLED=true`. Total embedding spend for the run: $0.000555 across 27,770 tokens.
+
 ## Decisions
 
 1. **A background asyncio task wakes every `DASHBOARD_PROACTIVE_SCAN_INTERVAL_SECONDS` (default 900 = 15 min)** and asks the SAME compiled LangGraph agent that backs `/api/chat` to scan the last `DASHBOARD_PROACTIVE_SCAN_LOOKBACK_MINUTES` (default 30) of logs for anomalies. Implemented in `dashboard/src/log_dashboard/agent/proactive.py`; wired into `main.py` lifespan with `asyncio.create_task` + `task.cancel()` on shutdown — same pattern the backfill task already uses.

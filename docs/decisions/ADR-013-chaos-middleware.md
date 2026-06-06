@@ -97,6 +97,8 @@ Request -> JwtAuthenticationFilter (order=1, /api/*)
 
 **Backward compatibility.** No env-var or directive grammar change. A scenario that previously sent `X-Chaos: error:418` still gets WARN; one that sent `X-Chaos: error:500` now gets ERROR instead of WARN. The dashboard's ingest gate admits both, so Chroma content is a strict superset of what the pre-amendment middleware produced.
 
+**Verified end-to-end 2026-06-06:** direct `X-Chaos: error:500` calls against SDA / FNOL / CP / AP each produced `chaos_honored` ERROR-level lines in the respective app's log volume (20 per app at FNOL/CP/AP via curl; 120 at SDA via the `error-burst` Agitator scenario). `X-Chaos: error:400` against CP/AP produced WARN-level `chaos_honored` as designed; `X-Chaos: slow:300` stayed WARN. All four apps' chaos tests pass unchanged on the live stack.
+
 ## References
 
 - [`.claude/rules/apps.md`](../../.claude/rules/apps.md) — per-app middleware/filter conventions
