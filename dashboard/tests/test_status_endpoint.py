@@ -210,3 +210,43 @@ async def test_status_surfaces_findings_from_buffer_newest_first(
     assert findings[0]["citations"][0]["id"] == "fnol:abcdef0123456789"
     assert body["last_scan_at"] == "2026-06-06T12:03:00Z"
     assert body["next_scan_at"] == "2026-06-06T12:18:00Z"
+
+
+async def test_status_caps_findings_at_max_findings_setting(
+    app_instance, client, valid_token, log_volume
+) -> None:
+    """When the buffer holds more than `proactive_scan_max_findings`, only the
+    top-N newest are surfaced. Defends against operator surprise when a noisy
+    period fills the buffer — UI never shows more than the configured cap."""
+    from datetime import UTC, datetime
+
+    from log_dashboard.schemas import ProactiveFinding
+
+    _seed_all_apps_healthy(log_volume)
+    buffer = app_instance.state.findings_buffer
+    # Settings default for `proactive_scan_max_findings` is 5; inject 8 findings
+    # spanning ordered timestamps so we can verify both the cap AND ordering.
+    for i in range(8):
+        buffer.append(
+            ProactiveFinding(
+                id=f"proactive:cap{i}",
+                scan_started_at=datetime(2026, 6, 6, 13, i, tzinfo=UTC),
+                scan_completed_at=datetime(2026, 6, 6, 13, i, 1, tzinfo=UTC),
+                summary=f"cap finding {i}",
+                severity="info",
+                citations=[],
+                dry_run=False,
+            )
+        )
+
+    response = await client.get("/api/status", headers={"Authorization": f"Bearer {valid_token}"})
+    findings = response.json()["proactive_findings"]
+    # Exactly 5 (default cap), newest-first → cap7, cap6, cap5, cap4, cap3.
+    assert len(findings) == 5
+    assert [f["id"] for f in findings] == [
+        "proactive:cap7",
+        "proactive:cap6",
+        "proactive:cap5",
+        "proactive:cap4",
+        "proactive:cap3",
+    ]

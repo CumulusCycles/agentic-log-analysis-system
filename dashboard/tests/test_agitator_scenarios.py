@@ -119,6 +119,18 @@ def _patch_build_client(monkeypatch, captured: list[httpx.Request]):
         if request.url.path.startswith("/fnol/"):
             return httpx.Response(404, json={"detail": "not found"})
         if request.url.path == "/policies":
+            # Simulate the chaos middleware so scenarios that send
+            # `X-Chaos: error:<status>` get the matching status back
+            # (mirrors what the live SDA returns when ENABLE_CHAOS=true).
+            # `slow:<ms>` is a no-op in tests — sda-degraded still gets 200.
+            chaos = request.headers.get("X-Chaos", "")
+            if chaos.startswith("error:"):
+                try:
+                    status = int(chaos.split(":", 1)[1])
+                    if 400 <= status <= 599:
+                        return httpx.Response(status, json={"detail": "chaos"})
+                except (ValueError, IndexError):
+                    pass
             return httpx.Response(200, json=[])
         return httpx.Response(200, json={})
 
@@ -307,6 +319,17 @@ async def test_error_burst_sets_x_chaos_error_header(
         # Targets /policies — same path as sda-degraded so caller + path
         # correlation works across the two chaos scenarios.
         assert req.url.path == "/policies"
+
+    # The mock handler simulates the chaos middleware: `X-Chaos: error:500`
+    # returns 500, which matches error-burst's success criterion. All 3
+    # requests count as `succeeded` — confirms the scenario's status-code
+    # check (`response.status_code == _CHAOS_ERROR_STATUS`) actually runs.
+    record = await registry.get("eb1")
+    assert record is not None
+    assert record.sent == 3
+    assert record.succeeded == 3
+    assert record.failed == 0
+    assert record.last_status_code == 500
 
 
 async def test_auth_spike_cancellation_stops_remaining_fires(

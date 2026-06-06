@@ -232,11 +232,12 @@ async def test_run_one_scan_returns_finding_on_real_answer() -> None:
         raw="status=500",
         score=0.8,
     )
+    settings = _settings(proactive_scan_lookback_minutes=42, dashboard_llm_dry_run=False)
     graph = _StubGraph(answer="Found 3 ERROR chaos_honored events in fnol.", citations=[cited])
     result = await _run_one_scan(
         graph=graph,  # type: ignore[arg-type]
         vectorstore=object(),
-        settings=_settings(),
+        settings=settings,
         session_index=_StubSessionIndex(),  # type: ignore[arg-type]
     )
     assert isinstance(result, ProactiveFinding)
@@ -248,6 +249,44 @@ async def test_run_one_scan_returns_finding_on_real_answer() -> None:
     assert result.dry_run is False
     # Started ≤ completed.
     assert result.scan_started_at <= result.scan_completed_at
+
+    # Verify the graph was invoked with the LangSmith metadata the scan loop
+    # promises: filterable in the LangSmith UI without conflating with admin
+    # chat sessions, AND tagged with the configured lookback window so traces
+    # are interpretable retroactively.
+    assert len(graph.invoked) == 1
+    _, config = graph.invoked[0]
+    assert config["metadata"]["proactive_scan"] is True
+    assert config["metadata"]["lookback_minutes"] == 42
+    assert config["metadata"]["jwt_sub"] == PROACTIVE_JWT_SUB
+    assert config["metadata"]["dry_run"] is False
+    # Each scan mints its own session_id; thread_id wraps jwt_sub + session_id.
+    assert config["configurable"]["thread_id"].startswith(f"{PROACTIVE_JWT_SUB}:")
+
+
+@pytest.mark.asyncio
+async def test_run_one_scan_sanitises_credential_in_agent_answer() -> None:
+    """`extract_answer` runs `sanitize_log_raw` on the final AIMessage content.
+    Verify a credential-shaped token in the agent's answer is redacted before
+    it lands in `ProactiveFinding.summary` — defence-in-depth against an LLM
+    that accidentally echoes a secret it received via tool output."""
+    answer_with_secret = (
+        "Found a leak in fnol logs: Authorization: Bearer abcdefghij1234567890 — investigate."
+    )
+    graph = _StubGraph(answer=answer_with_secret)
+    result = await _run_one_scan(
+        graph=graph,  # type: ignore[arg-type]
+        vectorstore=object(),
+        settings=_settings(),
+        session_index=_StubSessionIndex(),  # type: ignore[arg-type]
+    )
+    assert isinstance(result, ProactiveFinding)
+    # The raw token MUST NOT appear in the surfaced summary. The exact redaction
+    # marker comes from `credentials.sanitize_log_raw`; assert on absence of
+    # the secret rather than presence of a specific replacement so the test
+    # stays decoupled from the sanitiser's redaction format.
+    assert "abcdefghij1234567890" not in result.summary
+    assert "Bearer abcdefghij1234567890" not in result.summary
 
 
 @pytest.mark.asyncio

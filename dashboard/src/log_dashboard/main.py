@@ -139,6 +139,14 @@ def create_app() -> FastAPI:
             backfill_task.cancel()
         if proactive_task is not None and not proactive_task.done():
             proactive_task.cancel()
+            # Drain the task so an in-flight `graph.ainvoke` (or any LangSmith
+            # trace it owns) finalises before we tear down dependent state
+            # (vectorstore, session_index). Without the await, cancel() only
+            # signals — the task can keep running past lifespan exit.
+            try:
+                await proactive_task
+            except asyncio.CancelledError:
+                pass
         if app.state.watcher is not None:
             app.state.watcher.stop()
         # Drain any in-flight Agitator runs so shutdown is clean.
