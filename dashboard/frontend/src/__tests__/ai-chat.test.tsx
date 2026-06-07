@@ -230,6 +230,39 @@ describe("AiChat", () => {
     await waitFor(() => expect(screen.getByText(/tool budget exhausted/i)).toBeInTheDocument());
   });
 
+  it("does not show the dry-run banner until at least one turn returns dry_run=true", async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(sseResponse([chatComplete({ dry_run: false, answer: "real" })]));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderChat();
+    // Empty state: banner is absent.
+    expect(screen.queryByTestId("dry-run-banner")).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/Ask the agent/i), "ask");
+    await userEvent.click(screen.getByRole("button", { name: /Send/i }));
+
+    await waitFor(() => expect(screen.getByText("real")).toBeInTheDocument());
+    // dry_run=false answer landed → banner still absent.
+    expect(screen.queryByTestId("dry-run-banner")).not.toBeInTheDocument();
+  });
+
+  it("shows the persistent dry-run banner once an answer returns dry_run=true", async () => {
+    const fetchSpy = vi.fn().mockResolvedValueOnce(sseResponse([chatComplete({ dry_run: true })]));
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderChat();
+    await userEvent.type(screen.getByLabelText(/Ask the agent/i), "ask");
+    await userEvent.click(screen.getByRole("button", { name: /Send/i }));
+
+    const banner = await screen.findByTestId("dry-run-banner");
+    expect(banner).toHaveTextContent(/Dry-run mode/i);
+    expect(banner).toHaveTextContent(/DASHBOARD_LLM_DRY_RUN=false/);
+    expect(banner).toHaveTextContent(/restart/i);
+    expect(banner).toHaveTextContent(/ADR-015/);
+  });
+
   it("surfaces an HTTP error when the pre-flight request fails with 5xx", async () => {
     // Pre-flight failures arrive as a JSON Response (not an SSE stream) so the
     // client never reads from response.body.getReader().

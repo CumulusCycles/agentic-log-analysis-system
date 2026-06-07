@@ -50,14 +50,23 @@ export function LogsFilterBar({ value, onChange }: Props) {
           value={value.query}
           onChange={(e) => setQuery(e.target.value)}
           data-testid="filter-query"
+          aria-describedby="filter-query-hint"
           className="mt-1.5 w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm placeholder:text-slate-400 focus:border-slate-500 focus:outline-none"
         />
-        {value.query && (
-          <p className="mt-1 text-[11px] text-slate-500">
-            Semantic search uses the Chroma vector store — time-window filter limits results to that
-            range; cursor pagination is disabled.
-          </p>
-        )}
+        <p
+          id="filter-query-hint"
+          data-testid="filter-query-hint"
+          className="mt-1 text-[11px] text-slate-500"
+        >
+          {value.query ? (
+            <>
+              Semantic search uses the Chroma vector store — time-window filter limits results to
+              that range; cursor pagination is disabled.
+            </>
+          ) : (
+            <>Auto-searches 300 ms after you stop typing — no submit needed.</>
+          )}
+        </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
         <fieldset>
