@@ -14,6 +14,10 @@ import type { AgitatorEnv, RunRecord, ScenarioSpec } from "../types/agitator";
 
 const ACTIVE_POLL_MS = 1500;
 const IDLE_POLL_MS = 5000;
+// How many recent runs to surface inline on each scenario card. The Agitator
+// ring buffer holds 50 globally; per-scenario the last 5 is plenty of signal
+// without making the card scroll.
+const PER_CARD_RUN_LIMIT = 5;
 
 interface ParamState {
   [paramName: string]: number;
@@ -24,6 +28,38 @@ function buildDefaultParams(spec: ScenarioSpec): ParamState {
     acc[p.name] = p.default;
     return acc;
   }, {});
+}
+
+// Newest-first; tie-break on run_id for deterministic ordering when two
+// runs share an exact started_at millisecond.
+function compareByStartedAtDesc(a: RunRecord, b: RunRecord): number {
+  if (a.started_at !== b.started_at) {
+    return a.started_at < b.started_at ? 1 : -1;
+  }
+  return a.run_id < b.run_id ? 1 : -1;
+}
+
+function groupRunsByScenario(runs: RunRecord[]): Record<string, RunRecord[]> {
+  const byScenario: Record<string, RunRecord[]> = {};
+  for (const run of runs) {
+    (byScenario[run.scenario] ??= []).push(run);
+  }
+  for (const list of Object.values(byScenario)) {
+    list.sort(compareByStartedAtDesc);
+  }
+  return byScenario;
+}
+
+// Short clock time for the card row — full ISO is too wide for the card.
+// Falls back to the raw string if Date parsing fails (shouldn't, but defence).
+function formatStartedAt(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 }
 
 export function LogGenerator() {
@@ -70,6 +106,8 @@ export function LogGenerator() {
 
   const hasRunning = useMemo(() => runs.some((r) => r.state === "running"), [runs]);
   usePolling(refreshRuns, hasRunning ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+
+  const runsByScenario = useMemo(() => groupRunsByScenario(runs), [runs]);
 
   async function onRun(spec: ScenarioSpec) {
     if (!token) return;
@@ -138,10 +176,11 @@ export function LogGenerator() {
       <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3" data-testid="scenario-grid">
         {scenarios.map((spec) => {
           const disabled = spec.requires_chaos && !(env?.enable_chaos ?? false);
+          const scenarioRuns = runsByScenario[spec.name] ?? [];
           return (
             <article
               key={spec.name}
-              className="rounded-md border border-slate-200 bg-white p-4 shadow-sm"
+              className="flex min-h-[320px] flex-col rounded-md border border-slate-200 bg-white p-4 shadow-sm"
               data-testid={`scenario-card-${spec.name}`}
             >
               <header className="flex items-baseline justify-between">
@@ -182,58 +221,65 @@ export function LogGenerator() {
               >
                 {disabled ? "Requires ENABLE_CHAOS=true" : "Run"}
               </button>
+
+              {/* Inline per-scenario run history. `mt-auto` pushes this block
+                  to the card foot so cards with different param counts still
+                  line up the recent-runs strip vertically. */}
+              <div className="mt-auto pt-3" data-testid={`scenario-runs-${spec.name}`}>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  Recent runs
+                </div>
+                {scenarioRuns.length === 0 ? (
+                  <p className="text-[11px] italic text-slate-400">No runs yet.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {scenarioRuns.slice(0, PER_CARD_RUN_LIMIT).map((run) => (
+                      <li
+                        key={run.run_id}
+                        className="flex items-center justify-between gap-2 text-[11px]"
+                        data-testid={`run-row-${run.run_id}`}
+                      >
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <RunStateBadge state={run.state} />
+                          <span className="font-mono text-slate-500" title={run.started_at}>
+                            {formatStartedAt(run.started_at)}
+                          </span>
+                          <span className="truncate text-slate-600">
+                            {run.sent}/{run.succeeded}/{run.failed}
+                          </span>
+                        </div>
+                        {run.state === "running" && (
+                          <button
+                            type="button"
+                            onClick={() => onCancel(run.run_id)}
+                            className="rounded border border-slate-300 px-1.5 py-0.5 text-slate-700 hover:bg-slate-100"
+                            data-testid={`cancel-button-${run.run_id}`}
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </article>
           );
         })}
       </div>
-
-      <h3 className="mt-8 text-sm font-semibold text-slate-900">Recent runs</h3>
-      <ul className="mt-2 space-y-2" data-testid="recent-runs">
-        {runs.length === 0 && <li className="text-xs text-slate-500">No runs yet.</li>}
-        {runs
-          .slice(-10)
-          .reverse()
-          .map((run) => (
-            <li
-              key={run.run_id}
-              className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-xs"
-              data-testid={`run-row-${run.run_id}`}
-            >
-              <div className="flex items-center gap-3">
-                <span
-                  className={[
-                    "rounded px-2 py-0.5 font-medium",
-                    run.state === "running" && "bg-amber-100 text-amber-800",
-                    run.state === "succeeded" && "bg-green-100 text-green-800",
-                    run.state === "failed" && "bg-red-100 text-red-800",
-                    run.state === "cancelled" && "bg-slate-200 text-slate-700",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                >
-                  {run.state}
-                </span>
-                <span className="font-medium text-slate-900">{run.scenario}</span>
-                <span className="text-slate-500">
-                  sent {run.sent} · ok {run.succeeded} · fail {run.failed}
-                </span>
-                {run.last_status_code !== null && (
-                  <span className="text-slate-400">last {run.last_status_code}</span>
-                )}
-              </div>
-              {run.state === "running" && (
-                <button
-                  type="button"
-                  onClick={() => onCancel(run.run_id)}
-                  className="rounded border border-slate-300 px-2 py-0.5 text-slate-700 hover:bg-slate-100"
-                  data-testid={`cancel-button-${run.run_id}`}
-                >
-                  Cancel
-                </button>
-              )}
-            </li>
-          ))}
-      </ul>
     </section>
   );
+}
+
+function RunStateBadge({ state }: { state: RunRecord["state"] }) {
+  const className = [
+    "rounded px-1.5 py-0.5 font-medium",
+    state === "running" && "bg-amber-100 text-amber-800",
+    state === "succeeded" && "bg-green-100 text-green-800",
+    state === "failed" && "bg-red-100 text-red-800",
+    state === "cancelled" && "bg-slate-200 text-slate-700",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return <span className={className}>{state}</span>;
 }
