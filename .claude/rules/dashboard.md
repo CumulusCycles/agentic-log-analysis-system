@@ -193,7 +193,7 @@ the design rationale.
 | `POST /api/chat` defaults to non-streaming JSON; `streaming: true` returns SSE (PR 4b — see additions block below). Both paths run the same graph, so the response shape can't drift. | Additive contract; pre-flight errors (401 / 413 / 503) always return JSON |
 | Cost caps (3): `LLM_MAX_TOOL_CALLS_PER_REQUEST=4`, `LLM_MAX_INPUT_TOKENS_PER_REQUEST=8000` (tiktoken `o200k_base`), `LLM_MAX_MESSAGES_PER_SESSION=40` | Deterministic in-graph bounds; no advisory middleware |
 | Credential redaction in NEW `credentials.py` — `sanitize_user_input` + `sanitize_log_raw` cover Bearer/X-API-Key/password/JWT-shape/DSN | Defence-in-depth at BOTH input (router + ingest_node) AND output (tool `raw` field) |
-| Agitator's `_sanitize_error` is **NOT** modified in this PR — dedupe deferred to a follow-up chore PR | Scope discipline per `feedback_remediation_pr_granularity` |
+| Shared shape detection in `credential_patterns.py` — JWT pattern + sensitive-keyword vocabulary; `credentials.py` and `agitator/runs.py::_sanitize_error` both import. Each keeps its own policy (surgical substitute vs. drop whole message). Landed in the 2026-06-07 dedup chore PR. | Single source of truth for what counts as "secret-shaped" — the two consumers can't drift |
 | LangSmith metadata: every `ainvoke` carries `{session_id, jwt_sub, dry_run}` | Filterable in LangSmith UI |
 | Proactive-loop background scan shipped in **PR 4c** ✅ — see the Proactive Scan block below | Closes Phase 7. |
 

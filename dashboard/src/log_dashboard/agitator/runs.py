@@ -19,22 +19,18 @@ can never observe a `task=None` record.
 from __future__ import annotations
 
 import asyncio
-import re
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
 
+from ..credential_patterns import JWT_SHAPE_PATTERN, contains_sensitive_keyword
+
 RunState = Literal["running", "succeeded", "failed", "cancelled"]
 
 _MAX_RECENT = 50
 _MAX_LAST_ERROR_LEN = 200
-
-# Three base64url-ish segments separated by dots. Matches both real JWTs and
-# obvious fakes. We're defensive — if the shape is there, redact regardless.
-_JWT_SHAPE = re.compile(r"[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}")
-_SENSITIVE_NEEDLES = ("authorization", "bearer", "x-api-key", "password")
 
 
 class ConcurrentRunCapError(RuntimeError):
@@ -98,12 +94,13 @@ def _sanitize_error(message: str) -> str:
     2. Shape: a three-segment JWT-shaped token (≥20 chars per segment,
        base64url alphabet) → drop entirely. Catches the case where a
        token value is present without a nearby keyword.
+
+    Both shape detectors are shared with `credentials.py` via
+    `credential_patterns` — same vocabulary, different policy.
     """
-    lower = message.lower()
-    for needle in _SENSITIVE_NEEDLES:
-        if needle in lower:
-            return "redacted (contained sensitive header/field name)"
-    if _JWT_SHAPE.search(message):
+    if contains_sensitive_keyword(message):
+        return "redacted (contained sensitive header/field name)"
+    if JWT_SHAPE_PATTERN.search(message):
         return "redacted (contained JWT-shaped token)"
     if len(message) > _MAX_LAST_ERROR_LEN:
         return message[:_MAX_LAST_ERROR_LEN] + "…"

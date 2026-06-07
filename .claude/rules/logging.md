@@ -43,7 +43,7 @@ The LangGraph agent handles heterogeneous formats. See docs/decisions/ADR-003-lo
 
    Audit baseline (verified 2026-06-04): every logger call site in SDA, FNOL, CP, AP scanned and confirmed clean. Preserve this state in every PR that touches logging.
 
-   Phase 7e (PR 4a, 2026-06-05): user input and tool-returned log lines pass through `dashboard/src/log_dashboard/credentials.py` before reaching LangChain / LangSmith / OpenAI. Two-layer defence (input sanitisation in `routers/chat.py` + `agent/nodes.py::ingest_node`; output sanitisation in `agent/tools.py::query_logs`). Verified via `test_credentials.py` + `test_agent_credential_redaction.py`. The Agitator's separate `agitator/runs.py::_sanitize_error` is untouched in PR 4a (scope discipline); dedupe is a follow-up chore PR.
+   Phase 7e (PR 4a, 2026-06-05): user input and tool-returned log lines pass through `dashboard/src/log_dashboard/credentials.py` before reaching LangChain / LangSmith / OpenAI. Two-layer defence (input sanitisation in `routers/chat.py` + `agent/nodes.py::ingest_node`; output sanitisation in `agent/tools.py::query_logs`). Verified via `test_credentials.py` + `test_agent_credential_redaction.py`. Shared shape detection (JWT pattern + sensitive-keyword vocabulary) lives in `dashboard/src/log_dashboard/credential_patterns.py` (post-Phase-7 dedup chore, 2026-06-07) — `credentials.py` and `agitator/runs.py::_sanitize_error` import from there so the two cannot drift; each consumer keeps its own policy (surgical substitute vs. drop whole message).
 
    Full decision tree and counter-patterns: `feedback_never_log_credentials` memory file (auto-loaded).
 
