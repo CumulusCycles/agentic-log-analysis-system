@@ -66,7 +66,13 @@ export interface LogsFilters {
   apps: AppName[];
   levels: LogLevel[];
   since: string | null;
+  // `before` is the pagination cursor — set by the previous page's
+  // `next_before` so each page fetches strictly-older entries.
   before: string | null;
+  // `until` is the user-facing upper bound for the time window (only set
+  // when the operator picks a custom range). Backend AND's it with the
+  // cursor so pagination and time-window stay orthogonal.
+  until: string | null;
   limit: number;
 }
 

@@ -4,21 +4,13 @@ import { useSearchParams } from "react-router-dom";
 import { LogsFilterBar, type FilterState } from "../components/LogsFilterBar";
 import { LogsTable } from "../components/LogsTable";
 import { getLogs, HttpError, searchLogs } from "../lib/api";
+import { resolveTimeWindow } from "../lib/time-window";
 import { useAuth } from "../lib/auth";
-import { APP_NAMES, LOG_LEVELS, type AppName, type LogEntry, type TimeWindow } from "../types/logs";
+import { APP_NAMES, LOG_LEVELS, type AppName, type LogEntry } from "../types/logs";
 
 const PAGE_LIMIT = 100;
 const SEARCH_TOP_K = 50;
 const SEARCH_DEBOUNCE_MS = 300;
-
-function windowToSince(window: TimeWindow, now: Date = new Date()): string {
-  const offsets: Record<TimeWindow, number> = {
-    "1h": 60 * 60 * 1000,
-    "24h": 24 * 60 * 60 * 1000,
-    "7d": 7 * 24 * 60 * 60 * 1000,
-  };
-  return new Date(now.getTime() - offsets[window]).toISOString();
-}
 
 function isAppName(value: string): value is AppName {
   return (APP_NAMES as readonly string[]).includes(value);
@@ -30,6 +22,8 @@ function initialFilters(presetApp: string | null): FilterState {
     apps,
     levels: [...LOG_LEVELS],
     window: "1h",
+    customSince: null,
+    customUntil: null,
     query: "",
   };
 }
@@ -54,7 +48,10 @@ export function LogExplorer() {
     return () => window.clearTimeout(handle);
   }, [filters.query]);
 
-  const since = useMemo(() => windowToSince(filters.window), [filters.window]);
+  const { since, until } = useMemo(
+    () => resolveTimeWindow(filters.window, filters.customSince, filters.customUntil),
+    [filters.window, filters.customSince, filters.customUntil],
+  );
   const isSearchMode = debouncedQuery.trim().length > 0;
 
   const fetchPage = useCallback(
@@ -68,16 +65,21 @@ export function LogExplorer() {
             apps: filters.apps,
             levels: filters.levels,
             since,
+            before: until,
             top_k: SEARCH_TOP_K,
           });
           setEntries(res.entries);
           setScores(res.scores);
           setNextBefore(null);
         } else {
+          // Cursor pagination uses `before` for the timestamp cursor. The
+          // custom-window upper bound is sent as `until` so the backend AND's
+          // it with the cursor — pagination and time-window stay orthogonal.
           const res = await getLogs(token, {
             apps: filters.apps,
             levels: filters.levels,
             since,
+            until,
             before,
             limit: PAGE_LIMIT,
           });
@@ -102,7 +104,7 @@ export function LogExplorer() {
         setLoading(false);
       }
     },
-    [token, logout, filters.apps, filters.levels, since, isSearchMode, debouncedQuery],
+    [token, logout, filters.apps, filters.levels, since, until, isSearchMode, debouncedQuery],
   );
 
   // Refetch from page 1 whenever filters change (or the debounced query

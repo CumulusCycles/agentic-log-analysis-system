@@ -125,3 +125,69 @@ async def test_logs_caps_limit_at_page_max(client, valid_token, log_volume) -> N
     # We have ~42 entries seeded — all should come back, well under the cap.
     assert len(body["entries"]) <= 1000
     assert len(body["entries"]) > 0
+
+
+# --- PR 2: until query param ---
+
+
+async def test_logs_until_excludes_entries_at_or_after_cutoff(
+    client, valid_token, log_volume
+) -> None:
+    """`until` is the operator-facing upper bound (entry.timestamp < until)."""
+    _seed_mixed(log_volume)
+    # The seed's newest entries are at "ago=100s..600s". `until` 250s ago
+    # keeps entries older than that and drops the rest.
+    until = (datetime.now(tz=UTC) - timedelta(seconds=250)).isoformat()
+    response = await client.get(
+        "/api/logs",
+        params={"until": until, "limit": 200},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    body = response.json()
+    cutoff = datetime.fromisoformat(until)
+    for entry in body["entries"]:
+        ts = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
+        assert ts < cutoff
+
+
+async def test_logs_since_and_until_window_combined(client, valid_token, log_volume) -> None:
+    """`since` + `until` carves out a [since, until) window from the seed."""
+    _seed_mixed(log_volume)
+    now = datetime.now(tz=UTC)
+    since = (now - timedelta(seconds=350)).isoformat()
+    until = (now - timedelta(seconds=150)).isoformat()
+    response = await client.get(
+        "/api/logs",
+        params={"since": since, "until": until, "limit": 200},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    body = response.json()
+    since_dt = datetime.fromisoformat(since)
+    until_dt = datetime.fromisoformat(until)
+    assert body["entries"]
+    for entry in body["entries"]:
+        ts = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
+        assert since_dt <= ts < until_dt
+
+
+async def test_logs_until_anded_with_before_pagination_cursor(
+    client, valid_token, log_volume
+) -> None:
+    """`until` and `before` are AND'd — the tighter bound wins."""
+    _seed_mixed(log_volume)
+    now = datetime.now(tz=UTC)
+    # `before` = 100s ago (loose upper bound, includes 100s-600s seed)
+    # `until` = 400s ago (tight upper bound, only 400s-600s should pass)
+    before = (now - timedelta(seconds=100)).isoformat()
+    until = (now - timedelta(seconds=400)).isoformat()
+    response = await client.get(
+        "/api/logs",
+        params={"before": before, "until": until, "limit": 200},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    body = response.json()
+    cutoff = datetime.fromisoformat(until)
+    for entry in body["entries"]:
+        ts = datetime.fromisoformat(entry["timestamp"].replace("Z", "+00:00"))
+        # The tighter `until` wins over the looser `before`.
+        assert ts < cutoff

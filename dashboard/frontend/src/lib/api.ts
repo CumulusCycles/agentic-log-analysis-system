@@ -72,8 +72,21 @@ function buildLogsQuery(filters: LogsFilters): string {
   if (filters.levels.length > 0) params.set("level", filters.levels.join(","));
   if (filters.since) params.set("since", filters.since);
   if (filters.before) params.set("before", filters.before);
+  if (filters.until) params.set("until", filters.until);
   params.set("limit", String(filters.limit));
   return params.toString();
+}
+
+function buildStatsQuery(filters: ChromaStatsFilters): string {
+  const params = new URLSearchParams();
+  if (filters.since) params.set("since", filters.since);
+  if (filters.until) params.set("until", filters.until);
+  return params.toString();
+}
+
+export interface ChromaStatsFilters {
+  since: string | null;
+  until: string | null;
 }
 
 export async function getLogs(token: string, filters: LogsFilters): Promise<LogsResponse> {
@@ -136,8 +149,13 @@ export async function getError(token: string, entryId: string): Promise<ErrorDet
 
 // --- Vectorstore Stats tab ---
 
-export async function getChromaStats(token: string): Promise<ChromaStatsResponse> {
-  return request<ChromaStatsResponse>("/api/chroma/stats", {}, token);
+export async function getChromaStats(
+  token: string,
+  filters: ChromaStatsFilters = { since: null, until: null },
+): Promise<ChromaStatsResponse> {
+  const qs = buildStatsQuery(filters);
+  const path = qs ? `/api/chroma/stats?${qs}` : "/api/chroma/stats";
+  return request<ChromaStatsResponse>(path, {}, token);
 }
 
 // --- Phase 7e (PR 4b): SSE chat streaming ---

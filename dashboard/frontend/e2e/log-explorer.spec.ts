@@ -62,4 +62,52 @@ test.describe("Log Explorer screen (7c)", () => {
       for (const app of apps) expect(app).toBe("fnol");
     }
   });
+
+  test("Clear all / Check all toggles every app filter", async ({ loggedInPage: page }) => {
+    await page.goto("/logs");
+    // Default state: every app checked.
+    await expect(page.getByTestId("filter-app-fnol")).toBeChecked();
+
+    await page.getByTestId("filter-app-clear-all").click();
+    await expect(page.getByTestId("filter-app-fnol")).not.toBeChecked();
+    await expect(page.getByTestId("filter-app-shared-data-api")).not.toBeChecked();
+    await expect(page.getByTestId("filter-app-customer-portal")).not.toBeChecked();
+    await expect(page.getByTestId("filter-app-agent-portal")).not.toBeChecked();
+
+    await page.getByTestId("filter-app-check-all").click();
+    await expect(page.getByTestId("filter-app-fnol")).toBeChecked();
+    await expect(page.getByTestId("filter-app-shared-data-api")).toBeChecked();
+    await expect(page.getByTestId("filter-app-customer-portal")).toBeChecked();
+    await expect(page.getByTestId("filter-app-agent-portal")).toBeChecked();
+  });
+
+  test("Custom time window sends until on the next /api/logs request", async ({
+    loggedInPage: page,
+  }) => {
+    await page.goto("/logs");
+    await page.waitForLoadState("networkidle");
+
+    // Switch to Custom; pick a one-hour window ending now.
+    await page.getByTestId("filter-window-custom").check();
+    const now = new Date();
+    const fmt = (d: Date) => {
+      const pad = (n: number) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    };
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+    // Capture the request triggered by setting the upper bound.
+    const reqPromise = page.waitForRequest((req) => {
+      const url = req.url();
+      return url.includes("/api/logs") && url.includes("until=");
+    });
+
+    await page.getByTestId("filter-window-custom-since").fill(fmt(oneHourAgo));
+    await page.getByTestId("filter-window-custom-until").fill(fmt(now));
+
+    const req = await reqPromise;
+    const u = new URL(req.url());
+    expect(u.searchParams.get("since")).not.toBeNull();
+    expect(u.searchParams.get("until")).not.toBeNull();
+  });
 });

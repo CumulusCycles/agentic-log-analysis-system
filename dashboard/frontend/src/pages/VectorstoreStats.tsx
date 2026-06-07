@@ -1,12 +1,23 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { BarChart, type BarChartDatum } from "../components/BarChart";
+import { TimeWindowSelector } from "../components/TimeWindowSelector";
 import { usePolling } from "../hooks/use-polling";
 import { getChromaStats, HttpError } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { resolveTimeWindow, type TimeWindowPreset } from "../lib/time-window";
 import type { ChromaStatsResponse } from "../types/vectorstore";
 
 const POLL_INTERVAL_MS = 30_000;
+
+// Window labels for the "By day" card header. Mirrors the preset table in
+// TimeWindowSelector so the header stays in lockstep with the radio choice.
+const WINDOW_LABELS: Record<TimeWindowPreset, string> = {
+  "1h": "last 1 hour",
+  "24h": "last 24 hours",
+  "7d": "last 7 days",
+  custom: "custom range",
+};
 
 export function VectorstoreStats() {
   const { token, logout } = useAuth();
@@ -14,10 +25,21 @@ export function VectorstoreStats() {
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
 
+  // Default to 7d so the chart matches the typical operator question
+  // ("what got embedded recently?") without dumping a 30-day strip.
+  const [window, setWindow] = useState<TimeWindowPreset>("7d");
+  const [customSince, setCustomSince] = useState<string | null>(null);
+  const [customUntil, setCustomUntil] = useState<string | null>(null);
+
+  const { since, until } = useMemo(
+    () => resolveTimeWindow(window, customSince, customUntil),
+    [window, customSince, customUntil],
+  );
+
   const refresh = useCallback(async () => {
     if (!token) return;
     try {
-      const next = await getChromaStats(token);
+      const next = await getChromaStats(token, { since, until });
       setData(next);
       setError(null);
       setUnavailable(false);
@@ -36,9 +58,22 @@ export function VectorstoreStats() {
         setError("stats request failed");
       }
     }
-  }, [token, logout]);
+  }, [token, logout, since, until]);
 
   usePolling(refresh, POLL_INTERVAL_MS);
+
+  // Refetch immediately when the operator changes the by_day window — the
+  // 30s polling loop captures `refresh` in a ref and only fires on its own
+  // interval, so an explicit kick is needed for a snappy UI. Skip the first
+  // run so we don't double-fire with usePolling's mount tick.
+  const isFirstRender = useRef(true);
+  useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    void refresh();
+  }, [refresh]);
 
   if (unavailable) {
     return (
@@ -138,9 +173,26 @@ export function VectorstoreStats() {
         </Section>
       </div>
 
-      <Section title="By day (last 30 days)" hint="UTC dates">
+      <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-slate-900">By day ({WINDOW_LABELS[window]})</h3>
+          <span className="text-xs text-slate-500">UTC dates</span>
+        </div>
+        <div className="mb-3">
+          <TimeWindowSelector
+            value={window}
+            customSince={customSince}
+            customUntil={customUntil}
+            onChange={(next) => {
+              setWindow(next.preset);
+              setCustomSince(next.customSince);
+              setCustomUntil(next.customUntil);
+            }}
+            idPrefix="stats-window"
+          />
+        </div>
         <BarChart data={byDay} accent="slate" ariaLabel="By day" emptyHint="No day data." />
-      </Section>
+      </div>
     </section>
   );
 }
