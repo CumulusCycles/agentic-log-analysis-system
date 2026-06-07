@@ -34,9 +34,11 @@ def _setup_logging():
         ("Synthetic", "synthetic"),
         ("  test  ", "test"),
         ("PROD", "prod"),
-        (None, "prod"),
-        ("", "prod"),
-        ("   ", "prod"),
+        # Missing / blank header → `unknown` per ADR-011 2026-06-07 amendment.
+        # Real UX traffic must tag `prod` explicitly from the React SPA.
+        (None, "unknown"),
+        ("", "unknown"),
+        ("   ", "unknown"),
     ],
 )
 def test_normalize_source(raw, expected) -> None:
@@ -70,6 +72,9 @@ async def test_request_binds_source_into_structlog_contextvars() -> None:
 
 @pytest.mark.asyncio
 async def test_request_default_source_when_header_missing() -> None:
+    """Header-absent request → `source=unknown` per ADR-011 2026-06-07
+    amendment. Real UX traffic tags `prod` explicitly from the SPA; missing
+    header is the leak-detection signal."""
     bound: dict = {}
 
     async def _probe():
@@ -83,7 +88,7 @@ async def test_request_default_source_when_header_missing() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         await ac.get("/probe")
-    assert bound.get("source") == "prod"
+    assert bound.get("source") == "unknown"
 
 
 @pytest.mark.asyncio
@@ -109,4 +114,4 @@ async def test_contextvars_dont_leak_across_requests() -> None:
         await ac.get("/probe", headers={"X-Source": "synthetic"})
         await ac.get("/probe")  # no header
 
-    assert sources_seen == ["synthetic", "prod"]
+    assert sources_seen == ["synthetic", "unknown"]

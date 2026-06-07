@@ -193,7 +193,9 @@ describe("CP enrichment — X-Source header", () => {
     });
   });
 
-  it("emits source=prod when X-Source header is absent", async () => {
+  it("emits source=unknown when X-Source header is absent", async () => {
+    // Missing X-Source → `unknown` per ADR-011 2026-06-07 amendment. Real UX
+    // traffic must tag `prod` explicitly from the React SPA's fetch wrapper.
     const { app, infoSpy } = buildSpyApp();
 
     await request(app).get("/health");
@@ -202,7 +204,7 @@ describe("CP enrichment — X-Source header", () => {
     expect(call).toBeTruthy();
     expect(call?.[1]).toMatchObject({
       event: "request",
-      source: "prod",
+      source: "unknown",
     });
   });
 });

@@ -23,9 +23,12 @@ log = get_logger("sda_client")
 
 def _current_source() -> str:
     """Pull `source` from the structlog contextvars set by the request
-    middleware. Defaults to `prod` if FNOL emits an outbound call outside a
-    request context (e.g. a future startup probe — none today)."""
-    return str(structlog.contextvars.get_contextvars().get("source") or "prod")
+    middleware. Defaults to `unknown` if FNOL emits an outbound call outside
+    a request context (startup probes, background tasks). Real UX traffic
+    arrives with `X-Source: prod` from the React SPA and propagates through
+    the contextvar; the `unknown` fallback is the leak-detection signal per
+    ADR-011 2026-06-07 amendment."""
+    return str(structlog.contextvars.get_contextvars().get("source") or "unknown")
 
 
 def _detail_from(resp: httpx.Response) -> str:

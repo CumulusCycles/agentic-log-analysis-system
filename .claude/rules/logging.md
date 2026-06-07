@@ -13,16 +13,19 @@ The LangGraph agent handles heterogeneous formats. See docs/decisions/ADR-003-lo
 1. Every app MUST log a parseable **severity level** and **timestamp**. Everything else is stack-native.
 
    Every per-request log line MUST also include a `source=<value>` field
-   read from the `X-Source` HTTP header (default `prod`) — see ADR-011.
-   Domain events (`login_failed`, `sda_upstream_rejected`, etc.) emitted
-   during the request lifetime MUST also carry the same `source` value,
-   propagated via the stack-native carrier set by the request middleware:
-   `structlog.contextvars` (SDA, FNOL), `AsyncLocalStorage` (CP), SLF4J
-   `MDC` (AP). Outbound HTTP clients to SDA MUST forward `X-Source` from
-   the same carrier so SDA tags its WARN/ERROR events with the original
-   source instead of defaulting to `prod`. Domain events emitted OUTSIDE
-   a request context (startup, background tasks) get tagged `unknown` by
-   the dashboard parser so the operator can spot propagation gaps.
+   read from the `X-Source` HTTP header (default `unknown` — ADR-011
+   2026-06-07 amendment). React SPAs explicitly tag `X-Source: prod` in
+   their `request()` fetch wrapper so real UX traffic lands in `prod`;
+   anything missing the header lands in `unknown` as a propagation-gap
+   signal. Domain events (`login_failed`, `sda_upstream_rejected`, etc.)
+   emitted during the request lifetime MUST also carry the same `source`
+   value, propagated via the stack-native carrier set by the request
+   middleware: `structlog.contextvars` (SDA, FNOL), `AsyncLocalStorage`
+   (CP), SLF4J `MDC` (AP). Outbound HTTP clients to SDA MUST forward
+   `X-Source` from the same carrier so SDA tags its WARN/ERROR events
+   with the original source instead of defaulting to `unknown`. Domain
+   events emitted OUTSIDE a request context (startup, background tasks)
+   get tagged `unknown` so the operator can spot propagation gaps.
 
 2. **NEVER LOG CREDENTIALS — ABSOLUTE PROHIBITION.** The following values MUST NEVER appear in any log line, structured field, error message, exception trace, response body, or debug output across any app:
    - Passwords (plain, hashed, or any intermediate form)

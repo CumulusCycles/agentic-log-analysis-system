@@ -15,18 +15,21 @@ import org.slf4j.MDC;
  * <p>The outbound SDA {@code RestClient} interceptor configured in
  * {@code SdaClientConfig} also reads {@link #currentSource()} to forward
  * {@code X-Source} on every call so SDA tags any WARN/ERROR it emits with
- * the original source instead of defaulting to {@code prod}.
+ * the original source instead of defaulting to {@code unknown}.
+ *
+ * <p>Missing-header → {@code unknown} per ADR-011 2026-06-07 amendment;
+ * the React SPA tags {@code prod} explicitly via its fetch wrapper.
  */
 public final class SourceContext {
 
     public static final String MDC_KEY = "source";
 
-    private static final String DEFAULT = "prod";
+    private static final String DEFAULT = "unknown";
     private static final Pattern VALID = Pattern.compile("^[a-z][a-z0-9_-]*$");
 
     private SourceContext() {}
 
-    /** Returns the source bound onto MDC, or {@code prod} when none is set. */
+    /** Returns the source bound onto MDC, or {@code unknown} when none is set. */
     public static String currentSource() {
         String value = MDC.get(MDC_KEY);
         return value == null || value.isBlank() ? DEFAULT : value;
@@ -35,7 +38,7 @@ public final class SourceContext {
     /**
      * Coerces the inbound {@code X-Source} header to the canonical lowercase
      * value the dashboard expects. Anything that doesn't match
-     * {@code ^[a-z][a-z0-9_-]*$} falls back to {@code prod} so a malicious
+     * {@code ^[a-z][a-z0-9_-]*$} falls back to {@code unknown} so a malicious
      * caller can't inject arbitrary characters through the header into our
      * log stream.
      */

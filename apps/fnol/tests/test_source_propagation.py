@@ -1,7 +1,8 @@
 """FNOL: `X-Source` propagation — binds onto structlog contextvars (so
 domain events inherit it) AND is forwarded by the outbound SdaClient on
-every call to SDA. Without the forward, SDA would only ever see source=prod
-from FNOL's traffic, defeating the cross-app propagation chain.
+every call to SDA. Without the forward, SDA would only ever see the FNOL
+middleware default (`unknown` after the ADR-011 2026-06-07 amendment),
+defeating the cross-app propagation chain.
 """
 
 from __future__ import annotations
@@ -41,13 +42,15 @@ async def test_request_binds_source_into_contextvars() -> None:
     assert bound.get("source") == "test"
 
 
-def test_current_source_falls_back_to_prod_outside_request() -> None:
-    """When no contextvar is bound (e.g. process startup), the SdaClient
-    helper falls back to `prod` rather than raising."""
+def test_current_source_falls_back_to_unknown_outside_request() -> None:
+    """When no contextvar is bound (e.g. process startup, background task),
+    the SdaClient helper falls back to `unknown` rather than raising. Per
+    ADR-011 2026-06-07 amendment — the fallback is the leak-detection signal,
+    not a real-user proxy."""
     structlog.contextvars.clear_contextvars()
     from fnol.clients.shared_data_api import _current_source
 
-    assert _current_source() == "prod"
+    assert _current_source() == "unknown"
 
 
 def test_current_source_reads_bound_contextvar() -> None:

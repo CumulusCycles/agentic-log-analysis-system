@@ -132,11 +132,13 @@ class LoggingEnrichmentTest {
         }
 
         @Test
-        void requestEventEmitsSourceProdWhenHeaderAbsent(CapturedOutput output) throws Exception {
+        void requestEventEmitsSourceUnknownWhenHeaderAbsent(CapturedOutput output) throws Exception {
+            // Missing X-Source → `unknown` per ADR-011 2026-06-07 amendment.
+            // The React SPA tags `prod` explicitly via its fetch wrapper.
             mvc.perform(get("/api/health")).andExpect(status().isOk());
             assertThat(output.getOut())
                     .contains("path=/api/health")
-                    .contains("source=prod");
+                    .contains("source=unknown");
         }
     }
 

@@ -139,22 +139,26 @@ Output: `YYYY-MM-DD HH:mm:ss.SSS LEVEL --- [thread] class : message`. Per-reques
 
 Every app's request-logger middleware reads an optional `X-Source: <value>`
 HTTP header and emits a `source=<value>` field on the per-request log line.
-When absent, the apps default to `source=prod`. This lets the dashboard's
-ingest gate (`DASHBOARD_INGEST_SOURCES`) drop synthetic / test / health
-traffic from Chroma before any OpenAI embedding call.
+When absent, the apps default to `source=unknown` (per ADR-011 2026-06-07
+amendment — see below). This lets the dashboard's ingest gate
+(`DASHBOARD_INGEST_SOURCES`) drop synthetic / test / health traffic from
+Chroma before any OpenAI embedding call.
 
 Allowed vocabulary:
 
-| Value       | Set by                                                  |
-|-------------|---------------------------------------------------------|
-| `prod`      | Header absent (app default)                             |
-| `synthetic` | Agitator (PR 3 of the agitator sequence)                |
-| `test`      | Playwright `extraHTTPHeaders` in each frontend config   |
-| `health`    | Parser-derived from healthcheck path                    |
+| Value       | Set by                                                       |
+|-------------|--------------------------------------------------------------|
+| `prod`      | React SPA fetch wrapper (explicit `X-Source: prod`)          |
+| `synthetic` | Agitator (PR 3 of the agitator sequence)                     |
+| `test`      | Playwright `extraHTTPHeaders` in each frontend config        |
+| `health`    | Parser-derived from healthcheck path                         |
+| `unknown`   | Middleware default when header is absent                     |
 
 Parser precedence: health-path beats explicit (the header cannot override a
-healthcheck), then explicit, then default `prod`. Inter-service propagation
-through the SDA clients (FNOL/CP/AP → SDA) is deferred — see ADR-011.
+healthcheck), then explicit, then default `unknown`. The Agitator and SPAs
+both set `X-Source` at a single seam — Agitator via `build_client`, SPAs
+via their `request()` fetch wrapper. Inter-service propagation through the
+SDA clients (FNOL/CP/AP → SDA) landed in PR 4a — see ADR-011.
 
 ---
 

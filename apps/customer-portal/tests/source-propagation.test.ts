@@ -32,21 +32,23 @@ describe("normalizeSource", () => {
     ["Synthetic", "synthetic"],
     ["  test  ", "test"],
     ["PROD", "prod"],
-    [undefined, "prod"],
-    ["", "prod"],
-    ["   ", "prod"],
-    // Defensive: anything that doesn't look like a clean token falls to prod
-    // so a malicious caller can't inject log content via the header.
-    ["foo bar", "prod"],
-    ["weird!chars", "prod"],
+    // Missing / blank → `unknown` per ADR-011 2026-06-07 amendment.
+    // The React SPA tags `prod` explicitly in its fetch wrapper.
+    [undefined, "unknown"],
+    ["", "unknown"],
+    ["   ", "unknown"],
+    // Defensive: anything that doesn't look like a clean token falls to
+    // `unknown` so a malicious caller can't inject log content via the header.
+    ["foo bar", "unknown"],
+    ["weird!chars", "unknown"],
   ])("normalizes %j -> %j", (raw, expected) => {
     expect(normalizeSource(raw)).toBe(expected);
   });
 });
 
 describe("runWithSource / getCurrentSource", () => {
-  it("getCurrentSource returns prod when no ALS context is active", () => {
-    expect(getCurrentSource()).toBe("prod");
+  it("getCurrentSource returns unknown when no ALS context is active", () => {
+    expect(getCurrentSource()).toBe("unknown");
   });
 
   it("runWithSource exposes the value inside the callback", () => {
@@ -56,7 +58,7 @@ describe("runWithSource / getCurrentSource", () => {
     });
     expect(seen).toBe("synthetic");
     // And the context unwinds — outside the callback, no source is bound.
-    expect(getCurrentSource()).toBe("prod");
+    expect(getCurrentSource()).toBe("unknown");
   });
 
   it("propagates through async callbacks (the whole point of ALS)", async () => {
@@ -88,7 +90,7 @@ describe("requestLogger middleware", () => {
     expect(requestLine?.source).toBe("synthetic");
   });
 
-  it("defaults to prod when no X-Source header is sent", async () => {
+  it("defaults to unknown when no X-Source header is sent", async () => {
     const captured: CapturedCall[] = [];
     const logger = silentLogger(captured);
     const app = express();
@@ -96,9 +98,9 @@ describe("requestLogger middleware", () => {
     app.get("/probe", (_, res) => res.json({ source: getCurrentSource() }));
 
     const r = await request(app).get("/probe");
-    expect(r.body.source).toBe("prod");
+    expect(r.body.source).toBe("unknown");
     const requestLine = captured.find((c) => c.event === "request");
-    expect(requestLine?.source).toBe("prod");
+    expect(requestLine?.source).toBe("unknown");
   });
 
   it("normalises header value before binding (case + whitespace)", async () => {
@@ -118,7 +120,7 @@ describe("requestLogger middleware", () => {
     const first = await request(app).get("/probe").set("X-Source", "synthetic");
     expect(first.body.source).toBe("synthetic");
     const second = await request(app).get("/probe");
-    expect(second.body.source).toBe("prod");
+    expect(second.body.source).toBe("unknown");
   });
 });
 
