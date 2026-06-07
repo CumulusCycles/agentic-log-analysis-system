@@ -12,9 +12,9 @@ Both operate by surgical substitution (`replace the secret-shaped span with
 `[REDACTED]`, keep the surrounding text`) rather than dropping the whole
 message — the LLM still needs the conversational + log context to reason.
 The Agitator's `_sanitize_error` (`agitator/runs.py`) keeps its drop-the-
-whole-message stance for error strings; this module is NEW code only and
-does NOT modify or import from the Agitator path. A follow-up chore PR
-will dedupe.
+whole-message stance for error strings; the shared shape detection (JWT
+pattern + keyword vocabulary) now lives in `credential_patterns.py` so the
+two consumers cannot drift.
 
 Matched shapes (each one is a separate compiled regex so we can attribute
 which class redacted what in tests):
@@ -31,6 +31,8 @@ which class redacted what in tests):
 from __future__ import annotations
 
 import re
+
+from .credential_patterns import JWT_SHAPE_PATTERN
 
 __all__ = ["sanitize_user_input", "sanitize_log_raw"]
 
@@ -65,10 +67,9 @@ _PASSWORD = re.compile(
     r"(?i)(\"?password\"?\s*[:=]\s*\"?)[^\s,}\]\"']+",
 )
 
-# Three base64url-ish segments separated by dots. Matches both real JWTs and
-# obvious fakes. Matches the same shape used in `agitator/runs.py` —
-# duplicated intentionally per PR 4a scope discipline.
-_JWT_SHAPE = re.compile(r"[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}\.[A-Za-z0-9_\-]{20,}")
+# Three base64url-ish segments separated by dots — shared with
+# `agitator/runs.py::_sanitize_error` via `credential_patterns`.
+_JWT_SHAPE = JWT_SHAPE_PATTERN
 
 # DSN with embedded credentials: `scheme://user:pass@host`. We don't need to
 # match every scheme — only ones we'd realistically see in this project's

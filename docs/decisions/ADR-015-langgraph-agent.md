@@ -205,3 +205,21 @@ PR 4c will add the scheduler + flag + scan body together.
   (`query_logs` + `get_app_status`) and the same chat-model factory.
 - Agitator's `_sanitize_error` is untouched; the planned dedupe is
   tracked as a follow-up chore PR.
+
+## Amendment 2026-06-07 — credential-detection dedup landed
+
+The follow-up chore PR referenced in §8 and the Consequences section
+shipped on 2026-06-07. A new `dashboard/src/log_dashboard/credential_patterns.py`
+module owns the shared shape detection — the JWT-shape regex and the
+sensitive-keyword vocabulary (`authorization` / `bearer` / `x-api-key` /
+`password`). Both `credentials.py` and `agitator/runs.py::_sanitize_error`
+import from it.
+
+Each consumer keeps its policy: `credentials.py` continues surgical
+substitution with `[REDACTED]`; `_sanitize_error` continues
+drop-whole-message with its sentinel strings. The DSN regex stays local
+to `credentials.py` (drop-policy doesn't need it). Behavior-preserving
+per `feedback_behavior_preserving_refactor_gate` — existing 36 tests
+across `test_credentials.py`, `test_agitator_sanitize.py`, and
+`test_agent_credential_redaction.py` pass unchanged; a new
+`test_credential_patterns.py` adds 17 tests for the shared primitives.
