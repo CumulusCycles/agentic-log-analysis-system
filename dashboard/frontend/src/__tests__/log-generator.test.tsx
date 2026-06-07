@@ -222,4 +222,146 @@ describe("LogGenerator", () => {
       expect(screen.getByTestId("error-banner")).toHaveTextContent(/already running/);
     });
   });
+
+  // --- PR 3: per-card recent runs + standalone panel removed ---
+
+  it("renders each run inside its own scenario card (and not in others)", async () => {
+    const authRunning = runRecord({
+      run_id: "auth-r1",
+      scenario: "auth-spike",
+      state: "running",
+      sent: 7,
+      succeeded: 5,
+      failed: 2,
+    });
+    const authSucceeded = runRecord({
+      run_id: "auth-r2",
+      scenario: "auth-spike",
+      state: "succeeded",
+      sent: 50,
+      succeeded: 50,
+      failed: 0,
+      started_at: "2026-06-05T11:50:00Z",
+    });
+    const sdaFailed = runRecord({
+      run_id: "sda-r1",
+      scenario: "sda-degraded",
+      state: "failed",
+      sent: 240,
+      succeeded: 100,
+      failed: 140,
+    });
+
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/scenarios")) return Promise.resolve(jsonResponse(SCENARIOS));
+      if (url.includes("/env")) return Promise.resolve(jsonResponse({ enable_chaos: true }));
+      if (url.includes("/runs")) {
+        return Promise.resolve(jsonResponse({ runs: [authRunning, authSucceeded, sdaFailed] }));
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+
+    // Wait for per-card scoping to materialise. Each card has its own
+    // `scenario-runs-<name>` block — the auth card lists 2 rows; sda has 1.
+    await waitFor(() => {
+      const authCard = screen.getByTestId("scenario-runs-auth-spike");
+      expect(authCard.querySelectorAll('[data-testid^="run-row-"]').length).toBe(2);
+      const sdaCard = screen.getByTestId("scenario-runs-sda-degraded");
+      expect(sdaCard.querySelectorAll('[data-testid^="run-row-"]').length).toBe(1);
+    });
+
+    // The auth card never shows the sda run, and vice versa.
+    const authCard = screen.getByTestId("scenario-runs-auth-spike");
+    expect(authCard.querySelector('[data-testid="run-row-sda-r1"]')).toBeNull();
+    const sdaCard = screen.getByTestId("scenario-runs-sda-degraded");
+    expect(sdaCard.querySelector('[data-testid="run-row-auth-r1"]')).toBeNull();
+  });
+
+  it("shows an empty-state hint inside a card with zero runs", async () => {
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/scenarios")) return Promise.resolve(jsonResponse(SCENARIOS));
+      if (url.includes("/env")) return Promise.resolve(jsonResponse({ enable_chaos: true }));
+      if (url.includes("/runs")) return Promise.resolve(jsonResponse({ runs: [] }));
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+
+    await waitFor(() => {
+      const authCard = screen.getByTestId("scenario-runs-auth-spike");
+      expect(authCard).toHaveTextContent(/no runs yet/i);
+    });
+  });
+
+  it("no longer renders the standalone Recent runs panel", async () => {
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/scenarios")) return Promise.resolve(jsonResponse(SCENARIOS));
+      if (url.includes("/env")) return Promise.resolve(jsonResponse({ enable_chaos: false }));
+      if (url.includes("/runs")) return Promise.resolve(jsonResponse({ runs: [] }));
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+
+    await waitFor(() => expect(screen.getByTestId("scenario-card-auth-spike")).toBeInTheDocument());
+
+    // The old global `recent-runs` panel test id is gone — replaced by
+    // per-card `scenario-runs-*` containers.
+    expect(screen.queryByTestId("recent-runs")).toBeNull();
+  });
+
+  it("scenario cards declare the uniform min-height class", async () => {
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/scenarios")) return Promise.resolve(jsonResponse(SCENARIOS));
+      if (url.includes("/env")) return Promise.resolve(jsonResponse({ enable_chaos: true }));
+      if (url.includes("/runs")) return Promise.resolve(jsonResponse({ runs: [] }));
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+
+    await waitFor(() => {
+      // Every card carries the same min-h-[320px] + flex-col classes so
+      // the grid lays out evenly regardless of description length or
+      // run-history density. jsdom doesn't compute styles, so we assert
+      // the class membership instead of measured heights.
+      for (const spec of SCENARIOS) {
+        const card = screen.getByTestId(`scenario-card-${spec.name}`);
+        expect(card.className).toMatch(/min-h-\[320px\]/);
+        expect(card.className).toMatch(/flex-col/);
+      }
+    });
+  });
+
+  it("caps the per-card run list at 5 even when more exist", async () => {
+    const manyRuns: RunRecord[] = Array.from({ length: 8 }, (_, i) =>
+      runRecord({
+        run_id: `auth-r${i}`,
+        scenario: "auth-spike",
+        state: "succeeded",
+        // Decreasing timestamps so the newest is r0 and the oldest is r7.
+        started_at: new Date(2026, 5, 5, 12, 0, 0, -i * 1000).toISOString(),
+      }),
+    );
+    const fetchSpy = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("/scenarios")) return Promise.resolve(jsonResponse(SCENARIOS));
+      if (url.includes("/env")) return Promise.resolve(jsonResponse({ enable_chaos: false }));
+      if (url.includes("/runs")) return Promise.resolve(jsonResponse({ runs: manyRuns }));
+      return Promise.resolve(jsonResponse({}));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+
+    await waitFor(() => {
+      const authCard = screen.getByTestId("scenario-runs-auth-spike");
+      expect(authCard.querySelectorAll('[data-testid^="run-row-"]').length).toBe(5);
+    });
+  });
 });
