@@ -1,16 +1,23 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from ..agent.proactive import FindingsBuffer
 from ..auth.jwt import get_current_admin
 from ..config import Settings, get_settings
 from ..ingest.reader import LogReaderError, read_recent_entries
-from ..ingest.rollup import compute_app_status
+from ..ingest.rollup import HISTORY_WINDOWS, compute_app_status, compute_history_buckets
 from ..ingest.spec import APP_LOGS
 from ..logging_setup import get_logger
-from ..schemas import AppStatus, LevelCounts, ProactiveFinding, StatusResponse
+from ..schemas import (
+    AppStatus,
+    LevelCounts,
+    ProactiveFinding,
+    StatusHistoryResponse,
+    StatusHistoryWindow,
+    StatusResponse,
+)
 
 router = APIRouter(tags=["status"])
 log = get_logger("status")
@@ -79,6 +86,51 @@ def _proactive_state(
     if buffer is None:
         return [], None, None
     return buffer.recent(max_findings), buffer.last_scan_at, buffer.next_scan_at
+
+
+@router.get("/status/history", response_model=StatusHistoryResponse)
+async def get_status_history(
+    window: Annotated[
+        StatusHistoryWindow,
+        Query(description="Window to bucket across. 1h=5min×12; 24h=1h×24; 7d=6h×28."),
+    ] = "24h",
+    _: dict[str, Any] = Depends(get_current_admin),
+    settings: Settings = Depends(get_settings),
+) -> StatusHistoryResponse:
+    """Per-app, per-bucket level counts for the requested window.
+
+    Source is the four mounted log volumes (NOT Chroma — Chroma is
+    WARN+ERROR only post-PR-7d ingest gate, but the chart needs INFO too).
+    Tail size matches `/api/status` so chart counts stay consistent with the
+    1h/24h/7d totals in the same Overview page.
+    """
+    now = datetime.now(tz=UTC)
+    _n_buckets, bucket_minutes = HISTORY_WINDOWS[window]
+    apps_history: dict[str, list] = {}
+    for app_log in APP_LOGS:
+        try:
+            entries = read_recent_entries(
+                app_log,
+                volume_root=settings.log_volume_root,
+                limit=settings.logs_tail_default,
+            )
+        except LogReaderError:
+            # Missing/unreadable file → emit empty buckets so the chart still
+            # renders with a flat baseline. Same posture as `/api/status`'s
+            # error row — surface the gap, don't fail the whole request.
+            log.warning(
+                "log_volume_unreadable_during_status_history",
+                app=app_log.name,
+            )
+            apps_history[app_log.name] = compute_history_buckets([], now=now, window=window)
+            continue
+        apps_history[app_log.name] = compute_history_buckets(entries, now=now, window=window)
+    return StatusHistoryResponse(
+        as_of=now,
+        window=window,
+        bucket_minutes=bucket_minutes,
+        apps=apps_history,
+    )
 
 
 def _corpus_empty(request: Request) -> bool:

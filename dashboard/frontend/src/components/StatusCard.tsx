@@ -1,7 +1,8 @@
 import { Link } from "react-router-dom";
 
-import type { AppStatus } from "../types/logs";
+import type { AppStatus, StatusHistoryBucket } from "../types/logs";
 
+import { Sparkline } from "./Sparkline";
 import { StatusBadge } from "./StatusBadge";
 
 function formatLastSeen(iso: string | null): string {
@@ -42,7 +43,13 @@ function CountsRow({
   );
 }
 
-export function StatusCard({ status }: { status: AppStatus }) {
+export function StatusCard({
+  status,
+  history,
+}: {
+  status: AppStatus;
+  history?: StatusHistoryBucket[];
+}) {
   return (
     <Link
       to={`/logs?app=${encodeURIComponent(status.name)}`}
@@ -79,6 +86,11 @@ export function StatusCard({ status }: { status: AppStatus }) {
           error={status.counts_7d.error}
         />
       </div>
+      {history && history.length > 0 && (
+        <div className="mt-3" data-testid="status-card-sparkline">
+          <Sparkline buckets={history} />
+        </div>
+      )}
     </Link>
   );
 }
