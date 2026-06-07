@@ -120,17 +120,20 @@ The operator-facing `/api/logs` view reads volumes directly and is UNAFFECTED.
 | Knob | Default | Where set |
 |---|---|---|
 | `DASHBOARD_INGEST_LEVELS` | `WARN,ERROR` | `.env` (CSV) |
-| `DASHBOARD_INGEST_SOURCES` | `prod,synthetic` | `.env` (CSV) — widened in PR 3 to admit Agitator traffic; ADR-014 |
+| `DASHBOARD_INGEST_SOURCES` | `prod,synthetic,unknown` | `.env` (CSV) — widened in PR 3 to admit Agitator traffic; further widened post-ADR-011 2026-06-07 amendment to admit propagation-gap signal |
 | `DASHBOARD_INGEST_DRY_RUN` | `false` | `.env` (bool) |
 
 `source` is set by the apps' request-logger middleware from the `X-Source`
-header (default `prod`) per ADR-011. The parser's `_infer_source` precedence:
+header (default `unknown` — ADR-011 2026-06-07 amendment; React SPAs tag
+`prod` explicitly in their fetch wrapper). The parser's `_infer_source`
+precedence:
 - `event=request` with path in `(/health, /api/health, /actuator/health)` → `source="health"` (beats explicit — path cannot be overridden by a header)
 - Explicit `source=<value>` in the log line → honored
-- Otherwise → `source="prod"`
+- Otherwise → `source="unknown"`
 
-Allowed vocabulary: `prod` (default), `synthetic` (Agitator, PR 3 ✅), `test`
-(Playwright `extraHTTPHeaders`), `health` (parser-derived).
+Allowed vocabulary: `prod` (React SPAs only), `synthetic` (Agitator, PR 3 ✅),
+`test` (Playwright `extraHTTPHeaders`), `health` (parser-derived),
+`unknown` (middleware default for missing-header / out-of-request events).
 
 The default `(level ∈ {WARN, ERROR}) AND (source ∈ {prod, synthetic})` predicate keeps healthcheck heartbeat, INFO business events, and Playwright E2E traffic out of Chroma — sharp signal, ~$0 ongoing cost. Agitator traffic is admitted by default so a `docker compose up` + scenario click is enough to populate Chroma.
 
@@ -205,7 +208,7 @@ the design rationale.
 | Agent response adapters (`extract_answer`, `extract_citations`, `count_tokens`, `is_openai_api_error`) live in `agent/responses.py` and are shared by both routers | Single source of truth for output shape — JSON `ChatResponse`, SSE `complete` event, and `ErrorDetailResponse.analysis` all run through the same sanitisation + reshape |
 | Defence-in-depth: errors route sanitises `entry.raw` BEFORE returning it AND before sending it to the LLM | A credential planted in a log line by an upstream-app bug never crosses into the response body OR the LangSmith trace |
 | Every OpenAI Chroma upsert prints a per-app level-count summary table to stdout (with per-batch tokens + USD + cumulative session spend) + emits a structured `embedding_complete` log event carrying `batch_tokens` / `batch_cost_usd` / `session_tokens` / `session_cost_usd` | Operator-visible — answers "what did I just pay OpenAI to embed?" and "what have I spent since startup?" without parsing JSON. Cost is computed from tiktoken `cl100k_base` token count × `text-embedding-3-small` list price ($0.02 / 1M tokens). Skipped on dry-run and on full-dedup batches (no embed = no table). |
-| `metadata_to_log_entry` round-trips `LogEntry.source` from Chroma metadata | Without this, Agitator-tagged `synthetic`, parser-derived `health`, and Playwright-tagged `test` (when admitted) all silently fall back to the `LogEntry.source = "prod"` default on read — destroying the provenance signal ADR-011's X-Source propagation works to preserve. PR 4b fix. |
+| `metadata_to_log_entry` round-trips `LogEntry.source` from Chroma metadata | Without this, Agitator-tagged `synthetic`, parser-derived `health`, and Playwright-tagged `test` (when admitted) all silently fall back to the historical `LogEntry.source = "prod"` default on read — destroying the provenance signal ADR-011's X-Source propagation works to preserve. PR 4b fix. (Post-ADR-011 2026-06-07 amendment, missing-source defaults to `unknown` at parse time, but the round-trip mechanism is what makes the labels durable.) |
 
 ---
 

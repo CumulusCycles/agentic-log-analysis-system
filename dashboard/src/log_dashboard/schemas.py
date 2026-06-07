@@ -61,7 +61,12 @@ class LogEntry(BaseModel):
     event: str
     fields: dict[str, Any] = Field(default_factory=dict)
     raw: str
-    source: str = "prod"
+    # ADR-011 2026-06-07 amendment: missing-source defaults to `unknown` so
+    # the operator can spot propagation gaps. React SPAs explicitly tag
+    # `prod` at their fetch wrapper; the parser sets `source` from the log
+    # line. This schema default only fires when LogEntry is constructed
+    # directly without a `source` arg (test fixtures, future call sites).
+    source: str = "unknown"
 
 
 class LogsResponse(BaseModel):

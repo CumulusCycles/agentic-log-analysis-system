@@ -12,25 +12,26 @@ log = get_logger("request")
 def _normalize_source(raw: str | None) -> str:
     """Coerce an incoming `X-Source` header into the lowercase string the
     dashboard's ingest gate expects (`prod` / `synthetic` / `test` / `health`).
-    Missing or whitespace-only header → `prod` (default for real-user traffic).
+    Missing or whitespace-only header → `unknown`. Real UX traffic must tag
+    `prod` explicitly from the React SPA (ADR-011 2026-06-07 amendment).
     """
     if raw is None:
-        return "prod"
+        return "unknown"
     stripped = raw.strip().lower()
-    return stripped or "prod"
+    return stripped or "unknown"
 
 
 class RequestLoggerMiddleware(BaseHTTPMiddleware):
     """Per-request middleware that:
 
-    1. Reads `X-Source` from the inbound request headers (default `prod`).
+    1. Reads `X-Source` from the inbound request headers (default `unknown`).
     2. Binds it onto `structlog.contextvars` so EVERY structlog event emitted
        during the request lifetime — domain events like `login_failed`,
        `claim_created`, anything raised through `log.warning(...)` — picks up
        `source` automatically via `merge_contextvars` in the processor chain.
        Without this, only the synthesised `event=request` line at the end
-       carried the tag; domain WARN/ERROR events defaulted to `prod` in the
-       dashboard parser regardless of the real traffic origin.
+       carried the tag; domain WARN/ERROR events defaulted to `unknown` in
+       the dashboard parser regardless of the real traffic origin.
     3. Emits the `event=request` summary at the tail. `source` is already in
        the contextvars dict, so `merge_contextvars` adds it — no explicit
        kwarg needed.

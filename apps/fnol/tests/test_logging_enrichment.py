@@ -155,10 +155,12 @@ async def test_request_event_emits_source_from_header(client):
 
 
 @pytest.mark.asyncio
-async def test_request_event_emits_source_prod_when_header_absent(client):
+async def test_request_event_emits_source_unknown_when_header_absent(client):
+    # Missing X-Source → `unknown` per ADR-011 2026-06-07 amendment. Real UX
+    # traffic must tag `prod` explicitly from the React SPA's fetch wrapper.
     with structlog.testing.capture_logs() as captured:
         resp = await client.get("/health")
     assert resp.status_code == 200
     events = [e for e in captured if e.get("event") == "request"]
     assert len(events) == 1
-    assert events[0]["source"] == "prod"
+    assert events[0]["source"] == "unknown"

@@ -27,6 +27,10 @@ export class HttpError extends Error {
 async function request<T>(path: string, init: RequestInit = {}, token?: string): Promise<T> {
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
+  // ADR-011 2026-06-07 amendment: SPAs explicitly tag `prod` so the
+  // dashboard's `by_source` bucket means "real human action through this
+  // SPA," not "header absent." Single seam — every outbound call sets it.
+  headers.set("X-Source", "prod");
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const response = await fetch(`${BASE_URL}${path}`, { ...init, headers });

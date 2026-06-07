@@ -82,10 +82,12 @@ class Settings(BaseSettings):
     # "test"      → Playwright suites (extraHTTPHeaders set X-Source: test);
     #               excluded by default so E2E noise stays out of Chroma
     # "synthetic" → Agitator-generated traffic (ADR-014); included
-    # "prod"      → real-user traffic (default when no header is supplied)
-    # "unknown"   → parser fallback when no source field is present; admitted
-    #               so the operator can spot leaks in propagation. Once the
-    #               chain is rock-solid this should approach zero in Chroma.
+    # "prod"      → real-user traffic (React SPA fetch wrapper explicitly
+    #               sets X-Source: prod per ADR-011 2026-06-07 amendment)
+    # "unknown"   → middleware default when X-Source header is absent + parser
+    #               fallback when no source field is present; admitted so the
+    #               operator can spot leaks in propagation. Once the chain is
+    #               rock-solid this should approach zero in Chroma.
     dashboard_ingest_sources: Annotated[frozenset[str], NoDecode] = Field(
         default=frozenset({"prod", "synthetic", "unknown"}),
         alias="DASHBOARD_INGEST_SOURCES",

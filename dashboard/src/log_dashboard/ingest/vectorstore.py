@@ -365,11 +365,14 @@ def metadata_to_log_entry(md: dict[str, Any]) -> LogEntry | None:
     """
     try:
         # `source` is read back from Chroma metadata (PR 4b fix). Without
-        # this the LogEntry.source default of "prod" silently overrides
+        # this the LogEntry.source schema default silently overrode
         # whatever the parser tagged at ingest, so Agitator-tagged
-        # `synthetic` and parser-derived `health` / `unknown` would all
-        # round-trip to "prod" — losing the provenance signal that
+        # `synthetic` and parser-derived `health` / `unknown` all
+        # round-tripped to "prod" — losing the provenance signal that
         # ADR-011's X-Source propagation works hard to preserve.
+        # Post-2026-06-07 amendment: fallback also flips to `unknown` for
+        # consistency — any metadata missing `source` indicates the same
+        # propagation gap the new middleware default surfaces.
         return LogEntry(
             id=str(md.get("id") or ""),
             timestamp=_parse_ts(md.get("timestamp_iso")),
@@ -378,7 +381,7 @@ def metadata_to_log_entry(md: dict[str, Any]) -> LogEntry | None:
             event=str(md.get("event") or ""),
             fields=_fields_from_metadata(md),
             raw=str(md.get("raw") or ""),
-            source=str(md.get("source") or "prod"),
+            source=str(md.get("source") or "unknown"),
         )
     except (ValueError, KeyError, TypeError) as exc:
         log.warning(

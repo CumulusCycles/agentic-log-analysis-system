@@ -1,6 +1,6 @@
 # ADR-011: X-Source Header Convention
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-06-07 — see Amendments below)
 
 ## Decisions
 1. Each of the four logging apps (Shared Data API, FNOL, Customer Portal, Agent Portal) reads an optional `X-Source: <value>` HTTP header from incoming requests in its request-logger middleware and emits a `source=<value>` field in the per-request log line.
@@ -40,3 +40,45 @@ Healthcheck-path detection moves to the front of the parser's precedence chain b
 - `dashboard/src/log_dashboard/schemas.py` — `LogEntry.source`
 - ADR-001 — local-only threat model (no allow-list validation needed at the edge)
 - ADR-006 — sibling `X-API-Key` convention
+
+---
+
+## Amendment — 2026-06-07: `prod` means real UX traffic only
+
+### Change
+
+1. **Middleware default flips `prod` → `unknown`** in all four apps' request-logger middleware (SDA, FNOL, CP, AP). When the inbound request has no `X-Source` header, the middleware now tags the log line `source=unknown` instead of `source=prod`.
+2. **React SPAs explicitly tag `X-Source: prod`** at a single seam — each SPA's `request()` fetch wrapper sets the header on every outbound call. Mirrors the Agitator's `build_client` single-seam pattern.
+
+### Why
+
+PR #41's Vectorstore Stats tab made the prior semantic visible: 95 entries were tagged `source=prod` in Chroma despite the operator never having clicked through any React SPA. The original convention treated "header absent" as "real-user default" — so ad-hoc curls, internal background calls, and anything else lacking the header silently landed in the `prod` bucket. Any future analytics, anomaly detection, or "is this app being used" intuition built off `by_source.prod` was therefore polluted.
+
+The corrected rule: **`prod` means "an authenticated user took an action through a React SPA in the browser."** Nothing else lands in `prod`. Missing-header inbound traffic is the leak-detection signal (`unknown`), surfacing propagation gaps the operator can investigate.
+
+### Vocabulary update
+
+| Value       | Set by                                                | In default `DASHBOARD_INGEST_SOURCES`? |
+|-------------|-------------------------------------------------------|----------------------------------------|
+| `prod`      | **React SPA fetch wrapper (explicit `X-Source: prod`)** | YES                                  |
+| `synthetic` | Agitator (PR 3 of the agitator sequence)              | YES                                    |
+| `test`      | Playwright `extraHTTPHeaders` in each frontend config | NO                                     |
+| `health`    | Parser-derived from healthcheck path                  | NO                                     |
+| `unknown`   | **Middleware default when header is absent**          | YES                                    |
+
+The Playwright `extraHTTPHeaders` override (`X-Source: test`) wins over the SPA wrapper's default header because Playwright sets it at the browser-context layer, before the wrapper runs. E2E traffic stays correctly tagged `test`.
+
+### Migration
+
+The ~95 stale `prod` entries already in Chroma are not migrated — the dedup gate won't re-embed them, and real `prod` from the fix dilutes them over time. Operator decision; documented for transparency.
+
+### Files changed in the amendment
+
+- `apps/shared-data-api/src/shared_data_api/middleware/request_logger.py` — `_normalize_source` default
+- `apps/fnol/src/fnol/middleware/request_logger.py` — `_normalize_source` default
+- `apps/fnol/src/fnol/clients/shared_data_api.py` — `_current_source` outbound fallback
+- `apps/customer-portal/src/source-context.ts` — `normalizeSource` + `getCurrentSource`
+- `apps/agent-portal/src/main/java/com/cumuluscycles/agentportal/logging/SourceContext.java` — `DEFAULT` constant
+- `apps/{fnol,customer-portal,agent-portal}/frontend/src/lib/api.ts` — explicit `X-Source: prod`
+- Test suites in all four apps + new `api.test.ts` per SPA frontend
+- `.claude/rules/{logging,dashboard,apps}.md` — synchronised wording

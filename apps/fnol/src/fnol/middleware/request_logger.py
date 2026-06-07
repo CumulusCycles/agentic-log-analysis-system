@@ -11,11 +11,12 @@ log = get_logger("request")
 
 def _normalize_source(raw: str | None) -> str:
     """Coerce the inbound `X-Source` header to the canonical lowercase value.
-    Missing / blank → `prod` (real-user default per ADR-011)."""
+    Missing / blank → `unknown`. Real UX traffic must tag `prod` explicitly
+    from the React SPA (ADR-011 2026-06-07 amendment)."""
     if raw is None:
-        return "prod"
+        return "unknown"
     stripped = raw.strip().lower()
-    return stripped or "prod"
+    return stripped or "unknown"
 
 
 class RequestLoggerMiddleware(BaseHTTPMiddleware):
