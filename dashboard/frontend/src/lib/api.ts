@@ -16,7 +16,9 @@ import type {
   LogsResponse,
   LogsSearchRequest,
   LogsSearchResponse,
+  StatusHistoryResponse,
   StatusResponse,
+  TimeWindow,
 } from "../types/logs";
 import type { ChromaStatsResponse } from "../types/vectorstore";
 
@@ -64,6 +66,13 @@ export async function getMe(token: string): Promise<AdminOut> {
 
 export async function getStatus(token: string): Promise<StatusResponse> {
   return request<StatusResponse>("/api/status", {}, token);
+}
+
+export async function getStatusHistory(
+  token: string,
+  window: TimeWindow,
+): Promise<StatusHistoryResponse> {
+  return request<StatusHistoryResponse>(`/api/status/history?window=${window}`, {}, token);
 }
 
 function buildLogsQuery(filters: LogsFilters): string {

@@ -90,6 +90,7 @@ Routes land incrementally:
 | `POST` | `/api/auth/login` | Admin login → JWT (standalone, independent of SDA) | 7a ✅ |
 | `GET` | `/api/auth/me` | Current admin from JWT | 7a ✅ |
 | `GET` | `/api/status` | Per-app status cards for Overview Dashboard | 7b ✅ |
+| `GET` | `/api/status/history` | Per-app, per-bucket level counts for the Overview trend sparklines. Required `window=1h\|24h\|7d` (default `24h`). Buckets: 1h→5min×12, 24h→1h×24, 7d→6h×28. JWT-gated; reads the 4 log volumes (NOT Chroma — chart needs INFO). | post-7e ✅ |
 | `GET` | `/api/logs` | Paginated log entries for Log Explorer. PR 2 (post-7e) adds `until` (ISO datetime, upper bound — AND'd with `before` pagination cursor so the Custom time window doesn't collide with paging). | 7b ✅ |
 | `POST` | `/api/logs/search` | Semantic search over Chroma — body: query + filter clauses; returns LogEntry[] + scores | 7d ✅ |
 | `GET` | `/api/agitator/scenarios` | List available Agitator scenarios | PR 3 ✅ |

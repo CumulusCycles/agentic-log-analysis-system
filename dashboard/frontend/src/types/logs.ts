@@ -62,6 +62,23 @@ export interface StatusResponse {
 
 export type TimeWindow = "1h" | "24h" | "7d";
 
+// GET /api/status/history — per-app, per-bucket level counts for the Overview
+// trend charts. `ts` is the bucket-start (UTC ISO). One bucket per cell on the
+// per-card sparkline; oldest-first.
+export interface StatusHistoryBucket {
+  ts: string;
+  info: number;
+  warn: number;
+  error: number;
+}
+
+export interface StatusHistoryResponse {
+  as_of: string;
+  window: TimeWindow;
+  bucket_minutes: number;
+  apps: Record<AppName, StatusHistoryBucket[]>;
+}
+
 export interface LogsFilters {
   apps: AppName[];
   levels: LogLevel[];

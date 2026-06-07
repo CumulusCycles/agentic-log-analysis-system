@@ -318,6 +318,36 @@ class ProactiveFinding(BaseModel):
 StatusResponse.model_rebuild()
 
 
+# --- Phase 7+ post-Phase-7 polish: Overview trend charts (GET /api/status/history) ---
+
+
+StatusHistoryWindow = Literal["1h", "24h", "7d"]
+
+
+class StatusHistoryBucket(BaseModel):
+    """One time bucket of per-level counts for one app."""
+
+    ts: datetime  # bucket start (UTC, aligned to bucket boundary)
+    info: int = 0
+    warn: int = 0
+    error: int = 0
+
+
+class StatusHistoryResponse(BaseModel):
+    """Per-app, per-bucket level counts for the requested window.
+
+    `bucket_minutes` is fixed per window so the UI knows the bucket cadence
+    without having to re-derive it. `apps` is a dict keyed by app name —
+    same names as `StatusResponse.apps`. Each list is oldest-first
+    (suitable for direct rendering as a left-to-right time series).
+    """
+
+    as_of: datetime
+    window: StatusHistoryWindow
+    bucket_minutes: int
+    apps: dict[str, list[StatusHistoryBucket]]
+
+
 # --- Vectorstore Stats tab — GET /api/chroma/stats ---
 
 
