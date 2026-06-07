@@ -232,7 +232,7 @@ Internal claim handler app. Java 21 / Spring Boot 3 backend + React 18 / Vite / 
 | Host-side functional probes — `/actuator/health`, `/api/health`, `/api/auth/login` (`agent1`/`agent`), `/api/profile/me`, `/api/claims` (count=16), `/api/claims/{id}` (status history present); verify `caller=agent-portal` in SDA logs; `agent-portal-logs` volume populated with Logback lines | ✅ |
 | HTTP/2 trap fix — JDK `HttpClient` defaults to HTTP/2 cleartext upgrade; uvicorn rejects with "Unsupported upgrade request" → pin `HttpClient.Version.HTTP_1_1` in `SdaClientConfig` | ✅ |
 | Update `.claude/rules/apps.md` AP routes to `/api/*` prefix + add `GET /api/profile/me` | ✅ |
-| Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps tests → commit → push → PR | ⬜ |
+| Run `/ship`: pre-ship doc check → reviews → lint → build → all-apps tests → commit → push → PR | ✅ |
 
 ---
 
@@ -309,7 +309,7 @@ entry.
 | **7d** | Chroma + embeddings pipeline — vector-store-backed semantic search via `POST /api/logs/search`. WARN+ERROR / source=prod ingest filter, content-hash dedup, `DASHBOARD_INGEST_DRY_RUN` cost kill-switch, watcher + backfill respect both. | ✅ |
 | **7e-PR4a** | LangGraph agent (StateGraph: ingest → analyze → correlate → predict → respond) + `POST /api/chat` + AI Chat UI + safe-by-default dry-run + credential redaction + LangSmith metadata. Bundled cross-cutting fix: X-Source propagation across all 4 apps (`structlog.contextvars` in SDA/FNOL, `AsyncLocalStorage` in CP, SLF4J `MDC` in AP) + outbound HTTP-client forwarding (FNOL/CP/AP → SDA carry the inbound source) + parser default → `unknown` so propagation gaps are operator-visible. Resolves the corpus mislabeling where 100% of WARN entries were tagged `prod` regardless of true origin. | ✅ |
 | **7e-PR4b** | `GET /api/errors/{id}` + Error Detail UI; threads the agent into the Suggested Fix panel; SSE streaming on `/api/chat` (delete 422 branch, `graph.astream(stream_mode="updates")`, native fetch+ReadableStream on the client); content-hash IDs everywhere (`make_doc_id` swap in `parsers.py`); operator-facing level-count summary table printed after every OpenAI embed call. | ✅ |
-| **7e-PR4c** | Proactive background scan (every N minutes) — surfaces anomalies automatically | ⬜ |
+| **7e-PR4c** | Proactive background scan (every N minutes) — surfaces anomalies automatically (shipped as PR #39; full detail in the "Phase 7 — Agitator Sequence" PR 4c row below) | ✅ |
 
 ---
 

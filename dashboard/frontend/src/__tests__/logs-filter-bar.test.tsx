@@ -89,3 +89,31 @@ describe("LogsFilterBar — TimeWindowSelector integration", () => {
     expect(last.customSince).toBe("2026-06-01T08:00");
   });
 });
+
+describe("LogsFilterBar — search hint", () => {
+  it("shows the auto-search hint when the query input is empty", () => {
+    render(<LogsFilterBar value={baseFilters()} onChange={vi.fn()} />);
+
+    const hint = screen.getByTestId("filter-query-hint");
+    expect(hint).toHaveTextContent(/Auto-searches 300 ms after you stop typing/i);
+    expect(hint).toHaveTextContent(/no submit needed/i);
+  });
+
+  it("swaps to the semantic-search explainer when the query is non-empty", () => {
+    render(
+      <LogsFilterBar value={{ ...baseFilters(), query: "auth failures" }} onChange={vi.fn()} />,
+    );
+
+    const hint = screen.getByTestId("filter-query-hint");
+    expect(hint).toHaveTextContent(/Chroma vector store/i);
+    expect(hint).not.toHaveTextContent(/Auto-searches/i);
+  });
+
+  it("wires the input to the hint via aria-describedby for screen readers", () => {
+    render(<LogsFilterBar value={baseFilters()} onChange={vi.fn()} />);
+
+    const input = screen.getByTestId("filter-query");
+    const hint = screen.getByTestId("filter-query-hint");
+    expect(input.getAttribute("aria-describedby")).toBe(hint.id);
+  });
+});

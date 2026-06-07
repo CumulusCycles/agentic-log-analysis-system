@@ -147,6 +147,8 @@ export function AiChat() {
         <div ref={bottomRef} />
       </div>
 
+      {history.some((t) => t.dryRun) && <DryRunBanner />}
+
       {error && (
         <div
           role="alert"
@@ -178,6 +180,22 @@ export function AiChat() {
           {pending ? "Thinking…" : "Send"}
         </button>
       </form>
+    </div>
+  );
+}
+
+function DryRunBanner() {
+  return (
+    <div
+      role="status"
+      data-testid="dry-run-banner"
+      className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+    >
+      <strong>Dry-run mode.</strong> Answers are canned (no OpenAI calls, no spend). To enable real
+      LLM responses, set <code className="rounded bg-white px-1">DASHBOARD_LLM_DRY_RUN=false</code>{" "}
+      in <code className="rounded bg-white px-1">.env</code> and restart{" "}
+      <code className="rounded bg-white px-1">log-dashboard</code>. See ADR-015 for the
+      safe-by-default rationale.
     </div>
   );
 }
