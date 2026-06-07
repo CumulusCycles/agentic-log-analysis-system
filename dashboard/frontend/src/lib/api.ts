@@ -20,7 +20,7 @@ import type {
   StatusResponse,
   TimeWindow,
 } from "../types/logs";
-import type { ChromaStatsResponse } from "../types/vectorstore";
+import type { ChromaFlushResponse, ChromaStatsResponse } from "../types/vectorstore";
 
 const BASE_URL = import.meta.env.VITE_DASHBOARD_API_BASE_URL ?? "";
 
@@ -165,6 +165,10 @@ export async function getChromaStats(
   const qs = buildStatsQuery(filters);
   const path = qs ? `/api/chroma/stats?${qs}` : "/api/chroma/stats";
   return request<ChromaStatsResponse>(path, {}, token);
+}
+
+export async function flushChroma(token: string): Promise<ChromaFlushResponse> {
+  return request<ChromaFlushResponse>("/api/chroma/flush", { method: "POST" }, token);
 }
 
 // --- Phase 7e (PR 4b): SSE chat streaming ---

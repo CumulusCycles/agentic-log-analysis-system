@@ -22,3 +22,8 @@ export interface ChromaStatsResponse {
   dimensions: number;
   as_of: string; // ISO timestamp
 }
+
+export interface ChromaFlushResponse {
+  deleted_count: number;
+  as_of: string; // ISO timestamp
+}

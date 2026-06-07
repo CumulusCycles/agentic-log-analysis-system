@@ -22,7 +22,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from ..auth.jwt import get_current_admin
 from ..config import Settings, get_settings
 from ..logging_setup import get_logger
-from ..schemas import ChromaStatsResponse, DayCount, EventCount
+from ..schemas import ChromaFlushResponse, ChromaStatsResponse, DayCount, EventCount
 
 router = APIRouter(tags=["chroma-stats"])
 log = get_logger("chroma_stats")
@@ -133,6 +133,72 @@ async def get_chroma_stats(
         dimensions=_EMBEDDING_DIMENSIONS,
         as_of=now,
     )
+
+
+# Maximum IDs we'll feed to a single `_collection.delete(ids=...)` call.
+# Chroma accepts large lists but very-large payloads can stress the HTTP
+# client; batching keeps the per-request body bounded.
+_FLUSH_DELETE_BATCH_SIZE = 1000
+
+
+@router.post("/chroma/flush", response_model=ChromaFlushResponse)
+async def flush_chroma(
+    request: Request,
+    _: dict[str, Any] = Depends(get_current_admin),
+) -> ChromaFlushResponse:
+    """Delete every document in the Chroma collection.
+
+    Operator-driven. Used to reset the corpus before a fresh backfill or to
+    free vector storage after a problematic ingest run. Returns 503 when the
+    vectorstore is not configured.
+
+    After flush, the collection is empty but still exists with the same name
+    and embedding model — the langchain-chroma wrapper on `app.state.vectorstore`
+    keeps working. Re-populating requires `docker compose restart log-dashboard`;
+    the lifespan's backfill task only runs at startup.
+    """
+    store = getattr(request.app.state, "vectorstore", None)
+    if store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Vectorstore unavailable",
+        )
+
+    now = datetime.now(tz=UTC)
+    try:
+        # Pull every ID without metadata or embeddings — minimal payload.
+        rows = store._collection.get(include=[])  # noqa: SLF001
+    except Exception as exc:  # noqa: BLE001
+        log.warning("chroma_flush_get_failed", error_class=type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Vectorstore unavailable",
+        ) from exc
+
+    ids: list[str] = list(rows.get("ids") or [])
+    deleted = len(ids)
+
+    if deleted == 0:
+        log.info("chroma_flush_complete", deleted=0)
+        return ChromaFlushResponse(deleted_count=0, as_of=now)
+
+    try:
+        for i in range(0, deleted, _FLUSH_DELETE_BATCH_SIZE):
+            batch = ids[i : i + _FLUSH_DELETE_BATCH_SIZE]
+            store._collection.delete(ids=batch)  # noqa: SLF001
+    except Exception as exc:  # noqa: BLE001
+        log.warning(
+            "chroma_flush_delete_failed",
+            error_class=type(exc).__name__,
+            attempted=deleted,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Vectorstore unavailable",
+        ) from exc
+
+    log.info("chroma_flush_complete", deleted=deleted)
+    return ChromaFlushResponse(deleted_count=deleted, as_of=now)
 
 
 def _count_by_key(metadatas: list[dict[str, Any]], key: str) -> dict[str, int]:

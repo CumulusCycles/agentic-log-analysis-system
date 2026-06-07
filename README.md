@@ -333,6 +333,11 @@ after logging in to see what's actually embedded in Chroma:
 Backed by `GET /api/chroma/stats` — a single `_collection.get(include=["metadatas"])` call;
 no OpenAI traffic. 503 when the vectorstore is unavailable (placeholder `OPENAI_API_KEY`).
 
+A "Vectorstore maintenance" panel on the same screen exposes `POST /api/chroma/flush` for
+deleting every embedded document. The confirm dialog shows the current doc count + an
+estimated OpenAI cost to re-embed the same volume. After flush, run
+`docker compose restart log-dashboard` to trigger the startup backfill task and repopulate.
+
 ### Proactive Scan (PR 4c)
 
 The dashboard can scan the recent log corpus on a schedule and surface findings

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BarChart, type BarChartDatum } from "../components/BarChart";
 import { TimeWindowSelector } from "../components/TimeWindowSelector";
 import { usePolling } from "../hooks/use-polling";
-import { getChromaStats, HttpError } from "../lib/api";
+import { flushChroma, getChromaStats, HttpError } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { resolveTimeWindow, type TimeWindowPreset } from "../lib/time-window";
 import type { ChromaStatsResponse } from "../types/vectorstore";
@@ -72,6 +72,10 @@ export function VectorstoreStats() {
       isFirstRender.current = false;
       return;
     }
+    void refresh();
+  }, [refresh]);
+
+  const handleFlushed = useCallback(() => {
     void refresh();
   }, [refresh]);
 
@@ -148,6 +152,8 @@ export function VectorstoreStats() {
         <SummaryCard label="Vector dimensions" value={data.dimensions.toLocaleString()} />
       </div>
 
+      <FlushPanel totalCount={data.total_count} onFlushed={handleFlushed} />
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Section title="By app" hint="Embedded documents per source app">
           <BarChart data={byApp} accent="blue" ariaLabel="By app" emptyHint="No app data." />
@@ -194,6 +200,155 @@ export function VectorstoreStats() {
         <BarChart data={byDay} accent="slate" ariaLabel="By day" emptyHint="No day data." />
       </div>
     </section>
+  );
+}
+
+// text-embedding-3-small list price (2026-Q1) — keeps the UI estimate consistent
+// with the backend's _OPENAI_EMBEDDING_USD_PER_TOKEN constant. The 80
+// tokens-per-doc figure is an order-of-magnitude approximation calibrated
+// against this project's typical structured log line; it's labelled as
+// approximate in the UI so the operator doesn't mistake it for an invoice.
+const ESTIMATED_TOKENS_PER_DOC = 80;
+const USD_PER_TOKEN = 0.02 / 1_000_000;
+
+function estimateRefillCost(totalCount: number): string {
+  const usd = totalCount * ESTIMATED_TOKENS_PER_DOC * USD_PER_TOKEN;
+  if (usd === 0) return "$0.00";
+  if (usd < 0.01) return "less than $0.01";
+  return `~$${usd.toFixed(2)}`;
+}
+
+interface FlushPanelProps {
+  totalCount: number;
+  onFlushed: () => void;
+}
+
+function FlushPanel({ totalCount, onFlushed }: FlushPanelProps) {
+  const { token, logout } = useAuth();
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<{ deleted: number; at: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refillEstimate = useMemo(() => estimateRefillCost(totalCount), [totalCount]);
+
+  const performFlush = useCallback(async () => {
+    if (!token) return;
+    setPending(true);
+    setError(null);
+    try {
+      const response = await flushChroma(token);
+      setResult({ deleted: response.deleted_count, at: response.as_of });
+      setConfirming(false);
+      onFlushed();
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 401) {
+        logout();
+        return;
+      }
+      if (err instanceof HttpError) {
+        setError(`flush failed (${err.status})`);
+      } else {
+        setError("flush failed");
+      }
+    } finally {
+      setPending(false);
+    }
+  }, [token, logout, onFlushed]);
+
+  return (
+    <div
+      className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-sm"
+      data-testid="flush-panel"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="text-sm">
+          <h3 className="font-semibold text-amber-900">Vectorstore maintenance</h3>
+          <p className="mt-1 text-amber-800">
+            Delete every embedded document. The collection is preserved (same name + embedding
+            model) — only the docs are removed.
+          </p>
+        </div>
+        {!confirming && (
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setResult(null);
+              setConfirming(true);
+            }}
+            disabled={pending || totalCount === 0}
+            className="shrink-0 rounded-md border border-amber-300 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="flush-button"
+          >
+            Flush vectorstore…
+          </button>
+        )}
+      </div>
+
+      {confirming && (
+        <div
+          className="mt-3 rounded-md border border-rose-300 bg-white p-3 text-sm text-slate-800"
+          data-testid="flush-confirm"
+          role="alertdialog"
+          aria-labelledby="flush-confirm-title"
+        >
+          <p id="flush-confirm-title" className="font-semibold text-rose-900">
+            Delete all {totalCount.toLocaleString()} embedded documents?
+          </p>
+          <p className="mt-1 text-slate-700">
+            Re-embedding from the log volumes is estimated at <strong>{refillEstimate}</strong> in
+            OpenAI charges (~
+            {ESTIMATED_TOKENS_PER_DOC} tokens per doc × text-embedding-3-small list price). Backfill
+            runs at startup only — to repopulate, run{" "}
+            <code className="rounded bg-slate-100 px-1">docker compose restart log-dashboard</code>{" "}
+            after the flush completes.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={performFlush}
+              disabled={pending}
+              className="rounded-md bg-rose-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+              data-testid="flush-confirm-button"
+            >
+              {pending ? "Flushing…" : "Yes, delete everything"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirming(false)}
+              disabled={pending}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed"
+              data-testid="flush-cancel-button"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {result && !confirming && (
+        <p
+          className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800"
+          role="status"
+          data-testid="flush-result"
+        >
+          Deleted {result.deleted.toLocaleString()} document
+          {result.deleted === 1 ? "" : "s"}. To repopulate, restart the dashboard:{" "}
+          <code className="rounded bg-white px-1">docker compose restart log-dashboard</code>
+        </p>
+      )}
+
+      {error && (
+        <p
+          className="mt-3 rounded-md border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800"
+          role="alert"
+          data-testid="flush-error"
+        >
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

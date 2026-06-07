@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -158,5 +158,117 @@ describe("VectorstoreStats", () => {
     renderPage();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/stats request failed/);
+  });
+});
+
+describe("VectorstoreStats — flush panel", () => {
+  it("disables the flush button when the corpus is empty", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(EMPTY), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+
+    const btn = await screen.findByTestId("flush-button");
+    expect(btn).toBeDisabled();
+  });
+
+  it("shows the confirmation dialog with cost estimate when Flush is clicked", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(POPULATED), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+    const btn = await screen.findByTestId("flush-button");
+    fireEvent.click(btn);
+
+    const dialog = await screen.findByTestId("flush-confirm");
+    expect(dialog).toHaveTextContent(/Delete all 445 embedded documents/);
+    // 445 docs × 80 tokens × $0.02/1M ≈ $0.000712 → "less than $0.01"
+    expect(dialog).toHaveTextContent(/less than \$0\.01/);
+    expect(dialog).toHaveTextContent(/docker compose restart log-dashboard/);
+  });
+
+  it("cancels back to the panel when Cancel is clicked", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(POPULATED), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+    fireEvent.click(await screen.findByTestId("flush-button"));
+    fireEvent.click(await screen.findByTestId("flush-cancel-button"));
+
+    expect(screen.queryByTestId("flush-confirm")).not.toBeInTheDocument();
+    expect(screen.getByTestId("flush-button")).toBeEnabled();
+  });
+
+  it("posts to /api/chroma/flush and shows a result banner on success", async () => {
+    let postCalls = 0;
+    const fetchSpy = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && String(url).includes("/api/chroma/flush")) {
+        postCalls += 1;
+        return Promise.resolve(
+          new Response(JSON.stringify({ deleted_count: 445, as_of: "2026-06-07T00:00:00Z" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(POPULATED), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+    fireEvent.click(await screen.findByTestId("flush-button"));
+    fireEvent.click(await screen.findByTestId("flush-confirm-button"));
+
+    const result = await screen.findByTestId("flush-result");
+    expect(result).toHaveTextContent(/Deleted 445 documents/);
+    expect(result).toHaveTextContent(/docker compose restart log-dashboard/);
+    expect(postCalls).toBe(1);
+  });
+
+  it("renders an error banner when the flush call fails", async () => {
+    const fetchSpy = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (init?.method === "POST" && String(url).includes("/api/chroma/flush")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ detail: "Vectorstore unavailable" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(POPULATED), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderPage();
+    fireEvent.click(await screen.findByTestId("flush-button"));
+    fireEvent.click(await screen.findByTestId("flush-confirm-button"));
+
+    const banner = await screen.findByTestId("flush-error");
+    expect(banner).toHaveTextContent(/flush failed \(503\)/);
   });
 });

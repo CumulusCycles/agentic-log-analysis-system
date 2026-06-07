@@ -385,3 +385,18 @@ class ChromaStatsResponse(BaseModel):
     embedding_model: str
     dimensions: int
     as_of: datetime
+
+
+class ChromaFlushResponse(BaseModel):
+    """Result of POST /api/chroma/flush — wipes every doc in the collection.
+
+    `deleted_count` is the doc count observed BEFORE the delete call. The
+    operator-facing UI uses this to confirm "yes, N rows are gone." After
+    flush, the collection still exists with the same name + embedding model;
+    only the docs are gone (matches `chromadb` semantics). Repopulating
+    requires `docker compose restart log-dashboard` — the lifespan's
+    backfill task only runs at startup.
+    """
+
+    deleted_count: int
+    as_of: datetime
