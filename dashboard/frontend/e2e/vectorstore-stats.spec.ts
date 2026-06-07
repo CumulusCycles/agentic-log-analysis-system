@@ -40,7 +40,7 @@ test.describe("Vectorstore Stats tab", () => {
     test(`renders summary cards + charts on ${viewport.name}`, async ({ loggedInPage: page }) => {
       await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
-      await page.route("**/api/chroma/stats", async (route) => {
+      await page.route(/\/api\/chroma\/stats/, async (route) => {
         await route.fulfill({
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -57,16 +57,18 @@ test.describe("Vectorstore Stats tab", () => {
       await expect(page.getByText("Total embedded documents")).toBeVisible();
       await expect(page.getByText("text-embedding-3-small")).toBeVisible();
 
-      // All five section headings.
+      // All five section headings. Default window is 7d.
       await expect(page.getByText("By app")).toBeVisible();
       await expect(page.getByText("By level")).toBeVisible();
       await expect(page.getByText("By source")).toBeVisible();
       await expect(page.getByText("Top events")).toBeVisible();
-      await expect(page.getByText("By day (last 30 days)")).toBeVisible();
+      await expect(page.getByText("By day (last 7 days)")).toBeVisible();
 
-      // Sample data points from each section.
+      // Sample data points from each section. Use exact-match on the
+      // by_level bar so the "Only WARN + ERROR pass the ingest gate" hint
+      // text doesn't collide with the bar label under strict mode.
       await expect(page.getByText("fnol")).toBeVisible();
-      await expect(page.getByText("WARN")).toBeVisible();
+      await expect(page.getByText("WARN", { exact: true })).toBeVisible();
       await expect(page.getByText("synthetic")).toBeVisible();
       await expect(page.getByText("chaos_honored")).toBeVisible();
 
@@ -78,7 +80,7 @@ test.describe("Vectorstore Stats tab", () => {
   test("renders the 503 unavailable banner when /api/chroma/stats returns 503", async ({
     loggedInPage: page,
   }) => {
-    await page.route("**/api/chroma/stats", async (route) => {
+    await page.route(/\/api\/chroma\/stats/, async (route) => {
       await route.fulfill({
         status: 503,
         headers: { "Content-Type": "application/json" },
@@ -88,5 +90,34 @@ test.describe("Vectorstore Stats tab", () => {
 
     await page.goto("/vectorstore-stats");
     await expect(page.getByRole("alert")).toContainText("Vectorstore is unavailable");
+  });
+
+  test("switching the By Day window sends since on the next /api/chroma/stats request", async ({
+    loggedInPage: page,
+  }) => {
+    let firstQuery: string | null = null;
+    let secondQuery: string | null = null;
+    let callCount = 0;
+    await page.route(/\/api\/chroma\/stats/, async (route, request) => {
+      callCount += 1;
+      if (callCount === 1) firstQuery = new URL(request.url()).search;
+      if (callCount === 2) secondQuery = new URL(request.url()).search;
+      await route.fulfill({
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(STUBBED_STATS),
+      });
+    });
+
+    await page.goto("/vectorstore-stats");
+    await expect(page.getByText("By day (last 7 days)")).toBeVisible();
+
+    // The default 7d preset resolves a `since` on first request.
+    expect(firstQuery).toContain("since=");
+
+    await page.getByTestId("stats-window-1h").check();
+    await expect.poll(() => secondQuery).not.toBeNull();
+    // 1h preset still carries since; the value is more recent than 7d.
+    expect(secondQuery!).toContain("since=");
   });
 });

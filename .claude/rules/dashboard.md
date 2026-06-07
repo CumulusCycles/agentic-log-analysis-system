@@ -90,7 +90,7 @@ Routes land incrementally:
 | `POST` | `/api/auth/login` | Admin login → JWT (standalone, independent of SDA) | 7a ✅ |
 | `GET` | `/api/auth/me` | Current admin from JWT | 7a ✅ |
 | `GET` | `/api/status` | Per-app status cards for Overview Dashboard | 7b ✅ |
-| `GET` | `/api/logs` | Paginated log entries for Log Explorer | 7b ✅ |
+| `GET` | `/api/logs` | Paginated log entries for Log Explorer. PR 2 (post-7e) adds `until` (ISO datetime, upper bound — AND'd with `before` pagination cursor so the Custom time window doesn't collide with paging). | 7b ✅ |
 | `POST` | `/api/logs/search` | Semantic search over Chroma — body: query + filter clauses; returns LogEntry[] + scores | 7d ✅ |
 | `GET` | `/api/agitator/scenarios` | List available Agitator scenarios | PR 3 ✅ |
 | `GET` | `/api/agitator/env` | Report `ENABLE_CHAOS` so the UI can gate chaos-only cards | PR 3 ✅ |
@@ -100,7 +100,7 @@ Routes land incrementally:
 | `POST` | `/api/agitator/runs/{run_id}/cancel` | Cancel an in-flight run | PR 3 ✅ |
 | `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response. `streaming: true` upgrades the response to SSE: one `event: node` per agent node, terminating `event: complete` mirrors the JSON `ChatResponse` shape. Pre-flight rejections (401 / 413 / 503) still return JSON. | 7e (PR 4a + 4b SSE) ✅ |
 | `GET` | `/api/errors/{id}` | Full error detail + LangGraph "Suggested Fix". JWT-gated. ID shape: `{app}:{sha1(raw)[:16]}` (same as Chroma doc ID). 400 on malformed ID; 404 when the entry isn't in Chroma (only WARN+ERROR pass the ingest gate); 503 when OPENAI_API_KEY is the placeholder. | 7e (PR 4b) ✅ |
-| `GET` | `/api/chroma/stats` | Aggregated stats over the Chroma collection — total count, by_app, by_level, by_source, by_event (top 10), by_day (last 30 days). Single `_collection.get(include=["metadatas"])` call; no OpenAI. 503 when vectorstore unavailable. Backs the Vectorstore Stats tab. | post-7e ✅ |
+| `GET` | `/api/chroma/stats` | Aggregated stats over the Chroma collection — total count, by_app, by_level, by_source, by_event (top 10), by_day. Single `_collection.get(include=["metadatas"])` call; no OpenAI. 503 when vectorstore unavailable. PR 2 (post-7e) adds optional `since` + `until` that scope ONLY the `by_day` aggregation (whole-corpus rollups stay unscoped — operator's mental model). Default by-day window is 30 days when neither is provided; UI defaults to 7d. Backs the Vectorstore Stats tab. | post-7e ✅ |
 
 Swagger UI (`/docs`, `/redoc`, `/openapi.json`) is exposed — the dashboard's
 audience is the admin/operator, and Swagger is a strict diagnostic win.

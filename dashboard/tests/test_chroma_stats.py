@@ -219,3 +219,111 @@ async def test_stats_by_day_excludes_entries_older_than_30_days(
     assert body["total_count"] == 2
     by_day_total = sum(row["count"] for row in body["by_day"])
     assert by_day_total == 1
+
+
+# --- PR 2: since+until scoping for by_day ---
+
+
+async def test_stats_since_scopes_by_day_only(
+    app_instance, client, valid_token, fake_vectorstore, stats_url
+) -> None:
+    """`since` narrows the by_day window without touching other buckets.
+
+    Three entries: today, 3 days ago, 10 days ago. `since` = 5 days ago.
+    Expect by_day to include only the first two; by_app should still show
+    all 3 (whole-corpus rollup is unscoped — operator's mental model).
+    """
+    now = datetime.now(tz=UTC)
+    entries = [
+        _entry(app="fnol", level=LogLevel.WARN, event="a", timestamp=now, raw_suffix="t1"),
+        _entry(
+            app="fnol",
+            level=LogLevel.WARN,
+            event="a",
+            timestamp=now - timedelta(days=3),
+            raw_suffix="t2",
+        ),
+        _entry(
+            app="fnol",
+            level=LogLevel.WARN,
+            event="a",
+            timestamp=now - timedelta(days=10),
+            raw_suffix="t3",
+        ),
+    ]
+    upsert_entries(fake_vectorstore, entries)
+    app_instance.state.vectorstore = fake_vectorstore
+
+    since_iso = (now - timedelta(days=5)).isoformat()
+    response = await client.get(
+        stats_url,
+        params={"since": since_iso},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    # Whole-corpus rollups stay unscoped.
+    assert body["total_count"] == 3
+    assert body["by_app"] == {"fnol": 3}
+    # by_day window starts at `since`, ends at `now` — exactly 2 hits.
+    by_day_total = sum(row["count"] for row in body["by_day"])
+    assert by_day_total == 2
+
+
+async def test_stats_until_scopes_by_day_only(
+    app_instance, client, valid_token, fake_vectorstore, stats_url
+) -> None:
+    """`until` excludes entries at-or-after the cutoff from by_day."""
+    now = datetime.now(tz=UTC)
+    entries = [
+        _entry(app="fnol", level=LogLevel.WARN, event="a", timestamp=now, raw_suffix="t1"),
+        _entry(
+            app="fnol",
+            level=LogLevel.WARN,
+            event="a",
+            timestamp=now - timedelta(days=2),
+            raw_suffix="t2",
+        ),
+    ]
+    upsert_entries(fake_vectorstore, entries)
+    app_instance.state.vectorstore = fake_vectorstore
+
+    # `until` 1 day ago excludes today's entry; the 2-day-old one remains.
+    until_iso = (now - timedelta(days=1)).isoformat()
+    response = await client.get(
+        stats_url,
+        params={"until": until_iso},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    by_day_total = sum(row["count"] for row in body["by_day"])
+    assert by_day_total == 1
+    # Other buckets unaffected.
+    assert body["total_count"] == 2
+
+
+async def test_stats_inverted_range_returns_empty_by_day(
+    app_instance, client, valid_token, fake_vectorstore, stats_url
+) -> None:
+    """`until <= since` returns an empty by_day series — surfaces the misconfig."""
+    now = datetime.now(tz=UTC)
+    entries = [
+        _entry(app="fnol", level=LogLevel.WARN, event="a", timestamp=now, raw_suffix="t1"),
+    ]
+    upsert_entries(fake_vectorstore, entries)
+    app_instance.state.vectorstore = fake_vectorstore
+
+    since_iso = now.isoformat()
+    until_iso = (now - timedelta(days=1)).isoformat()
+    response = await client.get(
+        stats_url,
+        params={"since": since_iso, "until": until_iso},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["by_day"] == []
+    # Other buckets still populated — the inverted range only affects by_day.
+    assert body["total_count"] == 1
+    assert body["by_app"] == {"fnol": 1}

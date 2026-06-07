@@ -86,7 +86,7 @@ describe("VectorstoreStats", () => {
     expect(screen.getByText("By level")).toBeInTheDocument();
     expect(screen.getByText("By source")).toBeInTheDocument();
     expect(screen.getByText("Top events")).toBeInTheDocument();
-    expect(screen.getByText("By day (last 30 days)")).toBeInTheDocument();
+    expect(screen.getByText("By day (last 7 days)")).toBeInTheDocument();
     // At least one bar from each section.
     expect(screen.getByText("fnol")).toBeInTheDocument();
     expect(screen.getByText("WARN")).toBeInTheDocument();

@@ -55,11 +55,23 @@ async def get_logs(
     ] = None,
     before: Annotated[
         datetime | None,
-        Query(description="Return entries with timestamp strictly < this value."),
+        Query(
+            description="Pagination cursor — return entries with timestamp strictly < this value."
+        ),
     ] = None,
     since: Annotated[
         datetime | None,
         Query(description="Return entries with timestamp >= this value."),
+    ] = None,
+    until: Annotated[
+        datetime | None,
+        Query(
+            description=(
+                "Upper bound for a custom time window — return entries with timestamp "
+                "strictly < this value. AND'd with `before` so pagination and the "
+                "time-window filter stay orthogonal."
+            ),
+        ),
     ] = None,
     limit: Annotated[int | None, Query(ge=1, description="Max entries to return.")] = None,
     _: dict[str, Any] = Depends(get_current_admin),
@@ -92,6 +104,8 @@ async def get_logs(
             if levels_filter and entry.level not in levels_filter:
                 continue
             if before is not None and entry.timestamp >= before:
+                continue
+            if until is not None and entry.timestamp >= until:
                 continue
             if since is not None and entry.timestamp < since:
                 continue
