@@ -44,9 +44,10 @@ ADR-013 (chaos `chaos_honored` level split by status class).
 | [ADR-012](ADR-012-consolidate-ci-workflows.md) | Accepted | Single `ci.yml` with `dorny/paths-filter@v3` conditional per-app jobs — supersedes ADR-009 |
 | [ADR-013](ADR-013-chaos-middleware.md) | Accepted (amended 2026-06-06) | `X-Chaos: slow:<ms>` / `error:<status>` failure simulator on SDA/FNOL/CP/AP gated by `ENABLE_CHAOS`. `chaos_honored` level varies by status (5xx → ERROR) |
 | [ADR-014](ADR-014-agitator-bundled-into-dashboard.md) | Accepted | Agitator load generator bundled into dashboard — operator-button-only bounded scenarios, `X-Source: synthetic` |
-| [ADR-015](ADR-015-langgraph-agent.md) | Accepted | LangGraph agent for the AI Chat slice (Phase 7e PR 4a) — 5-node StateGraph, safe-by-default dry-run, credential redaction |
-| [ADR-016](ADR-016-proactive-scan.md) | Accepted | Background proactive scan loop (Phase 7e PR 4c) — closes Phase 7. Opt-in chain (`DRY_RUN=false` AND `SCAN_ENABLED=true`) |
+| [ADR-015](ADR-015-langgraph-agent.md) | Accepted (amended 2026-06-08) | LangGraph agent for the AI Chat slice (Phase 7e PR 4a) — 5-node StateGraph, credential redaction. §5 cost-asymmetry rationale amended by ADR-017 |
+| [ADR-016](ADR-016-proactive-scan.md) | Accepted (amended 2026-06-08) | Background proactive scan loop (Phase 7e PR 4c) — closes Phase 7. Opt-in chain preserved; cost matrix amended by ADR-017 |
+| [ADR-017](ADR-017-local-ai-via-ollama.md) | Accepted | Local AI via Ollama replaces OpenAI for embeddings + LLM (Phase 8). Removes cost-driven ingest level gate; agent gains baseline awareness via full-corpus RAG |
 
 ## Reading order for newcomers
 
-To understand the system as it stands today, read in this order: **001 → 002 → 005 → 006 → 003 → 010 → 011 → 012 → 013 → 014 → 015 → 016**. ADRs 004, 007, 008, 009 are historical context (superseded or follow-up-complete).
+To understand the system as it stands today, read in this order: **001 → 002 → 005 → 006 → 003 → 010 → 011 → 012 → 013 → 014 → 015 → 016 → 017**. ADRs 004, 007, 008, 009 are historical context (superseded or follow-up-complete).

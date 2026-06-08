@@ -219,9 +219,9 @@
 <body>
 
 <div class="page-header">
-  <div class="label">Log Flow</div>
+  <div class="label">Log Flow · Phase 8 (ADR-017)</div>
   <h1>FNOL claim submit → dashboard</h1>
-  <p>End-to-end path of a single log line · operator + AI surfaces</p>
+  <p>End-to-end path of a single log line · operator + AI surfaces · local Ollama AI</p>
 </div>
 
 <div class="nav">
@@ -353,7 +353,7 @@
         <div class="num">8a</div>
         <div>
           <h3>UI rendering</h3>
-          <p>React tables and rollup cards. No OpenAI involvement, no spend, no filtering. The human path is the source of truth for "did this log line exist."</p>
+          <p>React tables and rollup cards. No LLM inference, no Chroma read, no filtering. The human path is the source of truth for "did this log line exist."</p>
         </div>
       </div>
 
@@ -396,10 +396,10 @@
         <div class="num">9</div>
         <div>
           <h3>3-knob ingest gate (two seams, both before any embed call)</h3>
-          <p>&nbsp;&nbsp;• <code>DASHBOARD_INGEST_LEVELS</code> — default <code>WARN,ERROR</code> — checked in <code>filter_for_ingest</code><br>
+          <p>&nbsp;&nbsp;• <code>DASHBOARD_INGEST_LEVELS</code> — default <code>DEBUG,INFO,WARN,ERROR</code> (Phase 8 / <a href="../decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a> — full corpus; was <code>WARN,ERROR</code> Phase 7 cost-driven) — checked in <code>filter_for_ingest</code><br>
              &nbsp;&nbsp;• <code>DASHBOARD_INGEST_SOURCES</code> — default <strong><code>prod,synthetic,unknown</code></strong> — same <code>filter_for_ingest</code><br>
-             &nbsp;&nbsp;• <code>DASHBOARD_INGEST_DRY_RUN</code> — default <code>false</code> — checked on <code>upsert_entries(..., dry_run=...)</code> which short-circuits before any Chroma read or OpenAI call</p>
-          <p>A successful claim submission (INFO) is dropped by <code>filter_for_ingest</code> — never embedded, never costs a token. An SDA upstream rejection (WARN with <code>source=prod</code>) passes; a propagation-gap WARN (<code>source=unknown</code>) also passes — the operator can see drift in the corpus.</p>
+             &nbsp;&nbsp;• <code>DASHBOARD_INGEST_DRY_RUN</code> — default <code>false</code> — checked on <code>upsert_entries(..., dry_run=...)</code> which short-circuits before any Chroma read or embedding call</p>
+          <p>Post-Phase-8, every level enters Chroma so the agent has baseline INFO data to anchor against. A successful claim submission (INFO) is now embedded — the agent uses it to learn what "normal" looks like. The source filter still drops Playwright <code>test</code> and parser-derived <code>health</code> traffic (signal-quality, not cost).</p>
           <div class="refs">
             <span class="ref">embeddings.py: filter_for_ingest</span>
             <span class="ref">vectorstore.py: upsert_entries</span>
@@ -413,8 +413,8 @@
       <div class="step ai">
         <div class="num">10</div>
         <div>
-          <h3>Dedup → OpenAI → Chroma</h3>
-          <p>For surviving entries, <code>upsert_entries</code> queries Chroma for <code>fnol:{sha1(raw)[:16]}</code> IDs (content-hash, single SQL-shape <code>_collection.get(ids=..., include=[])</code>). New ones go to OpenAI <code>text-embedding-3-small</code> as a batch; the vectors land in the <code>dashboard-logs</code> collection in the <code>chroma-data</code> volume. Same line twice = same content hash = single row.</p>
+          <h3>Dedup → Ollama → Chroma</h3>
+          <p>For surviving entries, <code>upsert_entries</code> queries Chroma for <code>{app}:{sha1(raw)[:16]}</code> IDs (content-hash, single SQL-shape <code>_collection.get(ids=..., include=[])</code>). New ones go to local Ollama <code>nomic-embed-text</code> as a batch — 768-dim vectors (Phase 8 / <a href="../decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a>; replaces OpenAI <code>text-embedding-3-small</code> 1536-dim). The vectors land in the <code>dashboard-logs</code> collection in the <code>chroma-data</code> volume. Same line twice = same content hash = single row.</p>
           <div class="refs">
             <span class="ref">ingest/vectorstore.py</span>
             <span class="ref">collection: dashboard-logs</span>

@@ -18,11 +18,13 @@
 | Agent state schema | `langgraph.graph.MessagesState` extended with custom keys |
 | Agent checkpointer (PR 4a) | `langgraph.checkpoint.memory.InMemorySaver` — process-local, restart-lossy by design (ADR-015) |
 | Tool dispatch (PR 4a) | Manual — no `langgraph.prebuilt.ToolNode` (see ADR-015 §3) |
-| LLM (analysis) | OpenAI `gpt-4o` (real) / `dashboard.agent.llm._DryRunChatModel` (dry-run) |
-| Embeddings | OpenAI `text-embedding-3-small` |
-| Vector store | Chroma (persistent) |
-| Token counting (cost cap) | `tiktoken` against `gpt-4o`'s `o200k_base` encoding |
-| Observability | LangSmith — per-invocation metadata: `{session_id, jwt_sub, dry_run}` |
+| LLM (analysis) | **Ollama `llama3.1:8b`** (local, free — Phase 8 / ADR-017; replaces OpenAI `gpt-4o`) / `dashboard.agent.llm._DryRunChatModel` (dry-run; provider-agnostic) |
+| Embeddings | **Ollama `nomic-embed-text`** (768-dim, local, free — Phase 8 / ADR-017; replaces OpenAI `text-embedding-3-small` 1536-dim) |
+| Vector store | Chroma (persistent) — Phase 8 wipes + re-embeds (dim mismatch 1536 → 768) |
+| Input-token cap | `len(text) // 4` character-count heuristic (Phase 8 / ADR-017; replaces `tiktoken o200k_base` — heuristic is a safety bound, not a billing meter) |
+| Observability | LangSmith — per-invocation metadata: `{session_id, jwt_sub, dry_run}` (provider-agnostic; traces `ChatOllama` the same way it traced `ChatOpenAI`) |
+
+*Phase 8 implementation lands in PR 8b. See [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md).*
 
 ## Auth & Security
 

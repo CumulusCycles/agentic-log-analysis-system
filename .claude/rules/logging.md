@@ -33,7 +33,7 @@ The LangGraph agent handles heterogeneous formats. See docs/decisions/ADR-003-lo
    - API keys (`SHARED_DATA_API_KEY_*`)
    - Bearer tokens, full JWTs, or any token segment
    - DB credentials (`POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_PASSWORD`, full connection strings with `user:pass@host`)
-   - LLM API keys (`OPENAI_API_KEY`, `LANGSMITH_API_KEY`)
+   - LLM API keys (`OPENAI_API_KEY` — removed in PR 8b per ADR-017 Phase 8 / Ollama migration; `LANGSMITH_API_KEY` — stays)
    - Admin credentials (`DASHBOARD_ADMIN_PASSWORD`)
    - **Any other value defined in `.env` or `.env.example` that maps to a real secret**
 

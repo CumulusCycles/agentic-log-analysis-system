@@ -8,7 +8,10 @@ Design rationale lives in the ADRs cross-linked below
 ([ADR-013](../decisions/ADR-013-chaos-middleware.md),
 [ADR-014](../decisions/ADR-014-agitator-bundled-into-dashboard.md),
 [ADR-015](../decisions/ADR-015-langgraph-agent.md),
-[ADR-016](../decisions/ADR-016-proactive-scan.md)).
+[ADR-016](../decisions/ADR-016-proactive-scan.md),
+[ADR-017](../decisions/ADR-017-local-ai-via-ollama.md)).
+
+> **Phase 8 status (this PR is 8a — docs only):** [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md) replaces OpenAI with locally-run Ollama in PR 8b. After PR 8b ships, the embed-summary "tokens + USD" cost table becomes "tokens + wall_ms" (local inference is free), the ingest level gate is removed (full-corpus embedding), and the `DASHBOARD_LLM_DRY_RUN` runtime default flips to `false`. Until PR 8b merges, the operational reality below — OpenAI cost tracking, WARN+ERROR-only Chroma corpus, dry-run-true default — describes the live system. PR 8b will rewrite this guide for the post-Phase-8 reality.
 
 > **How a log line travels from an app to the dashboard:**
 > see [`docs/architecture/log-flow.md`](../architecture/log-flow.md) (or

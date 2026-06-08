@@ -5,6 +5,8 @@ to the dashboard's two reading surfaces — the unfiltered operator view and the
 
 For a visual rendering of the same flow, open [`log-flow.html`](log-flow.html) in a browser (HTML/CSS, not GitHub-rendered).
 
+> **Phase 8 / [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md):** the embed step (10) and the level-gate row in (9) describe the post-Phase-8 design — local Ollama embeddings + full-corpus ingest. *Phase 8 implementation lands in PR 8b.*
+
 ---
 
 ## The 10 steps
@@ -88,30 +90,30 @@ Step 3 is the [ADR-011 amendment](../decisions/ADR-011-x-source-header-conventio
 
 ### 9. 3-knob ingest gate
 
-The gate runs in two seams, both BEFORE any OpenAI embed call:
+The gate runs in two seams, both BEFORE any embedding call:
 
 | Knob | Default | Where it's checked |
 |---|---|---|
-| `DASHBOARD_INGEST_LEVELS` | `WARN,ERROR` | `filter_for_ingest(entries, *, levels, sources)` keeps iff `entry.level in levels` |
+| `DASHBOARD_INGEST_LEVELS` | `DEBUG,INFO,WARN,ERROR` (Phase 8 / ADR-017 — full corpus; was `WARN,ERROR` Phase 7 cost-driven) | `filter_for_ingest(entries, *, levels, sources)` keeps iff `entry.level in levels` |
 | `DASHBOARD_INGEST_SOURCES` | **`prod,synthetic,unknown`** | Same `filter_for_ingest` — keeps iff `entry.source in sources` |
-| `DASHBOARD_INGEST_DRY_RUN` | `false` | `upsert_entries(..., dry_run=...)` short-circuits at `if not entries or dry_run` before any Chroma read or OpenAI call |
+| `DASHBOARD_INGEST_DRY_RUN` | `false` | `upsert_entries(..., dry_run=...)` short-circuits at `if not entries or dry_run` before any Chroma read or embedding call |
 
-A successful claim submission (INFO) is dropped by `filter_for_ingest` — never embedded, zero token cost. An SDA upstream rejection (WARN, `source=prod`) passes. A propagation-gap WARN (`source=unknown`) also passes — the operator can see drift in the corpus.
+Post-Phase-8, the level gate admits every level so the agent has baseline data to anchor against. A successful claim submission (INFO) is now kept and embedded — the agent uses it to learn what "normal" looks like. The source filter still drops Playwright `test` and parser-derived `health` traffic (signal-quality, not cost).
 
 > **Code:** `dashboard/src/log_dashboard/ingest/embeddings.py:filter_for_ingest`; `dashboard/src/log_dashboard/ingest/vectorstore.py:upsert_entries`; `dashboard/src/log_dashboard/config.py`; `.env.example`
 
-### 10. Dedup → OpenAI → Chroma
+### 10. Dedup → Ollama → Chroma
 
-For surviving entries, `upsert_entries` queries Chroma for `fnol:{sha1(raw)[:16]}` IDs (content-hash). Two cheap calls in the path:
+For surviving entries, `upsert_entries` queries Chroma for `{app}:{sha1(raw)[:16]}` IDs (content-hash). Two calls in the path:
 
 - `_collection.get(ids=[...], include=[])` — existence check, no payload returned
-- For genuinely new IDs only: OpenAI `text-embedding-3-small` batch call → vectors
+- For genuinely new IDs only: local Ollama `nomic-embed-text` batch call → 768-dim vectors (Phase 8 / ADR-017; replaces OpenAI `text-embedding-3-small` 1536-dim)
 
-The vectors land in the `dashboard-logs` collection in the `chroma-data` volume. Same line twice = same content hash = single Chroma row. After the embed, an embedding-summary table prints to stdout (operator-visible cost tracking).
+The vectors land in the `dashboard-logs` collection in the `chroma-data` volume. Same line twice = same content hash = single Chroma row. After the embed, an embedding-summary table prints to stdout (per-batch tokens + wall-time; no USD post-Phase-8).
 
 > **Code:** `dashboard/src/log_dashboard/ingest/vectorstore.py`
 > **Collection default:** `dashboard-logs` (`config.py:chroma_collection`)
-> **Cost tracking:** see [`docs/operations/dashboard-guide.md`](../operations/dashboard-guide.md) §Reading the embed-summary table
+> **Embed-summary table:** see [`docs/operations/dashboard-guide.md`](../operations/dashboard-guide.md) §Reading the embed-summary table
 
 ### 11. Agent surfaces
 
@@ -121,7 +123,7 @@ Chroma is the corpus for:
 - `GET /api/errors/{id}` — Error Detail + Suggested Fix (single agent run per click)
 - `POST /api/chat` — AI Chat LangGraph StateGraph
 - Proactive scan loop — opt-in, every 15 min by default
-- `GET /api/chroma/stats` — Vectorstore Stats screen (aggregate counts, no OpenAI)
+- `GET /api/chroma/stats` — Vectorstore Stats screen (aggregate counts, no LLM inference)
 
 Two independent reading paths over the same source bytes — the human path (`/api/logs`, unfiltered) and the AI path (Chroma, filtered + deduped).
 
