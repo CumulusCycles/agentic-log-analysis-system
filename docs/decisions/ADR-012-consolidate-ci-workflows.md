@@ -98,3 +98,28 @@ ADR's decisions 1 and 6 respectively.
 - The decision to keep E2E local-only.
 - `permissions: contents: read` posture.
 - `pull_request` / `push: main` / `workflow_dispatch` trigger surface.
+
+## Amendment — 2026-06-08
+
+Decision 5 above (workflow-level `paths:` filter so doc-only PRs do not
+trigger the workflow at all) is **rescinded**. The workflow now triggers on
+every `pull_request` and `push: main` without a paths filter.
+
+**Why:** when the repo went public on 2026-06-08, branch protection with
+required status checks was applied to `main`. A workflow that doesn't
+trigger means the required checks never report, and the PR is blocked
+indefinitely waiting for them. Doc-only PRs (e.g., the project-wide
+markdown audit in PR #49) were previously fine because there was no
+required-check gate; once required checks gate `main`, the non-trigger
+becomes a hang.
+
+**How the docs-only PR case still works:** the `changes` job runs on
+every PR. For a docs-only diff, all five per-app outputs evaluate to
+`false`; each per-app job's `if:` condition is false; each job skips.
+Skipped jobs report a success status to branch protection. Required
+checks all report success → PR is mergeable.
+
+**Cost:** ~5s of `changes`-job overhead per docs-only PR (checkout +
+`dorny/paths-filter@v3`). Below the noise floor for a portfolio repo.
+
+Decisions 1–4 and 6–7 remain in force.
