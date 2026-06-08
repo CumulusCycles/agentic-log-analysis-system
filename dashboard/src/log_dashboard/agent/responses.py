@@ -10,10 +10,32 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import httpx
 from langchain_core.messages import AIMessage
 
 from ..credentials import sanitize_log_raw
 from ..schemas import Citation
+
+# Exception types that surface as a 502 "upstream LLM unavailable" via
+# `is_llm_api_error`. Hoisted to module scope so a future maintainer can
+# extend the set in one place — and so the rationale (these are the
+# specific failure modes ChatOllama actually raises, NOT the bare
+# `httpx.HTTPError` base) lives next to the list.
+#
+# Previously this catch was `httpx.HTTPError`, the base class. That would
+# misclassify any future non-LLM httpx caller in the graph (e.g., a tool
+# that fetches an upstream URL) as a 502. The narrowed set keeps the
+# 502-mapping scoped to actual LLM-transport failures.
+_LLM_API_ERROR_TYPES: tuple[type[BaseException], ...] = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.PoolTimeout,
+    httpx.HTTPStatusError,
+    TimeoutError,
+    ConnectionError,
+)
 
 
 def extract_answer(state: dict[str, Any]) -> str:
@@ -73,27 +95,12 @@ def is_llm_api_error(exc: BaseException) -> bool:
     Phase 8 / ADR-017 — broadened from the Phase 7 `openai.APIError` check
     to cover the failure modes the local Ollama client emits. `ChatOllama`
     is built on `httpx`, so connection errors and timeouts come through as
-    specific `httpx.HTTPError` subclasses; the underlying `ollama` python
-    client also raises `ResponseError` on non-200 replies which we match
-    by module + class name to avoid an import-time dependency.
-
-    Narrowed to the specific httpx subclasses ChatOllama actually raises
-    (rather than catching the `httpx.HTTPError` base) so a future
-    non-LLM httpx caller in the graph wouldn't get mis-mapped to 502.
+    specific `httpx.HTTPError` subclasses (see `_LLM_API_ERROR_TYPES`).
+    The underlying `ollama` python client also raises `ResponseError` on
+    non-200 replies; we match it by module + class name to avoid an
+    import-time dependency.
     """
-    import httpx
-
-    if isinstance(
-        exc,
-        httpx.ConnectError
-        | httpx.ConnectTimeout
-        | httpx.ReadTimeout
-        | httpx.WriteTimeout
-        | httpx.PoolTimeout
-        | httpx.HTTPStatusError,
-    ):
-        return True
-    if isinstance(exc, TimeoutError | ConnectionError):
+    if isinstance(exc, _LLM_API_ERROR_TYPES):
         return True
     # Match the `ollama` client's `ResponseError` by module + class name
     # without an import. Tightened to `module == "ollama"` or

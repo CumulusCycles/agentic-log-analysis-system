@@ -275,14 +275,14 @@ def test_is_first_turn_false_when_tool_message_present() -> None:
     assert _is_first_turn(messages) is False
 
 
-def test_is_first_turn_false_when_empty() -> None:
-    """Edge case — no messages at all. Vacuously True is dangerous (would
-    inject SystemMessage with no user prompt), so the implementation
-    returns True here but `analyze_node` never reaches that branch in
-    practice (ingest_node always finds at least one HumanMessage)."""
-    # Documents current behaviour for the empty list. If `analyze_node`
-    # ever needs to defend against an empty state.messages, change this
-    # test + the predicate together.
+def test_is_first_turn_true_when_empty() -> None:
+    """Edge case — no messages at all. `_is_first_turn` returns True
+    (vacuously: no AIMessage/ToolMessage exists). `analyze_node` never
+    reaches that branch in practice because `ingest_node` runs first
+    and always finds at least one HumanMessage. Documents the predicate's
+    contract; if a future caller of `analyze_node` could pass an empty
+    list, change this test + the predicate together to defend against
+    SystemMessage injection on an empty prompt."""
     assert _is_first_turn([]) is True
 
 

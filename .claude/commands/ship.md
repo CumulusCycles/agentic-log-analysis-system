@@ -13,15 +13,26 @@ Lint, build, commit, push, and open a PR in one shot.
    - New and renamed files follow `docs/tech/file-naming-convention.md` (enforced via `.claude/rules/file-naming.md`)
 3. **Self-review** — run `/self-review`: query MCP docs, review diff against best practices, fix all issues
 4. **Security review** — run `/security-review`: scan for secrets, injection, auth gaps, exposed internals, fix all issues
-5. **Multi-agent local review for high-stakes PRs** — if the local branch diff vs `main` touches any of:
+5. **Multi-agent local review for high-stakes PRs — iterate until clean.** If the local branch diff vs `main` touches any of:
    - `apps/*/middleware/`
+   - `apps/shared-data-api/**`
    - `dashboard/src/log_dashboard/agent/`
    - `dashboard/src/log_dashboard/ingest/vectorstore.py`
    - `docker-compose.yml`
    - `.env.example`
    - `docs/decisions/ADR-*.md`
    - more than 20 files
-   ...then run `/local-review` (no args). Triage findings, fix in place, then continue. This catches the class of issue `/self-review` is structurally too narrow to find — design + correctness + test-coverage gaps that need a multi-angle read. Skips for trivial PRs (doc tweaks, lockfile bumps, single-file fixes). Fixing pre-push avoids the force-push churn of a post-PR-open review. `/ultrareview <PR#>` remains the after-/ship option for cases where you want the independent cloud reviewer with sandbox reproduction.
+
+   ...then enter the **review-fix loop**:
+
+   1. Commit any uncommitted work locally (don't push).
+   2. Run `/local-review` (no args) — reviews `git diff main...HEAD`.
+   3. Triage findings with the operator. Fix Critical + High in place. Push back on or defer Medium/Low with explicit rationale.
+   4. Commit the fixes locally (don't push).
+   5. Re-run `/local-review`. The same multi-agent fleet now sees the fix commits as part of the diff and will surface any new issues introduced.
+   6. Loop until the review comes back with **no new Critical / High findings**.
+
+   Only when the loop converges do you proceed to step 6 (lint). This catches the class of issue `/self-review` is structurally too narrow to find — design + correctness + test-coverage gaps that need a multi-angle read. Skips for trivial PRs (doc tweaks, lockfile bumps, single-file fixes that don't match the heuristic). Iterating BEFORE the push avoids the force-push churn and the embarrassment of a post-PR-open review finding a problem. `/ultrareview <PR#>` remains the after-/ship option for cases where you want the independent cloud reviewer with sandbox reproduction — but it's a second opinion, not the primary gate.
 6. Identify which app or area was changed (still relevant for the lint + build steps below)
 7. Run lint for the changed app:
    - Python: `uv run ruff check . && uv run black --check .`

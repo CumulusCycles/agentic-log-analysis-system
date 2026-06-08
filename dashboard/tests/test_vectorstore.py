@@ -8,6 +8,7 @@ import pytest
 from log_dashboard.config import Settings
 from log_dashboard.ingest.vectorstore import (
     _SESSION_TOTALS,
+    _strip_url_userinfo,
     build_vectorstore,
     is_embeddings_disabled,
     metadata_to_log_entry,
@@ -330,3 +331,71 @@ def _make_noop_embeddings():
             return [0.0]
 
     return _Stub()
+
+
+# ---------------------------------------------------------------------------
+# _strip_url_userinfo — credential-redaction helper for Ollama probe logs
+# (defence-in-depth against operator misconfiguring `OLLAMA_BASE_URL`)
+# ---------------------------------------------------------------------------
+
+
+def test_strip_url_userinfo_removes_user_and_password() -> None:
+    assert _strip_url_userinfo("http://user:pass@host:11434") == "http://host:11434"
+
+
+def test_strip_url_userinfo_removes_user_only() -> None:
+    """RFC 3986 allows user-only userinfo (no password). Both must be
+    stripped from the netloc before logging."""
+    assert _strip_url_userinfo("http://user@host:11434") == "http://host:11434"
+
+
+def test_strip_url_userinfo_removes_percent_encoded_credentials() -> None:
+    """Operators can percent-encode `@`, `:`, `/` in credentials. The
+    redactor must still recognise the userinfo segment and strip it
+    (the password may contain `%40` for `@`, etc.)."""
+    out = _strip_url_userinfo("http://user:p%40ssword@host:11434")
+    assert out == "http://host:11434"
+    assert "p%40" not in out
+    assert "password" not in out
+
+
+def test_strip_url_userinfo_preserves_path_and_scheme() -> None:
+    assert _strip_url_userinfo("https://user:pass@host:11434/api/v1") == "https://host:11434/api/v1"
+
+
+def test_strip_url_userinfo_passthrough_when_no_userinfo() -> None:
+    """A clean URL must round-trip unchanged — no spurious netloc
+    rewrites that could alter what the operator sees in logs."""
+    assert _strip_url_userinfo("http://ollama:11434") == "http://ollama:11434"
+    assert _strip_url_userinfo("https://example.com/path") == "https://example.com/path"
+
+
+def test_strip_url_userinfo_passthrough_for_garbage_input() -> None:
+    """Malformed strings (not URLs at all) must pass through without
+    crashing. `urlparse` is permissive but we double-defend with a
+    try/except in the helper."""
+    # urlparse accepts these without raising; we just want no crash.
+    assert _strip_url_userinfo("") == ""
+    assert _strip_url_userinfo("not-a-url") == "not-a-url"
+    assert _strip_url_userinfo("///") == "///"
+
+
+def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, caplog) -> None:
+    """End-to-end guarantee: `is_embeddings_disabled` must NOT emit the
+    raw userinfo on the structured log line, even when the probe fails
+    against a credentialed URL.
+
+    Constructs a Settings object pointing at an unroutable URL with
+    credentials, calls the probe, and asserts no part of the credential
+    appears in any captured log record's serialised form.
+    """
+    settings = _settings(ollama_base_url="http://leaky_user:leaky_pass@127.0.0.1:1")
+
+    import logging
+
+    caplog.set_level(logging.INFO)
+    assert is_embeddings_disabled(settings) is True
+
+    full_log = "\n".join(rec.getMessage() + " " + str(rec.__dict__) for rec in caplog.records)
+    assert "leaky_user" not in full_log
+    assert "leaky_pass" not in full_log
