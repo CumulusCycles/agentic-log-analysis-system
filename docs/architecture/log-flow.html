@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log Flow — Agentic Log Analysis System</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .page-header { text-align: center; margin-bottom: 2rem; animation: fadeDown 0.6s ease both; }
+  .page-header .label { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #58a6ff; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 0.5rem; }
+  .page-header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .page-header p { font-size: 0.85rem; color: #8b949e; font-family: 'JetBrains Mono', monospace; }
+
+  .nav { text-align: center; margin-bottom: 2rem; animation: fadeDown 0.6s ease 0.1s both; }
+  .nav a { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #58a6ff; text-decoration: none; padding: 4px 12px; border: 1px solid #388bfd40; border-radius: 4px; margin: 0 0.25rem; }
+  .nav a:hover { background: #388bfd15; }
+
+  .legend-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 2rem; animation: fadeUp 0.6s ease 0.2s both; }
+  .chip { padding: 3px 9px; border-radius: 999px; border: 1px solid; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+  .chip-writer  { background: #388bfd15; border-color: #388bfd40; color: #79c0ff; }
+  .chip-call    { background: #bc8cff15; border-color: #bc8cff40; color: #d2a8ff; }
+  .chip-sink    { background: #d2992215; border-color: #d2992240; color: #e3b341; }
+  .chip-volume  { background: #8b949e20; border-color: #8b949e60; color: #c9d1d9; }
+  .chip-watcher { background: #3fb95015; border-color: #3fb95040; color: #7ee787; }
+  .chip-gate    { background: #ff7b7215; border-color: #ff7b7240; color: #ff7b72; }
+  .chip-human   { background: #67e8f915; border-color: #67e8f940; color: #67e8f9; }
+  .chip-ai      { background: #f0883e15; border-color: #f0883e40; color: #ffa657; }
+
+  .section-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #8b949e; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 0.5px solid #30363d; }
+
+  .flow { display: grid; gap: 10px; animation: fadeUp 0.6s ease 0.3s both; }
+
+  .step {
+    display: grid;
+    grid-template-columns: 32px 1fr;
+    gap: 14px;
+    padding: 14px 16px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    align-items: start;
+    transition: border-color 0.2s;
+  }
+  .step:hover { border-color: #58a6ff40; }
+
+  .step .num {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    background: #161b22;
+    border: 1px solid currentColor;
+  }
+
+  .step h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 600;
+    margin-bottom: 6px;
+  }
+  .step p { font-size: 12.5px; line-height: 1.6; color: #c9d1d9; margin-bottom: 6px; }
+  .step p:last-of-type { margin-bottom: 0; }
+  .step strong { color: #e6edf3; font-weight: 600; }
+  .step code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: #161b22;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #d2a8ff;
+  }
+  .step .refs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 0.5px solid #21262d; }
+  .step .ref {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 2px 7px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 3px;
+    color: #8b949e;
+  }
+
+  .step.writer  .num { color: #79c0ff; }
+  .step.writer  h3   { color: #79c0ff; }
+  .step.call    .num { color: #d2a8ff; }
+  .step.call    h3   { color: #d2a8ff; }
+  .step.sink    .num { color: #e3b341; }
+  .step.sink    h3   { color: #e3b341; }
+  .step.volume  .num { color: #c9d1d9; }
+  .step.volume  h3   { color: #c9d1d9; }
+  .step.watcher .num { color: #7ee787; }
+  .step.watcher h3   { color: #7ee787; }
+  .step.gate    .num { color: #ff7b72; }
+  .step.gate    h3   { color: #ff7b72; }
+  .step.human   .num { color: #67e8f9; }
+  .step.human   h3   { color: #67e8f9; }
+  .step.ai      .num { color: #ffa657; }
+  .step.ai      h3   { color: #ffa657; }
+
+  .arrow {
+    text-align: center;
+    color: #30363d;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  .branch-labels {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0 10px;
+  }
+  .branch-label {
+    text-align: center;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border: 1px dashed;
+  }
+  .branch-label.human { background: #67e8f908; border-color: #67e8f960; color: #67e8f9; }
+  .branch-label.ai    { background: #f0883e08; border-color: #f0883e60; color: #ffa657; }
+
+  .branch { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .branch-col { display: grid; gap: 10px; }
+
+  .drift {
+    margin-top: 28px;
+    padding: 16px 18px;
+    background: #f0883e08;
+    border: 1px solid #f0883e40;
+    border-radius: 10px;
+    animation: fadeUp 0.6s ease 0.4s both;
+  }
+  .drift-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #ffa657;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 0.5px solid #f0883e40;
+  }
+  .drift ul { list-style: none; padding: 0; margin: 0; }
+  .drift li {
+    font-size: 12.5px;
+    color: #c9d1d9;
+    line-height: 1.55;
+    padding: 5px 0;
+    padding-left: 18px;
+    position: relative;
+  }
+  .drift li::before { content: '→'; position: absolute; left: 0; color: #f0883e; font-family: 'JetBrains Mono', monospace; }
+  .drift strong { color: #ffa657; font-weight: 600; }
+  .drift code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #161b22; padding: 1px 5px; border-radius: 3px; color: #ffa657; }
+  .drift a { color: #79c0ff; text-decoration: none; }
+  .drift a:hover { text-decoration: underline; }
+
+  .refidx {
+    margin-top: 18px;
+    padding: 16px 18px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    animation: fadeUp 0.6s ease 0.5s both;
+  }
+  .refidx-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #8b949e;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 0.5px solid #30363d;
+  }
+  .refidx dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 14px;
+    font-size: 11.5px;
+    margin: 0;
+  }
+  .refidx dt {
+    font-family: 'JetBrains Mono', monospace;
+    color: #58a6ff;
+    white-space: nowrap;
+  }
+  .refidx dd { color: #c9d1d9; margin: 0; }
+  .refidx code { font-family: 'JetBrains Mono', monospace; color: #c9d1d9; }
+  .refidx a { color: #79c0ff; text-decoration: none; }
+  .refidx a:hover { text-decoration: underline; }
+
+  footer {
+    margin-top: 28px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #6e7681;
+  }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="label">Log Flow</div>
+  <h1>FNOL claim submit → dashboard</h1>
+  <p>End-to-end path of a single log line · operator + AI surfaces</p>
+</div>
+
+<div class="nav">
+  <a href="docker-architecture.html">&larr; Docker Architecture</a>
+  <a href="system-integration.md">System Integration &rarr;</a>
+</div>
+
+<div class="legend-row">
+  <span class="chip chip-writer">Writer (FNOL)</span>
+  <span class="chip chip-call">SDA call</span>
+  <span class="chip chip-sink">structlog sinks</span>
+  <span class="chip chip-volume">Docker volume</span>
+  <span class="chip chip-watcher">Watcher / parser</span>
+  <span class="chip chip-gate">Ingest gate</span>
+  <span class="chip chip-human">Human path</span>
+  <span class="chip chip-ai">AI path</span>
+</div>
+
+<div class="flow">
+
+  <div class="step writer">
+    <div class="num">1</div>
+    <div>
+      <h3>Browser → FNOL backend</h3>
+      <p>User submits the claim form in the React SPA. The frontend POSTs to <code>http://localhost:8001/fnol/submit</code> with <code>Authorization: Bearer &lt;jwt&gt;</code> and <code>X-Source: prod</code> (explicitly set by the SPA's fetch wrapper per <a href="../decisions/ADR-011-x-source-header-convention.md" style="color:#79c0ff;text-decoration:none">ADR-011</a> amendment).</p>
+      <div class="refs">
+        <span class="ref">apps/fnol/frontend/src/lib/api.ts</span>
+        <span class="ref">ADR-011</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step writer">
+    <div class="num">2</div>
+    <div>
+      <h3>FNOL request-logger middleware (inbound)</h3>
+      <p>The middleware reads <code>X-Source</code> and <strong>binds it onto <code>structlog.contextvars</code></strong> so every domain event during the request inherits the source. It emits an <code>event=request</code> line with <code>caller</code>, <code>user</code>, <code>method</code>, <code>path</code>, <code>status</code>, <code>duration_ms</code>, <code>source</code> — never the token or password.</p>
+      <div class="refs">
+        <span class="ref">apps/fnol/src/fnol/middleware/request_logger.py</span>
+        <span class="ref">ADR-011</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step call">
+    <div class="num">3</div>
+    <div>
+      <h3>FNOL → Shared Data API</h3>
+      <p>Handler builds the SDA <code>POST /claims</code> with <code>X-API-Key: $SHARED_DATA_API_KEY_FNOL</code> (inter-service), forwarded <code>Authorization: Bearer &lt;user-jwt&gt;</code>, and <code>X-Source</code> read from the contextvar. SDA enforces <strong><code>jwt.app == "fnol"</code></strong> defense-in-depth (per <a href="../decisions/ADR-006-auth-strategy.md" style="color:#79c0ff;text-decoration:none">ADR-006</a>), inserts the claim into Postgres, and logs its own request line. Non-2xx from SDA → FNOL logs <code>sda_upstream_rejected</code> (WARN) with <code>detail</code> parsed from the response body, never from response headers (which could echo <code>Authorization</code> / <code>X-API-Key</code>).</p>
+      <div class="refs">
+        <span class="ref">apps/fnol/src/fnol/routers/claims.py</span>
+        <span class="ref">apps/shared-data-api/.../services/claims_service.py</span>
+        <span class="ref">ADR-006</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step sink">
+    <div class="num">4</div>
+    <div>
+      <h3>structlog → two sinks</h3>
+      <p>FNOL's logger fans out every record to two handlers configured in <code>logging_setup.py</code>:</p>
+      <p>&nbsp;&nbsp;• <strong>stdout</strong> — visible via <code>docker compose logs fnol-app</code><br>
+         &nbsp;&nbsp;• <strong><code>RotatingFileHandler</code></strong> — <code>/app/logs/fnol-app.log</code> (10 MB cap, 5 backups)</p>
+      <p>Both emit identical JSON lines. Exception tracebacks land on the same handlers as multi-line text.</p>
+      <div class="refs">
+        <span class="ref">apps/fnol/src/fnol/logging_setup.py</span>
+        <span class="ref">cache_logger_on_first_use=False</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step volume">
+    <div class="num">5</div>
+    <div>
+      <h3>Docker volume — <code>fnol-logs</code></h3>
+      <p>The FNOL service mounts <code>fnol-logs:/app/logs</code>. Writes to <code>/app/logs/fnol-app.log</code> inside the container land on the named volume — survive restarts, live in Docker's volume store.</p>
+      <div class="refs">
+        <span class="ref">docker-compose.yml#fnol-app</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow">↓</div>
+
+  <div class="step volume">
+    <div class="num">6</div>
+    <div>
+      <h3>Dashboard mounts the same volume — read-only</h3>
+      <p>The <code>log-dashboard</code> service mounts <code>fnol-logs:/mnt/logs/fnol:ro</code>. The same bytes FNOL wrote are visible at <code>/mnt/logs/fnol/fnol-app.log</code> inside the dashboard container — the <code>:ro</code> is enforced by the kernel.</p>
+      <div class="refs">
+        <span class="ref">docker-compose.yml#log-dashboard</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="branch-labels">
+    <div class="branch-label human">Human path — unfiltered</div>
+    <div class="branch-label ai">AI path — gated, deduped, embedded</div>
+  </div>
+
+  <div class="branch">
+
+    <div class="branch-col">
+
+      <div class="step human">
+        <div class="num">7a</div>
+        <div>
+          <h3><code>/api/logs</code> + <code>/api/status</code></h3>
+          <p>Log Explorer and Overview screens call these routes; the handler reads the log file directly from <code>/mnt/logs/fnol/fnol-app.log</code> via the tail reader. <strong>No ingest gate.</strong> The operator sees every INFO line, every health-probe entry, every Playwright test request.</p>
+          <div class="refs">
+            <span class="ref">dashboard/.../routers/logs.py</span>
+            <span class="ref">ingest/reader.py</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="step human">
+        <div class="num">8a</div>
+        <div>
+          <h3>UI rendering</h3>
+          <p>React tables and rollup cards. No OpenAI involvement, no spend, no filtering. The human path is the source of truth for "did this log line exist."</p>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="branch-col">
+
+      <div class="step watcher">
+        <div class="num">7b</div>
+        <div>
+          <h3>watchdog observer</h3>
+          <p><code>LogVolumeWatcher</code> schedules a <code>watchdog.Observer</code> on <code>/mnt/logs/fnol/</code>. On <code>on_modified</code>: seek to per-file byte offset → read to EOF → split into lines.</p>
+          <div class="refs">
+            <span class="ref">dashboard/.../ingest/watcher.py</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="step watcher">
+        <div class="num">8b</div>
+        <div>
+          <h3>Parser + source inference</h3>
+          <p>The FNOL structlog parser converts each line to a <code>LogEntry</code>. <code>_infer_source</code> precedence:</p>
+          <p>&nbsp;&nbsp;1. <code>event=request</code> and path ∈ healthcheck paths → <code>"health"</code><br>
+             &nbsp;&nbsp;2. Explicit <code>source=&lt;value&gt;</code> in the line → that value<br>
+             &nbsp;&nbsp;3. Otherwise → <strong><code>"unknown"</code></strong></p>
+          <p>Step 3 is the <a href="../decisions/ADR-011-x-source-header-convention.md" style="color:#79c0ff;text-decoration:none">ADR-011</a> amendment (2026-06-07): React SPAs explicitly tag <code>prod</code>; anything missing the header lands in <code>unknown</code> as a propagation-gap signal.</p>
+          <div class="refs">
+            <span class="ref">ingest/parsers.py:_infer_source</span>
+            <span class="ref">ADR-011 amendment</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="step gate">
+        <div class="num">9</div>
+        <div>
+          <h3>3-knob ingest gate (two seams, both before any embed call)</h3>
+          <p>&nbsp;&nbsp;• <code>DASHBOARD_INGEST_LEVELS</code> — default <code>WARN,ERROR</code> — checked in <code>filter_for_ingest</code><br>
+             &nbsp;&nbsp;• <code>DASHBOARD_INGEST_SOURCES</code> — default <strong><code>prod,synthetic,unknown</code></strong> — same <code>filter_for_ingest</code><br>
+             &nbsp;&nbsp;• <code>DASHBOARD_INGEST_DRY_RUN</code> — default <code>false</code> — checked on <code>upsert_entries(..., dry_run=...)</code> which short-circuits before any Chroma read or OpenAI call</p>
+          <p>A successful claim submission (INFO) is dropped by <code>filter_for_ingest</code> — never embedded, never costs a token. An SDA upstream rejection (WARN with <code>source=prod</code>) passes; a propagation-gap WARN (<code>source=unknown</code>) also passes — the operator can see drift in the corpus.</p>
+          <div class="refs">
+            <span class="ref">embeddings.py: filter_for_ingest</span>
+            <span class="ref">vectorstore.py: upsert_entries</span>
+            <span class="ref">.env.example</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="step ai">
+        <div class="num">10</div>
+        <div>
+          <h3>Dedup → OpenAI → Chroma</h3>
+          <p>For surviving entries, <code>upsert_entries</code> queries Chroma for <code>fnol:{sha1(raw)[:16]}</code> IDs (content-hash, single SQL-shape <code>_collection.get(ids=..., include=[])</code>). New ones go to OpenAI <code>text-embedding-3-small</code> as a batch; the vectors land in the <code>dashboard-logs</code> collection in the <code>chroma-data</code> volume. Same line twice = same content hash = single row.</p>
+          <div class="refs">
+            <span class="ref">ingest/vectorstore.py</span>
+            <span class="ref">collection: dashboard-logs</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="arrow">↓</div>
+
+      <div class="step ai">
+        <div class="num">11</div>
+        <div>
+          <h3>Agent surfaces</h3>
+          <p>Chroma is the corpus for: <code>POST /api/logs/search</code> (semantic search), <code>GET /api/errors/{id}</code> (Error Detail + Suggested Fix), <code>POST /api/chat</code> (AI Chat StateGraph), the proactive scan loop (opt-in), and Vectorstore Stats.</p>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<section class="drift">
+  <div class="drift-label">What changed since the original walkthrough</div>
+  <ul>
+    <li><strong>Source default flipped from <code>prod</code> to <code>unknown</code></strong> (step 8b) — ADR-011 amendment 2026-06-07 (PR #42). React SPAs now explicitly tag <code>X-Source: prod</code>.</li>
+    <li><strong>Ingest gate sources widened to <code>prod,synthetic,unknown</code></strong> (step 9) — admits Agitator traffic and the propagation-gap signal so the operator can see drift.</li>
+    <li><strong>JWT app-claim defense-in-depth lives in <a href="../decisions/ADR-006-auth-strategy.md">ADR-006</a></strong>, not ADR-007 (which is the background claim-status simulator).</li>
+    <li><strong>The file handler is <code>RotatingFileHandler</code></strong> (10 MB cap, 5 backups), not a plain <code>FileHandler</code>.</li>
+  </ul>
+</section>
+
+<section class="refidx">
+  <div class="refidx-label">Reference index</div>
+  <dl>
+    <dt>ADR-006</dt><dd>Auth strategy — JWT issuance, per-app API keys, <code>jwt.app</code> defense in depth · <a href="../decisions/ADR-006-auth-strategy.md">file</a></dd>
+    <dt>ADR-011</dt><dd>X-Source header convention + 2026-06-07 amendment · <a href="../decisions/ADR-011-x-source-header-convention.md">file</a></dd>
+    <dt>logs router</dt><dd><code>dashboard/src/log_dashboard/routers/logs.py</code></dd>
+    <dt>reader</dt><dd><code>dashboard/src/log_dashboard/ingest/reader.py</code> — backward seek + line read</dd>
+    <dt>watcher</dt><dd><code>dashboard/src/log_dashboard/ingest/watcher.py</code> — observer, per-file offset</dd>
+    <dt>parsers</dt><dd><code>dashboard/src/log_dashboard/ingest/parsers.py</code> — per-stack parsers + <code>_infer_source</code></dd>
+    <dt>vectorstore</dt><dd><code>dashboard/src/log_dashboard/ingest/vectorstore.py</code> — Chroma upsert + dedup</dd>
+    <dt>FNOL request logger</dt><dd><code>apps/fnol/src/fnol/middleware/request_logger.py</code> — binds <code>X-Source</code> to contextvars</dd>
+    <dt>FNOL logging</dt><dd><code>apps/fnol/src/fnol/logging_setup.py</code> — two sinks</dd>
+    <dt>SDA claims svc</dt><dd><code>apps/shared-data-api/src/shared_data_api/services/claims_service.py</code> — <code>jwt.app == "fnol"</code> check</dd>
+  </dl>
+</section>
+
+<footer>Open this file in a browser. Not GitHub-rendered — by design, HTML/CSS for the diagram.</footer>
+
+</body>
+</html>

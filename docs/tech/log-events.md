@@ -107,7 +107,7 @@ Python `structlog` JSON (same library setup as SDA).
 | Event | Where | Fields | Trigger |
 |---|---|---|---|
 | `chaos_directive_invalid` | `middleware/chaos.py` | `directive_raw`, `reason`, `method`, `path` | `X-Chaos` header value did not parse. 400 returned. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
-| `chaos_honored` | `middleware/chaos.py` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos middleware honored an `X-Chaos` directive. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
+| `chaos_honored` | `middleware/chaos.py` | `directive`, `delay_ms` (slow) or `status` (error), `method`, `path` | Chaos middleware honored an `X-Chaos` directive. **Level varies by status** (per ADR-013 2026-06-06 amendment): logged at **ERROR** when `status ∈ [500, 599]`; at **WARN** otherwise (4xx returns + every `slow:` honor). `delay_ms` present for `slow:N`; `status` present for `error:N`. Only fires when `ENABLE_CHAOS=true`. See ADR-013 |
 | `frontend_dist_missing` | `main.py` | `expected` | SPA `dist/` not present at startup |
 | `request_validation_error` | `exception_handlers.py` | `user`, `method`, `path`, `status`, `errors` | `RequestValidationError` 422 |
 | `sda_upstream_rejected` | `clients/shared_data_api.py` | `target`, `status`, `detail` | SDA returned 4xx/5xx on an outbound call. `detail` parsed from response body — NEVER from headers (would leak Authorization / X-API-Key) |

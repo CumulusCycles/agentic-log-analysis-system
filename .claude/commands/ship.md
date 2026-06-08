@@ -29,16 +29,19 @@ Lint, build, commit, push, and open a PR in one shot.
    - **Changed apps** — list every `apps/<name>/` path with modifications in the diff. Multiple apps may be in scope at once.
    - **Shared-contract changes** — does the diff touch any of: `apps/shared-data-api/**`, `docker-compose.yml`, `.env.example`, `.claude/rules/apps.md`? If yes, every consumer is in E2E scope.
 
-   **8b. Unit tests — only for changed apps.** Unit tests are isolated (each app mocks its SDA collaborator at the HTTP boundary), so a change in one app cannot break another app's unit tests. For each changed `apps/<app>/`:
-   - Python (shared-data-api, fnol backend, log-dashboard backend): `cd apps/<app> && uv run pytest -q`
-   - React unit tests (fnol frontend, customer-portal, agent-portal, dashboard frontend): `cd apps/<app>/frontend && pnpm test`
-   - Java (agent-portal backend): `cd apps/<app> && ./mvnw test`
+   **8b. Unit tests — only for changed apps.** Unit tests are isolated (each app mocks its SDA collaborator at the HTTP boundary), so a change in one app cannot break another app's unit tests. The four supporting apps live under `apps/<app>/`; the dashboard lives at `dashboard/` (top-level, not under `apps/`). For each changed area:
+   - Python — supporting apps: `cd apps/<app> && uv run pytest -q` (`shared-data-api`, `fnol`)
+   - Python — dashboard backend: `cd dashboard && uv run pytest -q`
+   - React unit tests — supporting apps: `cd apps/<app>/frontend && pnpm test` (`fnol`, `customer-portal`, `agent-portal`)
+   - React unit tests — dashboard frontend: `cd dashboard/frontend && pnpm test`
+   - Java — agent-portal backend: `cd apps/agent-portal && ./mvnw test`
 
    **8c. E2E tests — our cross-app integration coverage.** Playwright drives each app's UI against the *live* SDA + DB stack, so the E2E suite for an app exercises that app's full integration with SDA. Scope:
-   - **Default:** run E2E only for changed apps' `apps/<app>/frontend/e2e/`.
+   - **Default:** run E2E only for changed apps' `frontend/e2e/` directory (`apps/<app>/frontend/e2e/` for supporting apps; `dashboard/frontend/e2e/` for the dashboard).
    - **If 8a flagged shared-contract changes:** run E2E for *every* app with an `e2e/` directory. SDA / compose / shared-rule changes can break every consumer — this is the integration sweep.
    - Requires the live stack — confirm `docker compose ps` shows the relevant containers `(healthy)`. If the stack is down, surface that and ask before bringing it up.
-   - `cd apps/<app>/frontend && pnpm exec playwright test --reporter=line`
+   - Supporting apps: `cd apps/<app>/frontend && pnpm exec playwright test --reporter=line`
+   - Dashboard: `cd dashboard/frontend && pnpm exec playwright test --reporter=line`
 
    **Stop on first failure** and fix before continuing. The point of /ship's gate is no surprises.
 9. **Delegate git operations to `git-agent`** (steps 10–15):

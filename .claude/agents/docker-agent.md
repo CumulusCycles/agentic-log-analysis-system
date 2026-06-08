@@ -19,5 +19,5 @@ Build-stage image (multi-stage Dockerfiles for fnol, customer-portal, agent-port
 
 Inspect volumes: `docker run --rm -v <volume>:/data alpine ls -la /data`
 
-The six persistent volumes are: `postgres-data`, `mongodb-data`, `fnol-logs`, `customer-portal-logs`, `agent-portal-logs`, `chroma-data`.
+The seven persistent volumes are: `postgres-data`, `mongodb-data`, `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, `agent-portal-logs`, `chroma-data`.
 App log volumes are mounted read-only in the dashboard container.

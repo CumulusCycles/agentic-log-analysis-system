@@ -104,7 +104,7 @@ All four apps require login. Dashboard auth is standalone (env-supplied admin); 
 
 ### Phases 1–2 — Scaffold & Infrastructure
 - Repo skeleton, Claude Code config, docs
-- Docker Compose: all 8 containers, 6 volumes, healthchecks, ARM64 platform flags
+- Docker Compose: all 8 containers, 6 volumes, healthchecks, ARM64 platform flags (the 7th log volume `shared-data-api-logs` was added in Pre-Phase-3 — see below)
 
 ### Pre-Phase-3 — Architecture Pivot (docs only)
 - Shared Data API becomes sole data-access layer; CP/AP read-only; JWT + per-app API keys; background claim-status simulator; 7th log volume `shared-data-api-logs`. See ADR-005, ADR-006, ADR-007.

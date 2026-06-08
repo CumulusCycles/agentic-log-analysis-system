@@ -76,7 +76,7 @@ The AI layer handles the heterogeneity.
 
 **Agent flow:** ingest (watchdog) → embed (Chroma) → analyze (LangGraph) → correlate → predict → respond
 
-**UI:** Overview dashboard · Log Explorer · AI Chat · Error Detail
+**UI:** Overview dashboard · Log Explorer · AI Chat · Error Detail · Vectorstore Stats · Log Generator
 
 **Two trigger modes:**
 1. On-demand: user asks a question → agent queries Chroma, returns root cause + remediation
