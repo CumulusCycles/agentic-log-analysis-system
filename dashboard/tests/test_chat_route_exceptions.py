@@ -174,3 +174,93 @@ async def test_errors_still_returns_502_for_real_llm_transport_error(
     )
     assert response.status_code == 502
     assert "upstream LLM" in response.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Streaming path on /api/chat — same is_llm_api_error classifier fires
+# inside `_stream_chat_events`, so the SSE error-event emit needs the
+# same regression guard as the non-streaming JSON path.
+# ---------------------------------------------------------------------------
+
+
+def _decode_sse_events(body: bytes) -> list[dict[str, str]]:
+    """Parse the SSE wire format into a list of {event, data} dicts.
+
+    Minimal — the streaming endpoint only emits `event: <name>\\ndata: <json>\\n\\n`
+    so we don't need a full SSE parser, just a splitter on the blank
+    line that delimits events.
+    """
+    events: list[dict[str, str]] = []
+    for chunk in body.decode("utf-8").split("\n\n"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        ev: dict[str, str] = {}
+        for line in chunk.splitlines():
+            key, _, value = line.partition(": ")
+            ev[key] = value
+        events.append(ev)
+    return events
+
+
+@pytest.mark.asyncio
+async def test_chat_streaming_emits_generic_error_for_non_llm_exception(
+    client, valid_token, monkeypatch
+) -> None:
+    """When `streaming=true` and the graph raises a non-LLM exception
+    (e.g., ValueError from a buggy tool path), `_stream_chat_events`
+    must NOT label it as "upstream LLM unavailable" — that detail is
+    reserved for the LLM-transport-error branch. The generic
+    `stream failed unexpectedly` detail covers everything else."""
+    boom = _BoomGraph(ValueError("not an LLM error"))
+    app = client._transport.app  # noqa: SLF001
+    monkeypatch.setattr(app.state, "agent_graph", boom)
+
+    response = await client.post(
+        "/api/chat",
+        json={"message": "hello", "streaming": True},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    # Pre-flight passes (auth + token cap), then the stream starts.
+    # The error surfaces as an SSE `event: error` payload, not a 500
+    # — the stream is already open by the time the graph raises.
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    events = _decode_sse_events(response.content)
+    error_events = [e for e in events if e.get("event") == "error"]
+    assert len(error_events) == 1
+    detail = error_events[0]["data"]
+    assert (
+        "upstream LLM" not in detail
+    ), "non-LLM exceptions must not be mis-labeled as LLM-transport failures"
+    assert "stream failed" in detail
+
+
+@pytest.mark.asyncio
+async def test_chat_streaming_emits_upstream_llm_error_for_real_transport_error(
+    client, valid_token, monkeypatch
+) -> None:
+    """Sibling: the SSE error-event path correctly labels real LLM
+    transport failures (httpx.ConnectError) with the "upstream LLM
+    unavailable" copy. Regression guard so the narrowed
+    `is_llm_api_error` doesn't close this path."""
+    import httpx
+
+    boom = _BoomGraph(httpx.ConnectError("ollama unreachable"))
+    app = client._transport.app  # noqa: SLF001
+    monkeypatch.setattr(app.state, "agent_graph", boom)
+
+    response = await client.post(
+        "/api/chat",
+        json={"message": "hello", "streaming": True},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    events = _decode_sse_events(response.content)
+    error_events = [e for e in events if e.get("event") == "error"]
+    assert len(error_events) == 1
+    detail = error_events[0]["data"]
+    assert "upstream LLM" in detail

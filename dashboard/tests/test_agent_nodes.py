@@ -275,15 +275,14 @@ def test_is_first_turn_false_when_tool_message_present() -> None:
     assert _is_first_turn(messages) is False
 
 
-def test_is_first_turn_true_when_empty() -> None:
-    """Edge case — no messages at all. `_is_first_turn` returns True
-    (vacuously: no AIMessage/ToolMessage exists). `analyze_node` never
-    reaches that branch in practice because `ingest_node` runs first
-    and always finds at least one HumanMessage. Documents the predicate's
-    contract; if a future caller of `analyze_node` could pass an empty
-    list, change this test + the predicate together to defend against
-    SystemMessage injection on an empty prompt."""
-    assert _is_first_turn([]) is True
+def test_is_first_turn_false_when_empty_defensive_guard() -> None:
+    """Defensive guard — an empty message list returns False so the
+    `SystemMessage` is never prepended onto an empty prompt. `ingest_node`
+    always produces at least one HumanMessage before `analyze_node` runs,
+    so this branch is unreachable in practice; the guard exists to defend
+    against future refactors that might call `analyze_node` without
+    ingest_first."""
+    assert _is_first_turn([]) is False
 
 
 class _RecordingChatModel:

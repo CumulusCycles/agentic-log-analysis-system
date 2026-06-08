@@ -244,12 +244,22 @@ async def _invoke_llm_with_tools(
 
 
 def _is_first_turn(messages: list) -> bool:
-    """True when no prior AIMessage / ToolMessage exists in state.
+    """True when there is at least one message AND no prior AIMessage /
+    ToolMessage exists in state.
 
     Used by `analyze_node` to decide whether to inject the baseline-aware
     `SystemMessage`. Once the LLM has been called at least once OR a tool
     has run, the system prompt is unnecessary context bloat.
+
+    **Empty-list defence:** returns False on an empty message list.
+    `ingest_node` always produces at least one HumanMessage before
+    `analyze_node` runs, so the empty case is unreachable in practice —
+    but a future refactor that calls `analyze_node` without ingest_first
+    would otherwise inject a SystemMessage with no user prompt, which is
+    semantically meaningless and wastes tokens.
     """
+    if not messages:
+        return False
     for msg in messages:
         if isinstance(msg, AIMessage | ToolMessage):
             return False

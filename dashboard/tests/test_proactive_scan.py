@@ -292,20 +292,51 @@ async def test_run_one_scan_sanitises_credential_in_agent_answer() -> None:
 
 @pytest.mark.asyncio
 async def test_run_one_scan_returns_none_on_graph_exception() -> None:
-    """If the graph raises (network blip, malformed state, etc.), the scan
-    swallows the exception and returns None so the loop keeps running."""
+    """If the graph raises a NON-LLM exception (bug in a tool, schema
+    error), the scan swallows it and returns None, logging
+    `proactive_scan_error` so the operator can grep for buggy iterations
+    distinctly from infrastructure failures."""
+    import structlog
 
     class _Boom(Exception):
         pass
 
     graph = _StubGraph(answer="unused", raises=_Boom("the graph blew up"))
-    result = await _run_one_scan(
-        graph=graph,  # type: ignore[arg-type]
-        vectorstore=object(),
-        settings=_settings(),
-        session_index=_StubSessionIndex(),  # type: ignore[arg-type]
-    )
+    with structlog.testing.capture_logs() as captured:
+        result = await _run_one_scan(
+            graph=graph,  # type: ignore[arg-type]
+            vectorstore=object(),
+            settings=_settings(),
+            session_index=_StubSessionIndex(),  # type: ignore[arg-type]
+        )
     assert result is None
+    events = [c.get("event") for c in captured]
+    assert "proactive_scan_error" in events
+    assert "proactive_scan_upstream_failure" not in events
+
+
+@pytest.mark.asyncio
+async def test_run_one_scan_returns_none_on_llm_transport_failure() -> None:
+    """When the graph raises an LLM-transport error (httpx.ConnectError —
+    Ollama unreachable mid-scan), the loop logs
+    `proactive_scan_upstream_failure` (distinct from the generic
+    `proactive_scan_error` so runbooks can route infrastructure pages
+    differently from code-bug pages)."""
+    import httpx
+    import structlog
+
+    graph = _StubGraph(answer="unused", raises=httpx.ConnectError("ollama down"))
+    with structlog.testing.capture_logs() as captured:
+        result = await _run_one_scan(
+            graph=graph,  # type: ignore[arg-type]
+            vectorstore=object(),
+            settings=_settings(),
+            session_index=_StubSessionIndex(),  # type: ignore[arg-type]
+        )
+    assert result is None
+    events = [c.get("event") for c in captured]
+    assert "proactive_scan_upstream_failure" in events
+    assert "proactive_scan_error" not in events
 
 
 # ---------------- run_proactive_scan_loop ----------------

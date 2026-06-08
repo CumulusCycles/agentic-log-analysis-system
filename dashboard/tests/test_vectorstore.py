@@ -380,6 +380,25 @@ def test_strip_url_userinfo_passthrough_for_garbage_input() -> None:
     assert _strip_url_userinfo("///") == "///"
 
 
+def test_strip_url_userinfo_preserves_ipv6_brackets() -> None:
+    """IPv6 hosts use bracket syntax (`[::1]`). The redactor must
+    preserve the brackets — without them, the URL becomes malformed
+    and the probe would fail to parse on retry."""
+    assert _strip_url_userinfo("http://user:pass@[::1]:11434") == "http://[::1]:11434"
+    # No-userinfo case — brackets still pass through unchanged.
+    assert _strip_url_userinfo("http://[::1]:11434") == "http://[::1]:11434"
+
+
+def test_strip_url_userinfo_leaves_query_string_unchanged() -> None:
+    """Only userinfo (`user:pass@`) is stripped — a `?password=secret`
+    in the query string is a different shape and must NOT be touched.
+    The function's contract is URL-userinfo redaction, not blanket
+    secret scrubbing."""
+    out = _strip_url_userinfo("http://host:11434/api?password=secret")
+    assert out == "http://host:11434/api?password=secret"
+    assert "password=secret" in out  # query string survives intact
+
+
 def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, caplog) -> None:
     """End-to-end guarantee: `is_embeddings_disabled` must NOT emit the
     raw userinfo on the structured log line, even when the probe fails
@@ -396,6 +415,12 @@ def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, 
     caplog.set_level(logging.INFO)
     assert is_embeddings_disabled(settings) is True
 
-    full_log = "\n".join(rec.getMessage() + " " + str(rec.__dict__) for rec in caplog.records)
-    assert "leaky_user" not in full_log
-    assert "leaky_pass" not in full_log
+    # Defensive: check the message AND every value in the record dict
+    # individually, in case a future structlog formatter wraps a value
+    # in an object whose `str()` masks the underlying credential.
+    for rec in caplog.records:
+        assert "leaky_user" not in rec.getMessage()
+        assert "leaky_pass" not in rec.getMessage()
+        for val in rec.__dict__.values():
+            assert "leaky_user" not in str(val)
+            assert "leaky_pass" not in str(val)

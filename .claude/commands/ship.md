@@ -14,14 +14,14 @@ Lint, build, commit, push, and open a PR in one shot.
 3. **Self-review** — run `/self-review`: query MCP docs, review diff against best practices, fix all issues
 4. **Security review** — run `/security-review`: scan for secrets, injection, auth gaps, exposed internals, fix all issues
 5. **Multi-agent local review for high-stakes PRs — iterate until clean.** If the local branch diff vs `main` touches any of:
-   - `apps/*/middleware/`
-   - `apps/shared-data-api/**`
-   - `dashboard/src/log_dashboard/agent/`
-   - `dashboard/src/log_dashboard/ingest/vectorstore.py`
-   - `docker-compose.yml`
-   - `.env.example`
-   - `docs/decisions/ADR-*.md`
-   - more than 20 files
+   - `apps/*/middleware/` — cross-cutting request-handling code
+   - `apps/shared-data-api/**` — SDA is the auth boundary + sole data layer for all 4 apps; any change can cascade across consumers
+   - `dashboard/src/log_dashboard/agent/` — LangGraph topology + tools
+   - `dashboard/src/log_dashboard/ingest/vectorstore.py` — credential redaction + embedder boundary
+   - `docker-compose.yml` — shared infra contract
+   - `.env.example` — config-shape changes
+   - `docs/decisions/ADR-*.md` — architectural decisions
+   - more than 20 files — size heuristic for "this PR is doing a lot"
 
    ...then enter the **review-fix loop**:
 
@@ -30,9 +30,9 @@ Lint, build, commit, push, and open a PR in one shot.
    3. Triage findings with the operator. Fix Critical + High in place. Push back on or defer Medium/Low with explicit rationale.
    4. Commit the fixes locally (don't push).
    5. Re-run `/local-review`. The same multi-agent fleet now sees the fix commits as part of the diff and will surface any new issues introduced.
-   6. Loop until the review comes back with **no new Critical / High findings**.
+   6. Loop until the review reports **no Critical or High findings** — neither new ones introduced by the fix commits NOR pre-existing ones that were deferred but later re-rated. Medium/Low findings may remain unaddressed only with explicit operator agreement on the triage call.
 
-   Only when the loop converges do you proceed to step 6 (lint). This catches the class of issue `/self-review` is structurally too narrow to find — design + correctness + test-coverage gaps that need a multi-angle read. Skips for trivial PRs (doc tweaks, lockfile bumps, single-file fixes that don't match the heuristic). Iterating BEFORE the push avoids the force-push churn and the embarrassment of a post-PR-open review finding a problem. `/ultrareview <PR#>` remains the after-/ship option for cases where you want the independent cloud reviewer with sandbox reproduction — but it's a second opinion, not the primary gate.
+   Only when the loop converges do you proceed to step 6 (lint). This catches the class of issue `/self-review` is structurally too narrow to find — design + correctness + test-coverage gaps that need a multi-angle read. Skips for trivial PRs (doc tweaks, lockfile bumps, single-file fixes that don't match the heuristic). Iterating BEFORE the push avoids the force-push churn and the embarrassment of a post-PR-open review finding a problem. `/ultrareview <PR#>` remains the after-/ship option for cases where you want the independent cloud reviewer with sandbox reproduction — but it's a second opinion, not the primary gate. See `feedback_local_review_before_push` memory for the workflow rationale.
 6. Identify which app or area was changed (still relevant for the lint + build steps below)
 7. Run lint for the changed app:
    - Python: `uv run ruff check . && uv run black --check .`

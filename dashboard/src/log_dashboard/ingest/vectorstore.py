@@ -95,7 +95,14 @@ def _strip_url_userinfo(url: str) -> str:
         return url
     if not (parsed.username or parsed.password):
         return url
-    netloc = parsed.hostname or ""
+    host = parsed.hostname or ""
+    # IPv6 hostnames contain `:` — re-wrap in brackets per RFC 3986 §3.2.2.
+    # `parsed.hostname` strips the brackets on its way out; without them
+    # the rebuilt URL would be a malformed `http://::1:11434` and the
+    # probe would fail to parse on the next retry.
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = host
     if parsed.port:
         netloc = f"{netloc}:{parsed.port}"
     try:

@@ -93,6 +93,29 @@ def test_is_llm_api_error_false_for_generic_exception() -> None:
     assert is_llm_api_error(Exception("anything")) is False
 
 
+def test_llm_api_error_types_tuple_contents() -> None:
+    """The module-level `_LLM_API_ERROR_TYPES` tuple is the single source
+    of truth for what counts as an LLM transport failure. Asserting its
+    contents directly pins the expected set — a future refactor that
+    accidentally drops a type (or adds one without updating tests + docs)
+    will fail this test rather than silently change routing behavior."""
+    import httpx
+
+    from log_dashboard.agent.responses import _LLM_API_ERROR_TYPES
+
+    expected: set[type[BaseException]] = {
+        httpx.ConnectError,
+        httpx.ConnectTimeout,
+        httpx.ReadTimeout,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+        httpx.HTTPStatusError,
+        TimeoutError,
+        ConnectionError,
+    }
+    assert set(_LLM_API_ERROR_TYPES) == expected
+
+
 def test_is_llm_api_error_does_not_catch_bare_httpx_http_error() -> None:
     """The base `httpx.HTTPError` is intentionally NOT caught — only the
     specific transport subclasses ChatOllama actually raises. A future
