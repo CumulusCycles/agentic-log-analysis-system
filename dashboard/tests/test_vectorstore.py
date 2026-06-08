@@ -14,6 +14,7 @@ from log_dashboard.ingest.vectorstore import (
     upsert_entries,
 )
 from log_dashboard.schemas import LogEntry, LogLevel
+from tests._test_helpers import to_alias_kwargs
 
 
 @pytest.fixture(autouse=True)
@@ -35,12 +36,7 @@ def _settings(**over) -> Settings:
         admin_password="hunter2",
     )
     defaults.update(over)
-    # pydantic-settings gives env-via-alias precedence over field-name init
-    # kwargs (with `populate_by_name=True`). The conftest sets `OLLAMA_BASE_URL`,
-    # so a field-name kwarg like `ollama_base_url=...` would silently lose.
-    # Translate to alias-form here so test overrides actually win.
-    field_to_alias = {n: (f.alias or n) for n, f in Settings.model_fields.items()}
-    return Settings(**{field_to_alias.get(k, k): v for k, v in defaults.items()})
+    return Settings(**to_alias_kwargs(defaults))
 
 
 def _entry(seq: int) -> LogEntry:

@@ -15,7 +15,7 @@ import time
 from collections import Counter
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import chromadb
 import httpx
@@ -58,6 +58,7 @@ def is_embeddings_disabled(settings: Settings) -> bool:
     response or connection error counts as disabled.
     """
     url = settings.ollama_base_url.rstrip("/") + "/api/tags"
+    safe_url = _strip_url_userinfo(settings.ollama_base_url)
     try:
         with httpx.Client(timeout=_OLLAMA_PROBE_TIMEOUT_SECONDS) as client:
             response = client.get(url)
@@ -65,17 +66,42 @@ def is_embeddings_disabled(settings: Settings) -> bool:
         log.info(
             "ollama_probe_failed",
             error_class=type(exc).__name__,
-            base_url=settings.ollama_base_url,
+            base_url=safe_url,
         )
         return True
     if response.status_code != 200:
         log.info(
             "ollama_probe_non_200",
             status=response.status_code,
-            base_url=settings.ollama_base_url,
+            base_url=safe_url,
         )
         return True
     return False
+
+
+def _strip_url_userinfo(url: str) -> str:
+    """Return `url` with any `user:pass@` segment removed.
+
+    Defence-in-depth for the operator-supplied `OLLAMA_BASE_URL` — if the
+    operator misconfigures with `http://user:pass@host:11434`, the probe's
+    structured log line would otherwise echo credentials into the log
+    stream. The DSN-style redactors in `credentials.py` cover
+    `postgres://` shapes but not arbitrary HTTP URLs with userinfo, so the
+    URL must be cleaned at the log-call site instead.
+    """
+    try:
+        parsed = urlparse(url)
+    except (ValueError, AttributeError):
+        return url
+    if not (parsed.username or parsed.password):
+        return url
+    netloc = parsed.hostname or ""
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    try:
+        return urlunparse(parsed._replace(netloc=netloc))
+    except (ValueError, AttributeError):
+        return url
 
 
 def configure_langsmith(settings: Settings) -> None:

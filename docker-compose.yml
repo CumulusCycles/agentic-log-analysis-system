@@ -108,6 +108,12 @@ services:
   # into the persistent ollama-data volume, then exits. Subsequent boots find
   # the models already cached and the container exits ~immediately. First
   # boot from cold pulls ~5GB total and takes 5-15 min on a typical link.
+  #
+  # `restart: on-failure` retries transient network flakes mid-pull;
+  # without it a momentary connection drop would leave the dashboard
+  # permanently unstartable (depends_on requires this service to complete
+  # successfully). Each command prints a clear marker before exiting so
+  # the operator's `docker logs` shows which pull failed.
   ollama-init:
     image: ollama/ollama:latest
     platform: linux/arm64
@@ -121,11 +127,11 @@ services:
       - |
         set -e
         echo "[ollama-init] pulling llama3.1:8b…"
-        ollama pull llama3.1:8b
+        ollama pull llama3.1:8b || { echo "[ollama-init] ERROR: llama3.1:8b pull failed — will retry on container restart"; exit 1; }
         echo "[ollama-init] pulling nomic-embed-text…"
-        ollama pull nomic-embed-text
+        ollama pull nomic-embed-text || { echo "[ollama-init] ERROR: nomic-embed-text pull failed — will retry on container restart"; exit 1; }
         echo "[ollama-init] done."
-    restart: "no"
+    restart: on-failure
     networks:
       - insurance-net
 

@@ -85,7 +85,11 @@ def create_app() -> FastAPI:
         app.state.agitator_runs = RunRegistry()
         backfill_task: asyncio.Task[None] | None = None
 
-        if is_embeddings_disabled(settings):
+        # `is_embeddings_disabled` does a sync httpx probe with a 2s
+        # timeout — offload to a worker thread so the async lifespan
+        # doesn't block its event loop on a misconfigured stack.
+        embeddings_disabled = await asyncio.to_thread(is_embeddings_disabled, settings)
+        if embeddings_disabled:
             log.info(
                 "embeddings_disabled",
                 reason="ollama_unreachable",

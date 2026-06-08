@@ -13,44 +13,53 @@ Lint, build, commit, push, and open a PR in one shot.
    - New and renamed files follow `docs/tech/file-naming-convention.md` (enforced via `.claude/rules/file-naming.md`)
 3. **Self-review** — run `/self-review`: query MCP docs, review diff against best practices, fix all issues
 4. **Security review** — run `/security-review`: scan for secrets, injection, auth gaps, exposed internals, fix all issues
-5. Identify which app or area was changed (still relevant for the lint + build steps below)
-6. Run lint for the changed app:
+5. **Multi-agent local review for high-stakes PRs** — if the local branch diff vs `main` touches any of:
+   - `apps/*/middleware/`
+   - `dashboard/src/log_dashboard/agent/`
+   - `dashboard/src/log_dashboard/ingest/vectorstore.py`
+   - `docker-compose.yml`
+   - `.env.example`
+   - `docs/decisions/ADR-*.md`
+   - more than 20 files
+   ...then run `/local-review` (no args). Triage findings, fix in place, then continue. This catches the class of issue `/self-review` is structurally too narrow to find — design + correctness + test-coverage gaps that need a multi-angle read. Skips for trivial PRs (doc tweaks, lockfile bumps, single-file fixes). Fixing pre-push avoids the force-push churn of a post-PR-open review. `/ultrareview <PR#>` remains the after-/ship option for cases where you want the independent cloud reviewer with sandbox reproduction.
+6. Identify which app or area was changed (still relevant for the lint + build steps below)
+7. Run lint for the changed app:
    - Python: `uv run ruff check . && uv run black --check .`
    - Node: `pnpm lint && pnpm format:check`
    - Java: `./mvnw checkstyle:check`
-7. Run build for the changed app:
+8. Run build for the changed app:
    - Python: `uv sync && uv run mypy .`
    - Node/React: `pnpm typecheck && pnpm build`
    - Java: `./mvnw package -DskipTests`
    - Container build is NOT run here — run `/build` manually if Dockerfile changes are part of this ship
-8. **Run tests — scoped to the change set.** Two parts: unit tests for changed apps; E2E for changed apps *plus* every app when shared infra is touched.
+9. **Run tests — scoped to the change set.** Two parts: unit tests for changed apps; E2E for changed apps *plus* every app when shared infra is touched.
 
-   **8a. Determine scope from the diff:**
+   **9a. Determine scope from the diff:**
    - **Changed apps** — list every `apps/<name>/` path with modifications in the diff. Multiple apps may be in scope at once.
    - **Shared-contract changes** — does the diff touch any of: `apps/shared-data-api/**`, `docker-compose.yml`, `.env.example`, `.claude/rules/apps.md`? If yes, every consumer is in E2E scope.
 
-   **8b. Unit tests — only for changed apps.** Unit tests are isolated (each app mocks its SDA collaborator at the HTTP boundary), so a change in one app cannot break another app's unit tests. The four supporting apps live under `apps/<app>/`; the dashboard lives at `dashboard/` (top-level, not under `apps/`). For each changed area:
+   **9b. Unit tests — only for changed apps.** Unit tests are isolated (each app mocks its SDA collaborator at the HTTP boundary), so a change in one app cannot break another app's unit tests. The four supporting apps live under `apps/<app>/`; the dashboard lives at `dashboard/` (top-level, not under `apps/`). For each changed area:
    - Python — supporting apps: `cd apps/<app> && uv run pytest -q` (`shared-data-api`, `fnol`)
    - Python — dashboard backend: `cd dashboard && uv run pytest -q`
    - React unit tests — supporting apps: `cd apps/<app>/frontend && pnpm test` (`fnol`, `customer-portal`, `agent-portal`)
    - React unit tests — dashboard frontend: `cd dashboard/frontend && pnpm test`
    - Java — agent-portal backend: `cd apps/agent-portal && ./mvnw test`
 
-   **8c. E2E tests — our cross-app integration coverage.** Playwright drives each app's UI against the *live* SDA + DB stack, so the E2E suite for an app exercises that app's full integration with SDA. Scope:
+   **9c. E2E tests — our cross-app integration coverage.** Playwright drives each app's UI against the *live* SDA + DB stack, so the E2E suite for an app exercises that app's full integration with SDA. Scope:
    - **Default:** run E2E only for changed apps' `frontend/e2e/` directory (`apps/<app>/frontend/e2e/` for supporting apps; `dashboard/frontend/e2e/` for the dashboard).
-   - **If 8a flagged shared-contract changes:** run E2E for *every* app with an `e2e/` directory. SDA / compose / shared-rule changes can break every consumer — this is the integration sweep.
+   - **If 9a flagged shared-contract changes:** run E2E for *every* app with an `e2e/` directory. SDA / compose / shared-rule changes can break every consumer — this is the integration sweep.
    - Requires the live stack — confirm `docker compose ps` shows the relevant containers `(healthy)`. If the stack is down, surface that and ask before bringing it up.
    - Supporting apps: `cd apps/<app>/frontend && pnpm exec playwright test --reporter=line`
    - Dashboard: `cd dashboard/frontend && pnpm exec playwright test --reporter=line`
 
    **Stop on first failure** and fix before continuing. The point of /ship's gate is no surprises.
-9. **Delegate git operations to `git-agent`** (steps 10–15):
-10. Stage changed files: `git add <specific files>`
-11. Analyze diff and propose a conventional commit message
-12. Wait for approval, then commit
-13. Push branch: `git push origin <branch>`
-14. Open PR: `gh pr create --title "<title>" --body "<description>"`
-15. Report the PR URL
+10. **Delegate git operations to `git-agent`** (steps 11–16):
+11. Stage changed files: `git add <specific files>`
+12. Analyze diff and propose a conventional commit message
+13. Wait for approval, then commit
+14. Push branch: `git push origin <branch>`
+15. Open PR: `gh pr create --title "<title>" --body "<description>"`
+16. Report the PR URL
 
 ## After `/ship` opens the PR
 
