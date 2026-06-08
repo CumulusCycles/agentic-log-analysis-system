@@ -91,10 +91,10 @@ in this project's docs and memory.
 
 | PR | Run agentreviewer? |
 |---|---|
-| Agitator PR 2 (chaos middleware) | Yes — first real exercise on this codebase |
-| Agitator PR 3 (Agitator bundled into dashboard) | Yes — architecture call + new HTTP-driving code |
-| Phase 7e PR (LangGraph + AI Chat + Error Detail) | **Yes, non-negotiable** — the LLM slice |
-| Any future cross-cutting middleware / LangGraph / Phase 7+ work | Yes |
+| Agitator PR 2 — chaos middleware (PR #32, merged) | Used — first real exercise on this codebase |
+| Agitator PR 3 — Agitator bundled into dashboard (PR #34, merged) | Used — architecture call + new HTTP-driving code |
+| Phase 7e PRs — LangGraph + AI Chat + SSE streaming + Error Detail + Proactive Scan (PRs #37, #38, #39, all merged; closed Phase 7) | Used — non-negotiable for the LLM slice |
+| Any future cross-cutting middleware / LangGraph / agent-graph work | Yes |
 | Single-file doc edit, lockfile bump, ADR-only PR | No — `/self-review` + `/security-review` are sufficient |
 
 **Pre-flight checks (run once before the first agentreviewer invocation):**

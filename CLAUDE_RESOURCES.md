@@ -16,6 +16,7 @@ This file lists every Claude Code resource in this project, what it does, and wh
 | `/build` | `.claude/commands/build.md` | Run a production build and report errors |
 | `/logs` | `.claude/commands/logs.md` | Tail live Docker container logs |
 | `/security-review` | `.claude/commands/security-review.md` | Before shipping — scan for secrets, injection, auth gaps, exposed internals |
+| `/local-review` | `.claude/commands/local-review.md` | Parallel multi-agent review of the local branch or a GitHub PR — documented fallback when `/ultrareview` is unavailable (ZDR orgs, Bedrock/Vertex/Foundry runtimes, GitHub repo-access failures). See `.claude/rules/workflow.md` §Agentreviewer |
 
 ---
 
@@ -45,6 +46,7 @@ This file lists every Claude Code resource in this project, what it does, and wh
 | `pre_bash_guard` | `.claude/hooks/pre_bash_guard.sh` | Before every Bash command — blocks `docker compose down -v`, dangerous `rm`, `.env` reads and writes |
 | `post_format` | `.claude/hooks/post_format.sh` | After every file write/edit — auto-formats Python (black), JS/TS/JSON (prettier) |
 | `post_compose_validate` | `.claude/hooks/post_compose_validate.sh` | After editing docker-compose.yml — validates syntax and ARM64 platform flags |
+| `ship_audit` | `.claude/hooks/ship_audit.sh` | Invoked as `/ship` Step 1 — fails closed when any tool prescribed by `/ship` or `/lint` is not bound in CI (Node `format:check` + prettier devDep, Python `ruff` + `black`, Java `maven-checkstyle-plugin` phase binding, consolidated `.github/workflows/ci.yml` enforcement). No `--skip` flag by design |
 
 ---
 
