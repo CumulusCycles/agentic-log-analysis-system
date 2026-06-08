@@ -1,7 +1,7 @@
 """Pure-function helpers that shape a LogEntry into a Chroma Document.
 
 No I/O here — keeps the embedding contract testable without spinning up
-Chroma or hitting OpenAI. Imported by vectorstore.py, backfill.py, watcher.py.
+Chroma or calling Ollama. Imported by vectorstore.py, backfill.py, watcher.py.
 """
 
 import hashlib

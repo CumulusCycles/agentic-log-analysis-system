@@ -30,13 +30,13 @@ async def _build_client_with_env(monkeypatch: pytest.MonkeyPatch, **env: str):
 
 @pytest.mark.asyncio
 async def test_chat_over_token_cap_returns_413(
-    monkeypatch: pytest.MonkeyPatch, fail_if_openai_invoked
+    monkeypatch: pytest.MonkeyPatch, fail_if_real_llm_invoked
 ) -> None:
     """Use the minimum allowed cap (512) and a message known to exceed it.
 
     ~3500 chars of repeated words tokenises to well over 512 tokens against
     `o200k_base`. The cap is enforced before any graph code runs, so
-    `fail_if_openai_invoked` would never even need to fire.
+    `fail_if_real_llm_invoked` would never even need to fire.
     """
     app, _, token = await _build_client_with_env(
         monkeypatch, DASHBOARD_LLM_MAX_INPUT_TOKENS_PER_REQUEST="512"
@@ -57,7 +57,7 @@ async def test_chat_over_token_cap_returns_413(
 
 
 @pytest.mark.asyncio
-async def test_chat_at_token_cap_is_allowed(client, valid_token, fail_if_openai_invoked) -> None:
+async def test_chat_at_token_cap_is_allowed(client, valid_token, fail_if_real_llm_invoked) -> None:
     """Default cap (8000 tokens) admits a normal-length question."""
     response = await client.post(
         "/api/chat",
@@ -69,7 +69,7 @@ async def test_chat_at_token_cap_is_allowed(client, valid_token, fail_if_openai_
 
 @pytest.mark.asyncio
 async def test_chat_tool_budget_exhausted_flag(
-    monkeypatch: pytest.MonkeyPatch, fail_if_openai_invoked
+    monkeypatch: pytest.MonkeyPatch, fail_if_real_llm_invoked
 ) -> None:
     """A tool-budget of 1 means the first correlate flip leaves budget=0;
     the response surfaces `tool_budget_exhausted=true`."""

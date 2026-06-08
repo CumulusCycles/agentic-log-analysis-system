@@ -45,7 +45,16 @@ def _settings(**overrides: Any) -> Settings:
         proactive_scan_max_findings=5,
     )
     defaults.update(overrides)
-    return Settings(**defaults)
+    # pydantic-settings gives env-via-alias precedence over field-name init
+    # kwargs (with `populate_by_name=True`). The conftest sets several
+    # alias env vars, so field-name kwargs would silently lose. Translate
+    # to alias-form here so test overrides actually win.
+    return Settings(**_to_alias_kwargs(defaults))
+
+
+def _to_alias_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+    field_to_alias = {n: (f.alias or n) for n, f in Settings.model_fields.items()}
+    return {field_to_alias.get(k, k): v for k, v in kwargs.items()}
 
 
 def _citation(level: LogLevel, app: str = "fnol") -> Citation:

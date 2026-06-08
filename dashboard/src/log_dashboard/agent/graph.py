@@ -45,8 +45,8 @@ def build_agent_graph(
 ):
     """Compile and return the LangGraph chat agent.
 
-    `vectorstore=None` is permitted — degraded mode when no OpenAI key is
-    set. The `query_logs` tool degrades gracefully (returns
+    `vectorstore=None` is permitted — degraded mode when Ollama is
+    unreachable. The `query_logs` tool degrades gracefully (returns
     `{tool_error: "vectorstore_unavailable"}`) so the graph still runs.
 
     The checkpointer MUST be an `InMemorySaver` (or any `BaseCheckpointSaver`

@@ -38,16 +38,22 @@ class Settings(BaseSettings):
         alias="DASHBOARD_CHROMA_COLLECTION",
     )
 
-    # Empty / placeholder string disables the embedding pipeline (search returns 503,
-    # no ingestion). The dashboard MUST stay usable for /api/logs and /api/status
-    # without an OpenAI key — see ADR-006 and the 7d plan's degraded-mode section.
-    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-    openai_embedding_model: str = Field(
-        default="text-embedding-3-small",
-        alias="OPENAI_EMBEDDING_MODEL",
+    # Phase 8 / ADR-017 — local AI via Ollama. The dashboard MUST stay
+    # usable for /api/logs and /api/status when Ollama is unreachable
+    # (ADR-006 spirit); `is_embeddings_disabled` in vectorstore.py probes
+    # the base URL at lifespan and degrades search to 503 if it's down.
+    ollama_base_url: str = Field(
+        default="http://ollama:11434",
+        alias="OLLAMA_BASE_URL",
     )
-    # Defined in 7d for operator visibility; unused until 7e wires the LangGraph agent.
-    openai_chat_model: str = Field(default="gpt-4o", alias="OPENAI_CHAT_MODEL")
+    dashboard_llm_model: str = Field(
+        default="llama3.1:8b",
+        alias="DASHBOARD_LLM_MODEL",
+    )
+    dashboard_embed_model: str = Field(
+        default="nomic-embed-text",
+        alias="DASHBOARD_EMBED_MODEL",
+    )
 
     embedding_batch_size: int = Field(default=100, alias="DASHBOARD_EMBEDDING_BATCH_SIZE")
     watcher_enabled: bool = Field(default=True, alias="DASHBOARD_WATCHER_ENABLED")
@@ -56,18 +62,19 @@ class Settings(BaseSettings):
     # The operator-facing `/api/logs` view is UNAFFECTED by any of these
     # (it reads volumes directly, not Chroma).
     #
-    # Defaults send only PROD WARN/ERROR to OpenAI — the smallest signal-rich
-    # slice, minimal cost. Combine with `upsert_entries`' content-hash dedup
-    # (Chroma is asked for existing IDs before any embed call) to ensure no
-    # log line is ever embedded twice.
+    # Phase 8 / ADR-017 — local embeddings are free, so the cost-driven
+    # WARN+ERROR filter is rescinded. Default admits the full corpus
+    # (DEBUG ∪ INFO ∪ WARN ∪ ERROR) so the agent gains baseline awareness
+    # via RAG. Content-hash dedup in `upsert_entries` still avoids
+    # redundant embedding work on restarts (performance benefit now,
+    # not cost benefit).
 
-    # Level filter — drop everything below WARN by default.
     # `NoDecode` stops pydantic-settings from JSON-parsing the env value
     # before our `field_validator(mode="before")` gets to split the CSV.
     # Without it, langgraph 1.x's typing-extensions bump made pydantic-
-    # settings try `json.loads("WARN,ERROR")` first and crash at startup.
+    # settings try `json.loads("DEBUG,INFO,WARN,ERROR")` first and crash.
     dashboard_ingest_levels: Annotated[frozenset[LogLevel], NoDecode] = Field(
-        default=frozenset({LogLevel.WARN, LogLevel.ERROR}),
+        default=frozenset({LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR}),
         alias="DASHBOARD_INGEST_LEVELS",
     )
 
@@ -95,7 +102,7 @@ class Settings(BaseSettings):
 
     # Dry-run mode — apply filters + parse, but DON'T call the embedder or
     # add to Chroma. Used to safely preview what the filter would pass
-    # without spending OpenAI tokens. Backfill + watcher both honour it.
+    # without disturbing the corpus. Backfill + watcher both honour it.
     dashboard_ingest_dry_run: bool = Field(
         default=False,
         alias="DASHBOARD_INGEST_DRY_RUN",
@@ -124,19 +131,19 @@ class Settings(BaseSettings):
         alias="LANGSMITH_PROJECT",
     )
 
-    # --- Phase 7e (PR 4a): LangGraph agent + /api/chat ---
+    # --- LangGraph agent + /api/chat (ADR-015, amended by ADR-017) ---
     #
-    # `dashboard_llm_dry_run` defaults to True — safe-by-default. With dry-run on,
-    # `analyze`/`predict` nodes use GenericFakeChatModel instead of ChatOpenAI;
-    # no OpenAI call is ever made. Operator opts INTO paid spend by setting
-    # DASHBOARD_LLM_DRY_RUN=false in `.env`. Cost-safety asymmetry: a forgotten
-    # env var that defaults to spend is unrecoverable + pollutes LangSmith;
-    # a forgotten env var that defaults to dry-run is a one-line `.env` edit.
-    # Tests inherit dry-run automatically — the Settings default IS dry-run.
-    dashboard_llm_dry_run: bool = Field(default=True, alias="DASHBOARD_LLM_DRY_RUN")
+    # Phase 8 / ADR-017 — runtime default flips to False. Local Ollama
+    # removes the external-spend risk that drove Phase 7's safe-by-default
+    # `True`. The DRY_RUN mechanism is preserved as a test-harness
+    # convenience: an autouse fixture in `tests/conftest.py` forces it on
+    # for the test scope so unit tests don't pay the 5-30s of local LLM
+    # latency per call.
+    dashboard_llm_dry_run: bool = Field(default=False, alias="DASHBOARD_LLM_DRY_RUN")
 
-    # Cost-bounding caps — all enforced in-graph, deterministic, no advisory
-    # middleware. Each is a single integer comparison.
+    # Per-request safety bounds — all enforced in-graph, deterministic.
+    # Token cap uses `len(text) // 4` heuristic (post-Phase-8); rationale
+    # is performance / UX bounding, not cost bounding.
     llm_max_tool_calls_per_request: int = Field(
         default=4, alias="DASHBOARD_LLM_MAX_TOOL_CALLS_PER_REQUEST", ge=1, le=20
     )
@@ -153,7 +160,7 @@ class Settings(BaseSettings):
         default=200, alias="DASHBOARD_SESSION_INDEX_MAX", ge=10, le=10_000
     )
 
-    # --- Phase 7e (PR 4c): proactive background scan + ERROR-tier chaos path ---
+    # --- Proactive background scan + ERROR-tier chaos path (ADR-016, amended by ADR-017) ---
     #
     # The scan loop wakes on the configured interval, synthesises a "scan for
     # anomalies" prompt, invokes the SAME compiled LangGraph used by /api/chat,
@@ -163,8 +170,10 @@ class Settings(BaseSettings):
     #
     # Real scans require BOTH `proactive_scan_enabled=True` AND
     # `dashboard_llm_dry_run=False`. Either alone is safe — dry-run makes the
-    # loop log `proactive_scan_skipped reason=llm_dry_run` and continue without
-    # touching OpenAI. ADR-016 documents the safety asymmetry.
+    # loop log `proactive_scan_skipped reason=llm_dry_run` and continue
+    # without invoking the LLM. Phase 7 rationale was cost-safety; Phase 8 /
+    # ADR-017 rescinds that — the gate stays for noise control (the dry-run
+    # fake returns the same canned answer every cycle).
     proactive_scan_enabled: bool = Field(default=False, alias="DASHBOARD_PROACTIVE_SCAN_ENABLED")
     proactive_scan_interval_seconds: int = Field(
         default=900,

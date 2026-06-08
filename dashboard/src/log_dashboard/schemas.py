@@ -99,7 +99,7 @@ class StatusResponse(BaseModel):
     # PR 3: True iff the Chroma vectorstore exists and has zero docs.
     # The Overview banner uses this to nudge the operator toward the
     # Log Generator on a fresh install. False when the vectorstore is
-    # disabled (no OpenAI key) or when count() is unavailable.
+    # disabled (Ollama unreachable) or when count() is unavailable.
     corpus_empty: bool = False
     # PR 4c: proactive scan findings + loop status. The Overview page
     # renders `proactive_findings` (top-N newest first) inline above the
@@ -236,9 +236,10 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     """LangGraph agent's final answer + supporting citations.
 
-    `dry_run` flips to True when `DASHBOARD_LLM_DRY_RUN=true` (the default —
-    safe-by-default). The UI shows a banner in that case so the operator
-    knows the answer came from `GenericFakeChatModel`, not OpenAI.
+    `dry_run` flips to True when `DASHBOARD_LLM_DRY_RUN=true` (Phase 8 /
+    ADR-017 — runtime default is False; tests inherit True via an autouse
+    fixture). The UI shows a banner in that case so the operator knows
+    the answer came from `_DryRunChatModel`, not the real LLM.
 
     `tool_budget_exhausted` flips when the graph reached
     `llm_max_tool_calls_per_request` and was forced to short-circuit to
@@ -369,7 +370,7 @@ class ChromaStatsResponse(BaseModel):
     """Aggregated stats over the Chroma collection — what's actually embedded.
 
     Computed in-process from a single `_collection.get(include=["metadatas"])`
-    call; no OpenAI traffic. The shape is stable across empty + populated
+    call; no LLM traffic. The shape is stable across empty + populated
     states so the UI can render the same scaffolding regardless. `as_of` is
     a single snapshot time — counts can shift between fields if ingestion
     is active during the request, but the jitter is acceptable for a stats

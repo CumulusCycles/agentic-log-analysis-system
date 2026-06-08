@@ -107,7 +107,7 @@
 <div class="page-header">
   <div class="label">Docker Infrastructure · Phase 8 (ADR-017)</div>
   <h1>Agentic Log Analysis System</h1>
-  <p>9 long-running containers + 1 init service · 8 persistent volumes · insurance-net bridge network</p>
+  <p>9 containers · 8 persistent volumes · insurance-net bridge network</p>
 </div>
 
 <div class="nav">
@@ -194,7 +194,7 @@
           </div>
         </div>
         <div style="font-family: 'JetBrains Mono', monospace; font-size: 9px; color: #6e7681; margin-top: 8px; padding-top: 6px; border-top: 0.5px dashed #30363d;">
-          + <span style="color: #d2a8ff;">ollama-init</span> — one-shot service (depends on ollama healthy); pulls both models to <span style="color: #d2a8ff;">ollama-data</span> volume on first boot, then exits. Subsequent boots use cached weights.
+          Models pulled to the <span style="color: #d2a8ff;">ollama-data</span> volume on first boot (~5 GB total, one-time). Subsequent boots use cached weights.
         </div>
       </div>
 
@@ -241,7 +241,6 @@
       <div class="flow-title">Startup dependency chain</div>
       postgres + mongodb <span class="arr">&rarr;</span> shared-data-api<br>
       shared-data-api <span class="arr">&rarr;</span> fnol / cp / ap<br>
-      ollama (healthy) <span class="arr">&rarr;</span> ollama-init (pulls models, exits)<br>
       chroma + ollama <span class="arr">&rarr;</span> log-dashboard
     </div>
   </div>
@@ -256,7 +255,7 @@
 </div>
 
 <div class="footer">
-  Phase 8 / ADR-017 — local AI via Ollama replaces OpenAI · implementation lands in PR 8b
+  Phase 8 / ADR-017 — local AI via Ollama replaces OpenAI
 </div>
 
 </body>

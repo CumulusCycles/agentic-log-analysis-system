@@ -19,6 +19,16 @@ os.environ.setdefault("DASHBOARD_JWT_EXPIRES_MINUTES", "60")
 os.environ.setdefault("DASHBOARD_ADMIN_USERNAME", "admin")
 os.environ.setdefault("DASHBOARD_ADMIN_PASSWORD", "hunter2")
 os.environ.setdefault("DASHBOARD_CHROMA_URL", "http://chroma:8000")
+# Phase 8 / ADR-017 — point the Ollama probe at an unused localhost port so
+# `is_embeddings_disabled` returns True immediately (connection refused, no
+# DNS lookup, no 2s timeout per test). Tests that need to exercise the
+# probe construct Settings directly with a different URL.
+os.environ.setdefault("OLLAMA_BASE_URL", "http://127.0.0.1:1")
+# Phase 8 / ADR-017 — runtime default flipped to False (real Ollama). The
+# autouse test default stays True so unit tests don't pay 5-30s of local
+# LLM latency per call. The graph still runs end-to-end via the
+# `_DryRunChatModel` scripted fake (provider-agnostic).
+os.environ.setdefault("DASHBOARD_LLM_DRY_RUN", "true")
 
 import structlog  # noqa: E402
 
@@ -74,11 +84,12 @@ def valid_token():
 
 
 class FakeEmbeddings:
-    """Deterministic stand-in for OpenAIEmbeddings — no network, no cost.
+    """Deterministic stand-in for OllamaEmbeddings — no network, no latency.
 
     Maps each text to a tiny float vector derived from a SHA-256 hash so
     identical text → identical vector (preserves Chroma's add-with-id
-    idempotency). The 8-dim shape is enough for similarity ordering tests.
+    idempotency). The 8-dim shape is enough for similarity ordering tests
+    (real nomic-embed-text returns 768-dim; tests don't need the full dim).
     """
 
     def __init__(self, dim: int = 8) -> None:
@@ -140,16 +151,21 @@ def agent_graph(fake_vectorstore):
 
 
 @pytest.fixture
-def fail_if_openai_invoked(monkeypatch):
-    """Defence-in-depth: monkeypatch `ChatOpenAI.__init__` to raise on
+def fail_if_real_llm_invoked(monkeypatch):
+    """Defence-in-depth: monkeypatch `ChatOllama.__init__` to raise on
     construction. Any test that opts into this fixture asserts that NO real
-    OpenAI call path is touched."""
-    from langchain_openai import ChatOpenAI
+    LLM call path is touched — the graph must stay on `_DryRunChatModel`.
+
+    Phase 8 / ADR-017 — replaces the Phase 7 `fail_if_openai_invoked`
+    fixture. Provider-agnostic in intent; renamed so future provider
+    swaps don't require renaming the fixture again.
+    """
+    from langchain_ollama import ChatOllama
 
     def _boom(self, *args, **kwargs):
-        raise RuntimeError("test attempted to construct ChatOpenAI")
+        raise RuntimeError("test attempted to construct ChatOllama")
 
-    monkeypatch.setattr(ChatOpenAI, "__init__", _boom)
+    monkeypatch.setattr(ChatOllama, "__init__", _boom)
     yield
 
 

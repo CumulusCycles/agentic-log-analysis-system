@@ -162,6 +162,6 @@ describe("LogExplorer (7d semantic search)", () => {
     renderExplorer();
     await userEvent.type(screen.getByTestId("filter-query"), "auth");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/OPENAI_API_KEY/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/OLLAMA_BASE_URL/i);
   });
 });

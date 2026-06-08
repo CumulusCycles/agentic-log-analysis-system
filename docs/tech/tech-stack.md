@@ -24,7 +24,7 @@
 | Input-token cap | `len(text) // 4` character-count heuristic (Phase 8 / ADR-017; replaces `tiktoken o200k_base` — heuristic is a safety bound, not a billing meter) |
 | Observability | LangSmith — per-invocation metadata: `{session_id, jwt_sub, dry_run}` (provider-agnostic; traces `ChatOllama` the same way it traced `ChatOpenAI`) |
 
-*Phase 8 implementation lands in PR 8b. See [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md).*
+*Phase 8 shipped in PR 8b. See [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md).*
 
 ## Auth & Security
 

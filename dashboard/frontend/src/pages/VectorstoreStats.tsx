@@ -86,8 +86,9 @@ export function VectorstoreStats() {
           Vectorstore Stats
         </h2>
         <p role="alert" className="mt-4 rounded-md bg-amber-50 p-4 text-sm text-amber-800">
-          Vectorstore is unavailable. Check that <code>OPENAI_API_KEY</code> is set in{" "}
-          <code>.env</code> and that the dashboard container has been restarted.
+          Vectorstore is unavailable. Check that the <code>ollama</code> service is healthy and
+          reachable at <code>OLLAMA_BASE_URL</code> (defaults to <code>http://ollama:11434</code>),
+          then restart the dashboard container.
         </p>
       </section>
     );
@@ -203,19 +204,20 @@ export function VectorstoreStats() {
   );
 }
 
-// text-embedding-3-small list price (2026-Q1) — keeps the UI estimate consistent
-// with the backend's _OPENAI_EMBEDDING_USD_PER_TOKEN constant. The 80
-// tokens-per-doc figure is an order-of-magnitude approximation calibrated
-// against this project's typical structured log line; it's labelled as
-// approximate in the UI so the operator doesn't mistake it for an invoice.
+// Phase 8 / ADR-017 — Ollama embeddings are local + free, so there's no
+// USD cost to forecast. The 80 tokens-per-doc figure was calibrated against
+// this project's typical structured log line; we keep it as the basis for
+// a wall-time estimate. ~50ms per `nomic-embed-text` call on M1 Max is a
+// reasonable rough cut.
 const ESTIMATED_TOKENS_PER_DOC = 80;
-const USD_PER_TOKEN = 0.02 / 1_000_000;
+const APPROX_MS_PER_DOC = 50;
 
-function estimateRefillCost(totalCount: number): string {
-  const usd = totalCount * ESTIMATED_TOKENS_PER_DOC * USD_PER_TOKEN;
-  if (usd === 0) return "$0.00";
-  if (usd < 0.01) return "less than $0.01";
-  return `~$${usd.toFixed(2)}`;
+function estimateRefillTime(totalCount: number): string {
+  const ms = totalCount * APPROX_MS_PER_DOC;
+  if (ms === 0) return "no time";
+  if (ms < 1000) return `~${ms} ms`;
+  if (ms < 60_000) return `~${(ms / 1000).toFixed(1)} s`;
+  return `~${(ms / 60_000).toFixed(1)} min`;
 }
 
 interface FlushPanelProps {
@@ -230,7 +232,7 @@ function FlushPanel({ totalCount, onFlushed }: FlushPanelProps) {
   const [result, setResult] = useState<{ deleted: number; at: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refillEstimate = useMemo(() => estimateRefillCost(totalCount), [totalCount]);
+  const refillEstimate = useMemo(() => estimateRefillTime(totalCount), [totalCount]);
 
   const performFlush = useCallback(async () => {
     if (!token) return;
@@ -297,10 +299,10 @@ function FlushPanel({ totalCount, onFlushed }: FlushPanelProps) {
             Delete all {totalCount.toLocaleString()} embedded documents?
           </p>
           <p className="mt-1 text-slate-700">
-            Re-embedding from the log volumes is estimated at <strong>{refillEstimate}</strong> in
-            OpenAI charges (~
-            {ESTIMATED_TOKENS_PER_DOC} tokens per doc × text-embedding-3-small list price). Backfill
-            runs at startup only — to repopulate, run{" "}
+            Re-embedding from the log volumes is estimated at <strong>{refillEstimate}</strong> of
+            local Ollama work (~
+            {ESTIMATED_TOKENS_PER_DOC} tokens per doc × <code>nomic-embed-text</code> on M1 Max).
+            Backfill runs at startup only — to repopulate, run{" "}
             <code className="rounded bg-slate-100 px-1">docker compose restart log-dashboard</code>{" "}
             after the flush completes.
           </p>

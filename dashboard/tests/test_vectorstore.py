@@ -1,12 +1,13 @@
 """Tests for the vectorstore factory + degraded-mode detection."""
 
 from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from log_dashboard.config import Settings
 from log_dashboard.ingest.vectorstore import (
-    _SESSION_SPEND,
+    _SESSION_TOTALS,
     build_vectorstore,
     is_embeddings_disabled,
     metadata_to_log_entry,
@@ -16,15 +17,15 @@ from log_dashboard.schemas import LogEntry, LogLevel
 
 
 @pytest.fixture(autouse=True)
-def _reset_session_spend():
-    """`_SESSION_SPEND` is module-level state; reset around every test so
-    one test's spend doesn't leak into the next test's session-total
+def _reset_session_totals():
+    """`_SESSION_TOTALS` is module-level state; reset around every test so
+    one test's totals don't leak into the next test's session-total
     assertions."""
-    _SESSION_SPEND.tokens = 0
-    _SESSION_SPEND.cost_usd = 0.0
+    _SESSION_TOTALS.tokens = 0
+    _SESSION_TOTALS.wall_ms = 0
     yield
-    _SESSION_SPEND.tokens = 0
-    _SESSION_SPEND.cost_usd = 0.0
+    _SESSION_TOTALS.tokens = 0
+    _SESSION_TOTALS.wall_ms = 0
 
 
 def _settings(**over) -> Settings:
@@ -32,10 +33,14 @@ def _settings(**over) -> Settings:
         jwt_secret="test-secret",
         admin_username="admin",
         admin_password="hunter2",
-        openai_api_key="sk-test-real-key",
     )
     defaults.update(over)
-    return Settings(**defaults)
+    # pydantic-settings gives env-via-alias precedence over field-name init
+    # kwargs (with `populate_by_name=True`). The conftest sets `OLLAMA_BASE_URL`,
+    # so a field-name kwarg like `ollama_base_url=...` would silently lose.
+    # Translate to alias-form here so test overrides actually win.
+    field_to_alias = {n: (f.alias or n) for n, f in Settings.model_fields.items()}
+    return Settings(**{field_to_alias.get(k, k): v for k, v in defaults.items()})
 
 
 def _entry(seq: int) -> LogEntry:
@@ -50,11 +55,47 @@ def _entry(seq: int) -> LogEntry:
     )
 
 
-def test_is_embeddings_disabled_flags_empty_and_placeholder_keys() -> None:
-    assert is_embeddings_disabled(_settings(openai_api_key="")) is True
-    assert is_embeddings_disabled(_settings(openai_api_key="your_openai_api_key_here")) is True
-    assert is_embeddings_disabled(_settings(openai_api_key="change_me_to_real_key")) is True
-    assert is_embeddings_disabled(_settings(openai_api_key="sk-proj-realxyz")) is False
+def test_is_embeddings_disabled_returns_true_when_ollama_unreachable() -> None:
+    """The test conftest defaults `OLLAMA_BASE_URL` to a closed port, so
+    `is_embeddings_disabled` should refuse the connection and return True
+    immediately."""
+    settings = _settings()
+    assert is_embeddings_disabled(settings) is True
+
+
+def test_is_embeddings_disabled_returns_true_on_non_200() -> None:
+    """A reachable URL that returns a non-200 status counts as disabled.
+
+    Belt-and-braces for the case where some other service answers on the
+    Ollama port but isn't actually Ollama — the dashboard still degrades
+    cleanly rather than crashing in the embedder.
+    """
+    settings = _settings(ollama_base_url="http://example.invalid:11434")
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 502
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
+        assert is_embeddings_disabled(settings) is True
+
+
+def test_is_embeddings_disabled_returns_false_on_200() -> None:
+    """A reachable Ollama that returns 200 to `/api/tags` is healthy."""
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
+        assert is_embeddings_disabled(settings) is False
 
 
 def test_build_vectorstore_against_in_memory_client(fake_embeddings) -> None:
@@ -87,9 +128,11 @@ def test_upsert_entries_is_idempotent_by_content_hash_id(fake_vectorstore) -> No
 
 
 def test_upsert_entries_skips_already_indexed_to_avoid_re_embedding() -> None:
-    """The dedup gate is the cost-saver: on a dashboard restart against a
-    populated Chroma volume, we MUST NOT pay OpenAI to re-embed the same
-    lines. Verified by counting calls on a tracking embedder.
+    """The dedup gate avoids redundant embedding work: on a dashboard
+    restart against a populated Chroma volume, we MUST NOT re-embed the
+    same lines. Phase 7 framed this as a cost saver against OpenAI; Phase
+    8 / ADR-017 makes it a performance saver against Ollama latency.
+    Verified by counting calls on a tracking embedder.
     """
     import uuid
 
@@ -137,9 +180,9 @@ def test_upsert_entries_skips_already_indexed_to_avoid_re_embedding() -> None:
 def test_upsert_entries_prints_level_count_table_after_embedding(
     fake_vectorstore, capfd, caplog
 ) -> None:
-    """Any time OpenAI is invoked to embed log lines, the operator gets a
-    level-count summary table on stdout AND a structured `embedding_complete`
-    log event. Mirrors the user request — visibility into what was paid for.
+    """Any time the embedder is invoked, the operator gets a level-count
+    summary table on stdout AND a structured `embedding_complete` log
+    event. Phase 8 / ADR-017 — table shows wall-time instead of USD cost.
     """
     entries = [
         _entry(0),  # INFO
@@ -189,15 +232,16 @@ def test_upsert_entries_prints_level_count_table_after_embedding(
     assert "| WARN    |                1 |" in captured.out
     assert "| ERROR   |                2 |" in captured.out
     assert "| TOTAL   |                4 |" in captured.out
-    # Spend rows: 4 entries → some tokens > 0, some USD > 0.
+    # Throughput rows: tokens > 0 and wall_ms reported (Phase 8 — no USD).
     assert "Tokens" in captured.out
-    assert "Cost" in captured.out
-    assert "$" in captured.out  # USD prefix on the cost row
-    # Session-spend footer.
+    assert "Wall" in captured.out
+    assert " ms" in captured.out  # wall-time suffix
+    assert "$" not in captured.out  # cost columns retired per ADR-017
+    # Session-totals footer.
     assert "Session total (since startup)" in captured.out
 
 
-def test_upsert_entries_accumulates_session_spend_across_calls(fake_vectorstore, capfd) -> None:
+def test_upsert_entries_accumulates_session_totals_across_calls(fake_vectorstore, capfd) -> None:
     """Two successive upserts (different content) drive the running session
     total — the second table's session row should show MORE tokens than
     the first."""
@@ -214,7 +258,7 @@ def test_upsert_entries_accumulates_session_spend_across_calls(fake_vectorstore,
     def _session_tokens(text: str) -> int:
         for line in text.splitlines():
             if "Session total" in line:
-                # Format: " Session total (since startup): N,NNN tokens · $0.xxxxxx"
+                # Format: " Session total (since startup): N,NNN tokens · NN ms"
                 return int(line.split(":", 1)[1].strip().split()[0].replace(",", ""))
         raise AssertionError("no session footer in output")
 
@@ -247,7 +291,7 @@ def test_metadata_to_log_entry_round_trips_source_field(fake_vectorstore) -> Non
 
 def test_upsert_entries_no_table_when_nothing_embedded(fake_vectorstore, capfd) -> None:
     """Re-running an upsert with all-deduped entries skips the table — there
-    is no OpenAI call to summarise."""
+    is no embed call to summarise."""
     entries = [_entry(0), _entry(1)]
     upsert_entries(fake_vectorstore, entries)  # first run prints
     capfd.readouterr()  # drain
@@ -258,7 +302,7 @@ def test_upsert_entries_no_table_when_nothing_embedded(fake_vectorstore, capfd) 
 
 
 def test_upsert_entries_no_table_on_dry_run(fake_vectorstore, capfd) -> None:
-    """Dry-run short-circuits before any OpenAI call — no table either."""
+    """Dry-run short-circuits before any embed call — no table either."""
     upsert_entries(fake_vectorstore, [_entry(0), _entry(1)], dry_run=True)
     captured = capfd.readouterr()
     assert "Chroma embedding complete" not in captured.out

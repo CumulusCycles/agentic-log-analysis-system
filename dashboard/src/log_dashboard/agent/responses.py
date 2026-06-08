@@ -67,25 +67,39 @@ def extract_citations(state: dict[str, Any]) -> list[Citation]:
     return citations
 
 
-def is_openai_api_error(exc: BaseException) -> bool:
-    """Lazy-import isinstance check so dry-run installs without `openai` work."""
-    try:
-        from openai import APIError
-    except ImportError:
-        return False
-    return isinstance(exc, APIError)
+def is_llm_api_error(exc: BaseException) -> bool:
+    """True for upstream LLM transport failures the router should surface as 502.
 
-
-def count_tokens(text: str, model: str) -> int:
-    """Tiktoken count for `text` against `model`'s encoding.
-
-    Falls back to `o200k_base` (gpt-4o family) for unknown model strings so
-    we still get a usable estimate.
+    Phase 8 / ADR-017 — broadened from the Phase 7 `openai.APIError` check
+    to cover the failure modes the local Ollama client emits. `ChatOllama`
+    is built on `httpx`, so connection errors and timeouts come through as
+    `httpx.HTTPError` subclasses; the underlying `ollama` python client
+    also raises `ResponseError` on non-200 replies which we match by name
+    to avoid an import-time dependency.
     """
-    import tiktoken
+    import asyncio
 
-    try:
-        enc = tiktoken.encoding_for_model(model)
-    except KeyError:
-        enc = tiktoken.get_encoding("o200k_base")
-    return len(enc.encode(text))
+    import httpx
+
+    if isinstance(exc, httpx.HTTPError | asyncio.TimeoutError | TimeoutError | ConnectionError):
+        return True
+    # Match the `ollama` client's `ResponseError` by class name so we don't
+    # have to import `ollama` directly (and so dry-run installs that pin
+    # the dep low don't break the import).
+    cls = type(exc)
+    module = getattr(cls, "__module__", "") or ""
+    if module.startswith("ollama") and cls.__name__ == "ResponseError":
+        return True
+    return False
+
+
+def count_tokens(text: str) -> int:
+    """Estimate token count via the `len(text) // 4` character-count heuristic.
+
+    Phase 8 / ADR-017 drops `tiktoken` (OpenAI-specific) in favor of a
+    cheap heuristic that's good enough for an in-graph safety bound on
+    input size. The number is a coarse proxy, not a billing meter — the
+    bound exists to keep one absurdly large request from filling the
+    context window, not to track spend.
+    """
+    return len(text) // 4

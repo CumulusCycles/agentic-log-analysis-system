@@ -83,9 +83,10 @@ async def test_stats_empty_corpus_returns_zeros_with_model_info(
     # is continuous on the frontend.
     assert len(body["by_day"]) == 30
     assert all(d["count"] == 0 for d in body["by_day"])
-    # Model metadata is always populated.
+    # Model metadata is always populated. Phase 8 / ADR-017: nomic-embed-text
+    # returns 768-dim vectors (was text-embedding-3-small @ 1536 in Phase 7).
     assert body["embedding_model"]
-    assert body["dimensions"] == 1536
+    assert body["dimensions"] == 768
     assert body["as_of"]
 
 

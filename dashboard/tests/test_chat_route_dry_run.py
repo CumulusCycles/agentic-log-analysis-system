@@ -1,7 +1,7 @@
 """Safe-by-default verification — no real OpenAI call path is ever entered.
 
 The Settings default `DASHBOARD_LLM_DRY_RUN=True` is the primary gate; the
-`fail_if_openai_invoked` fixture is defence-in-depth — it monkeypatches
+`fail_if_real_llm_invoked` fixture is defence-in-depth — it monkeypatches
 `ChatOpenAI.__init__` to raise, so even if the dry-run flag flipped
 unexpectedly the test would fail loudly.
 """
@@ -12,7 +12,7 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_chat_default_is_dry_run(client, valid_token, fail_if_openai_invoked) -> None:
+async def test_chat_default_is_dry_run(client, valid_token, fail_if_real_llm_invoked) -> None:
     response = await client.post(
         "/api/chat",
         json={"message": "what is wrong with fnol?"},
@@ -26,7 +26,7 @@ async def test_chat_default_is_dry_run(client, valid_token, fail_if_openai_invok
 
 @pytest.mark.asyncio
 async def test_chat_session_id_minted_on_first_call(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     response = await client.post(
         "/api/chat",
@@ -40,7 +40,7 @@ async def test_chat_session_id_minted_on_first_call(
 
 @pytest.mark.asyncio
 async def test_chat_session_id_reused_carries_history(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     """Two calls with the same `session_id` land on the same checkpoint thread.
 

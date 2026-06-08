@@ -4,15 +4,17 @@ Flow per request:
 1. Validate `entry_id` shape (`{app}:{16 hex}` — same as Chroma doc ID)
 2. Look the entry up via Chroma `_collection.get(ids=[...])` — single O(1)
    call, no embedding round-trip needed since we already know the key
-3. 404 if missing (entry never passed the 7d WARN+ERROR ingest gate)
+3. 404 if missing (entry never passed the ingest gate, or Ollama was
+   unreachable when the line was emitted)
 4. Synthesise a HumanMessage that frames the entry for the agent
 5. Token-cap check (reused from `/api/chat`)
 6. Mint a fresh `session_id`, register with `SessionIndex`
 7. Invoke the agent graph — same compiled graph used by `/api/chat`
 8. Build `ErrorDetailResponse{entry, analysis}` from the final state
 
-Only WARN/ERROR entries are eligible — defence-in-depth on top of the
-ingest gate's level filter (which already keeps INFO out of Chroma).
+Only WARN/ERROR entries are eligible — route-level gate. Post-Phase-8
+(ADR-017) Chroma admits all levels for baseline awareness, so this check
+is what keeps Error Detail focused on actionable signal.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from ..agent.responses import (
     count_tokens,
     extract_answer,
     extract_citations,
-    is_openai_api_error,
+    is_llm_api_error,
 )
 from ..agent.sessions import new_session_id, thread_id_for
 from ..auth.jwt import get_current_admin
@@ -108,29 +110,28 @@ async def get_error_detail(
 
     store = _get_vectorstore(request)
     if store is None:
-        # No OpenAI key → no Chroma → no Error Detail. The operator-facing
-        # /api/logs view keeps working in this mode; only the agent-backed
-        # surfaces degrade.
+        # Ollama unreachable → no Chroma → no Error Detail. The
+        # operator-facing /api/logs view keeps working in this mode; only
+        # the agent-backed surfaces degrade.
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="error detail is unavailable — OPENAI_API_KEY is not configured",
+            detail="error detail is unavailable — OLLAMA_BASE_URL is unreachable",
         )
 
     entry = lookup_entry_by_id(store, entry_id)
     if entry is None:
-        # Either the ID isn't in Chroma (entry never passed the WARN+ERROR
-        # ingest gate) or Chroma returned malformed metadata (already logged
-        # in `lookup_entry_by_id`). 404 in both cases — the operator can't
-        # do anything different.
+        # Either the ID isn't in Chroma (parser rejected it, or it was
+        # ingested while Ollama was down) or Chroma returned malformed
+        # metadata (already logged in `lookup_entry_by_id`). 404 in both
+        # cases — the operator can't do anything different.
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="entry not found",
         )
 
-    # Defence-in-depth: only WARN/ERROR are eligible for analysis. The 7d
-    # ingest gate already drops INFO before embedding, so this branch
-    # protects against a future config change that loosens the gate without
-    # the operator realising the Error Detail surface widens too.
+    # Route-level gate: only WARN/ERROR are eligible for analysis. Post-
+    # Phase-8 (ADR-017) Chroma admits all levels for RAG baseline; this
+    # branch keeps Error Detail scoped to actionable entries.
     if entry.level not in (LogLevel.WARN, LogLevel.ERROR):
         log.info(
             "error_detail_rejected_non_error_level",
@@ -163,7 +164,7 @@ async def get_error_detail(
         raw=safe_raw,
     )
 
-    token_count = count_tokens(synthesised_message, settings.openai_chat_model)
+    token_count = count_tokens(synthesised_message)
     if token_count > settings.llm_max_input_tokens_per_request:
         # An extremely verbose raw line (huge stack trace) could blow the cap.
         # Surface 413 so the operator knows the analysis didn't silently
@@ -220,7 +221,7 @@ async def get_error_detail(
     try:
         result = await graph.ainvoke(initial_state, config=config)
     except Exception as exc:
-        if is_openai_api_error(exc):
+        if is_llm_api_error(exc):
             log.warning(
                 "error_detail_upstream_failure",
                 entry_id=entry_id,

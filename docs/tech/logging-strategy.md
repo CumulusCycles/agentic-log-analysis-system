@@ -26,7 +26,7 @@ same diff.
    | API keys | `SHARED_DATA_API_KEY_FNOL`, `SHARED_DATA_API_KEY_CUSTOMER_PORTAL`, `SHARED_DATA_API_KEY_AGENT_PORTAL` |
    | Bearer tokens / JWTs | full token, or any segment (header / payload / signature) |
    | DB credentials | `POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_PASSWORD`, full connection strings with `user:pass@host` |
-   | LLM keys | `OPENAI_API_KEY` (Phase 8 / ADR-017 removes this env var in PR 8b); `LANGSMITH_API_KEY` (stays) |
+   | LLM keys | `OPENAI_API_KEY` (removed per Phase 8 / ADR-017); `LANGSMITH_API_KEY` (stays) |
    | Admin creds | `DASHBOARD_ADMIN_PASSWORD` |
    | Any other `.env` value that maps to a real secret in production |
 

@@ -42,7 +42,7 @@ def build_tools(settings: Settings, vectorstore: Chroma | None) -> list[BaseTool
     """Return the bound `[query_logs, get_app_status]` tools.
 
     `vectorstore` may be None when the dashboard is in degraded mode
-    (OpenAI key missing/placeholder). In that case `query_logs` returns
+    (Ollama unreachable at lifespan). In that case `query_logs` returns
     `{tool_error: "vectorstore_unavailable"}` so the LLM degrades gracefully
     without crashing the graph.
     """

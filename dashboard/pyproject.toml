@@ -14,12 +14,11 @@ dependencies = [
     "python-multipart==0.0.20",
     "chromadb==1.5.9",
     "langchain-chroma==1.1.0",
-    "langchain-openai==1.2.2",
+    "langchain-ollama>=0.3,<1.0",
     "langsmith==0.8.9",
     "watchdog==6.0.0",
     "langgraph>=1.1,<2.0",
     "langchain>=1.0,<2.0",
-    "tiktoken>=0.8,<1.0",
 ]
 
 [dependency-groups]

@@ -191,13 +191,13 @@ incorporate the same baseline-direction framing.
   broken?" to "what's abnormal compared to normal?" — the project brief's
   "proactively predict problems before they escalate" becomes structurally possible
 - **No `OPENAI_API_KEY` required.** Removed from `.env.example`. Public-repo demo
-  works out-of-the-box once `ollama-init` completes the first-boot model pull
+  works out-of-the-box once the first-boot model pull completes
 - **AI Chat latency increases.** ~1–3s (OpenAI) → ~5–30s (local llama3.1:8b on M1 Max).
   SSE streaming from PR #38 masks this somewhat; UI shows the response as it generates
 - **Docker Desktop allocation must be 32GB.** Operator-side prerequisite. Documented
   in `README.md` + `docs/operations/dashboard-guide.md`
-- **First-boot model pull is ~5–15 minutes.** `ollama-init` runs once on first
-  `docker compose up -d --build`, pulls both models to `ollama-data` volume.
+- **First-boot model pull is ~5–15 minutes.** Runs once on first
+  `docker compose up -d --build`, pulls both models to the `ollama-data` volume.
   Subsequent boots use cached weights
 - **Chroma must be wiped during PR 8b deployment.** One-time operator action.
   Documented in dashboard-guide.md

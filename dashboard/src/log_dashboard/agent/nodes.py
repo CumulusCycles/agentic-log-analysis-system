@@ -22,7 +22,7 @@ import asyncio
 import json
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from ..credentials import sanitize_user_input
 from ..logging_setup import get_logger
@@ -35,6 +35,26 @@ if TYPE_CHECKING:
     from ..config import Settings
 
 log = get_logger("agent.nodes")
+
+
+# Baseline-aware retrieval directive (Phase 8 / ADR-017). Injected at the
+# FIRST `analyze` call of a turn — once the LLM has tool results in hand,
+# the bias is unnecessary and would just consume the token budget.
+# Surfacing it here (not in the chat-route prompt) keeps the system message
+# co-located with the node that uses it and makes it trivial to unit-test.
+_ANALYZE_SYSTEM_PROMPT = (
+    "You are a log-analysis assistant for a 4-app insurance system "
+    "(Shared Data API, FNOL, Customer Portal, Agent Portal). The Chroma "
+    "corpus contains the full log stream — INFO entries describe normal "
+    "operation and form the baseline; WARN/ERROR entries mark deviations. "
+    "When the user's question is comparative ('is this normal?', "
+    "'what does this usually look like?', 'what's degraded?'), use "
+    "`query_logs` to retrieve INFO baseline FIRST, then assess WARN/ERROR "
+    "against it. When the question is about a specific failure, retrieve "
+    "the failing entries and look for correlated INFO context. Cite "
+    "specific log entries — the system extracts citations from your tool "
+    "results automatically."
+)
 
 
 def build_ingest_node(settings: Settings):
@@ -73,10 +93,21 @@ def build_ingest_node(settings: Settings):
 
 
 def build_analyze_node(settings: Settings, tools: list[BaseTool]):
-    """First LLM call — model decides whether to call tools or answer directly."""
+    """First LLM call — model decides whether to call tools or answer directly.
+
+    On the FIRST analyze call of a turn (no prior `AIMessage` or
+    `ToolMessage` in state), a baseline-aware `SystemMessage` is prepended
+    to bias retrieval toward the new full-corpus capability. The message
+    is consumed by the single LLM call only — it is NOT returned in the
+    state delta, so it never persists into the checkpoint and never
+    accumulates against the per-session message cap.
+    """
 
     async def analyze_node(state: AgentState) -> dict[str, Any]:
-        return await _invoke_llm_with_tools(settings, tools, state)
+        messages = list(state["messages"])
+        if _is_first_turn(messages):
+            messages = [SystemMessage(content=_ANALYZE_SYSTEM_PROMPT), *messages]
+        return await _invoke_llm_with_tools(settings, tools, messages)
 
     return analyze_node
 
@@ -144,7 +175,7 @@ def build_predict_node(settings: Settings, tools: list[BaseTool]):
     """
 
     async def predict_node(state: AgentState) -> dict[str, Any]:
-        return await _invoke_llm_with_tools(settings, tools, state)
+        return await _invoke_llm_with_tools(settings, tools, list(state["messages"]))
 
     return predict_node
 
@@ -200,12 +231,29 @@ def route_after_predict(state: AgentState) -> str:
 
 
 async def _invoke_llm_with_tools(
-    settings: Settings, tools: list[BaseTool], state: AgentState
+    settings: Settings, tools: list[BaseTool], messages: list
 ) -> dict[str, Any]:
-    """Shared LLM call body used by both `analyze` and `predict`."""
+    """Shared LLM call body used by both `analyze` and `predict`.
+
+    Callers pass the message list explicitly so `analyze_node` can prepend
+    a `SystemMessage` for the LLM call without persisting it into state.
+    """
     model = build_chat_model(settings).bind_tools(tools)
-    response = await model.ainvoke(state["messages"])
+    response = await model.ainvoke(messages)
     return {"messages": [response]}
+
+
+def _is_first_turn(messages: list) -> bool:
+    """True when no prior AIMessage / ToolMessage exists in state.
+
+    Used by `analyze_node` to decide whether to inject the baseline-aware
+    `SystemMessage`. Once the LLM has been called at least once OR a tool
+    has run, the system prompt is unnecessary context bloat.
+    """
+    for msg in messages:
+        if isinstance(msg, AIMessage | ToolMessage):
+            return False
+    return True
 
 
 def _last_index_of(messages: list, cls: type) -> int | None:

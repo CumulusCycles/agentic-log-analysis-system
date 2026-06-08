@@ -1,6 +1,6 @@
 # Agentic Log Analysis System — Full System Integration
 
-A complete trace of how every component integrates: FNOL, Customer Portal, Agent Portal, Shared Data API, Agentic Dashboard, Agitator, Databases, Chroma Vector Store, and Ollama (local AI per [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md) — Phase 8; replaces the prior OpenAI dependency). *Phase 8 implementation lands in PR 8b.*
+A complete trace of how every component integrates: FNOL, Customer Portal, Agent Portal, Shared Data API, Agentic Dashboard, Agitator, Databases, Chroma Vector Store, and Ollama (local AI per [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md) — Phase 8; replaces the prior OpenAI dependency).
 
 ---
 

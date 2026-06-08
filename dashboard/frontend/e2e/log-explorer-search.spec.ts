@@ -11,16 +11,17 @@ test.describe("Log Explorer — semantic search (7d)", () => {
     await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("score-header")).toHaveCount(0);
 
-    // Type a query. Backend is embeddings-disabled (no OPENAI_API_KEY in
-    // local .env by default) → the UI surfaces the 503 as a friendly alert.
-    // Backend embeddings-enabled (operator set the key) → score column renders.
+    // Type a query. Backend is embeddings-disabled (Ollama unreachable in
+    // the test env) → the UI surfaces the 503 as a friendly alert.
+    // Backend embeddings-enabled (operator brought up the ollama service)
+    // → score column renders.
     await page.getByTestId("filter-query").fill("auth failures");
 
     await Promise.race([
       page.getByTestId("score-header").waitFor({ timeout: 4000 }),
       page
         .getByRole("alert")
-        .filter({ hasText: /OPENAI_API_KEY/ })
+        .filter({ hasText: /OLLAMA_BASE_URL/ })
         .waitFor({ timeout: 4000 }),
     ]);
 

@@ -177,7 +177,7 @@ describe("VectorstoreStats — flush panel", () => {
     expect(btn).toBeDisabled();
   });
 
-  it("shows the confirmation dialog with cost estimate when Flush is clicked", async () => {
+  it("shows the confirmation dialog with refill estimate when Flush is clicked", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(POPULATED), {
         status: 200,
@@ -192,8 +192,10 @@ describe("VectorstoreStats — flush panel", () => {
 
     const dialog = await screen.findByTestId("flush-confirm");
     expect(dialog).toHaveTextContent(/Delete all 445 embedded documents/);
-    // 445 docs × 80 tokens × $0.02/1M ≈ $0.000712 → "less than $0.01"
-    expect(dialog).toHaveTextContent(/less than \$0\.01/);
+    // Phase 8 / ADR-017 — local Ollama embeddings have no USD cost. The
+    // estimate is now a wall-time refill window (~50ms × 445 docs ≈ 22s).
+    expect(dialog).toHaveTextContent(/local Ollama work/);
+    expect(dialog).toHaveTextContent(/nomic-embed-text/);
     expect(dialog).toHaveTextContent(/docker compose restart log-dashboard/);
   });
 

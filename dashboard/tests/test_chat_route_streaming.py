@@ -45,7 +45,7 @@ def _parse_sse_stream(body: str) -> list[tuple[str, dict]]:
 
 @pytest.mark.asyncio
 async def test_chat_streaming_true_returns_text_event_stream(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     response = await client.post(
         "/api/chat",
@@ -59,7 +59,7 @@ async def test_chat_streaming_true_returns_text_event_stream(
 
 @pytest.mark.asyncio
 async def test_chat_streaming_emits_node_events_then_complete(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     response = await client.post(
         "/api/chat",
@@ -80,7 +80,7 @@ async def test_chat_streaming_emits_node_events_then_complete(
 
 @pytest.mark.asyncio
 async def test_chat_streaming_complete_event_mirrors_chat_response_shape(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     response = await client.post(
         "/api/chat",
@@ -105,7 +105,7 @@ async def test_chat_streaming_complete_event_mirrors_chat_response_shape(
 
 @pytest.mark.asyncio
 async def test_chat_streaming_dry_run_runs_full_graph_topology(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     """The dry-run model scripts a query_logs tool call so all 5 nodes fire.
 
@@ -134,7 +134,7 @@ async def test_chat_streaming_dry_run_runs_full_graph_topology(
 
 @pytest.mark.asyncio
 async def test_chat_streaming_over_token_cap_returns_json_413(
-    monkeypatch: pytest.MonkeyPatch, fail_if_openai_invoked
+    monkeypatch: pytest.MonkeyPatch, fail_if_real_llm_invoked
 ) -> None:
     """Token-cap rejection fires BEFORE any SSE bytes are written.
 
@@ -172,7 +172,7 @@ async def test_chat_streaming_no_bearer_returns_json_401(client) -> None:
 
 @pytest.mark.asyncio
 async def test_chat_streaming_false_uses_json_path(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     response = await client.post(
         "/api/chat",
@@ -188,7 +188,7 @@ async def test_chat_streaming_false_uses_json_path(
 
 @pytest.mark.asyncio
 async def test_chat_streaming_omitted_defaults_to_json(
-    client, valid_token, fail_if_openai_invoked
+    client, valid_token, fail_if_real_llm_invoked
 ) -> None:
     response = await client.post(
         "/api/chat",

@@ -37,8 +37,8 @@ class BackfillResult:
 
     `passed_filter` is the count of entries that made it through the
     ingest-level + ingest-source gate. `embedded` is the count actually
-    sent to OpenAI (after dedup + dry-run). Operator can read these two
-    numbers to see what the filter is doing without paying anything.
+    sent to the embedder (after dedup + dry-run). Operator can read these
+    two numbers to see what the filter is doing without disturbing the corpus.
     """
 
     app: str
@@ -68,7 +68,7 @@ def run_initial_backfill(settings: Settings, store: Chroma) -> list[BackfillResu
         all_lines = archive_lines + active_lines
         parsed = parse_and_fold(app_log, all_lines)
         # Apply the ingest gate BEFORE upsert. Skipped entries never reach
-        # OpenAI and never land in Chroma.
+        # the embedder and never land in Chroma.
         passing = filter_for_ingest(
             parsed,
             levels=settings.dashboard_ingest_levels,

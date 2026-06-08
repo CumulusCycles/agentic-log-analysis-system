@@ -8,7 +8,7 @@ An AI-powered log management platform built on a realistic insurance application
 Four full-stack apps generate heterogeneous logs in their native formats; a LangGraph + Ollama
 dashboard continuously monitors, correlates, and explains them — all inference runs locally
 ([ADR-017](docs/decisions/ADR-017-local-ai-via-ollama.md), Phase 8). *Phase 8 implementation
-lands in PR 8b.*
+shipped in PR 8b.*
 
 The supporting apps are the raw material. **The dashboard is the product.**
 
@@ -48,7 +48,7 @@ Phases 1 through 7 are complete. The build sequence — including the Agitator s
 | LangSmith account | — | (optional) Agent observability — works with local Ollama, no longer required for LLM access |
 
 Phase 8 (ADR-017) replaces the OpenAI API dependency with locally-run Ollama models. No
-external API key required. First `docker compose up -d --build` after PR 8b ships pulls
+external API key required. First `docker compose up -d --build` pulls
 `llama3.1:8b` + `nomic-embed-text` (~5GB total, one-time, ~5–15 min on M1 Max).
 
 ---

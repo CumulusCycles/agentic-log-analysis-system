@@ -29,7 +29,7 @@ from ..agent.responses import (
     count_tokens,
     extract_answer,
     extract_citations,
-    is_openai_api_error,
+    is_llm_api_error,
 )
 from ..agent.sessions import new_session_id, thread_id_for
 from ..auth.jwt import get_current_admin
@@ -105,10 +105,10 @@ async def post_chat(
     # raw secret in its preview log line.
     message_sanitised = sanitize_user_input(body.message)
 
-    # Cost guard. Counted against the chat model's encoding so we reject
-    # before the LangGraph dispatcher spends anything. Applies to both
-    # streaming and non-streaming paths.
-    token_count = count_tokens(message_sanitised, settings.openai_chat_model)
+    # Input-size guard. Counted via the `len(text) // 4` heuristic so we
+    # reject oversized inputs before the LangGraph dispatcher runs. Applies
+    # to both streaming and non-streaming paths.
+    token_count = count_tokens(message_sanitised)
     if token_count > settings.llm_max_input_tokens_per_request:
         log.info(
             "chat_rejected_token_cap",
@@ -186,11 +186,11 @@ async def post_chat(
     try:
         result = await graph.ainvoke(initial_state, config=config)
     except Exception as exc:
-        # Surface OpenAI / upstream LLM failures as 502; everything else
-        # (programming errors, schema issues) bubbles to the global 500
-        # handler. `is_openai_api_error` imports `openai` lazily so dry-run
-        # installs don't pay the import cost.
-        if is_openai_api_error(exc):
+        # Surface upstream LLM failures as 502; everything else (programming
+        # errors, schema issues) bubbles to the global 500 handler.
+        # `is_llm_api_error` matches httpx / connection / timeout / Ollama
+        # response errors (Phase 8 / ADR-017).
+        if is_llm_api_error(exc):
             log.warning(
                 "chat_upstream_failure",
                 session_id=session_id,
@@ -242,9 +242,8 @@ async def _stream_chat_events(
 
     Client-disconnect handling: between node emissions we check
     `request.is_disconnected()` and break out before the next graph step
-    runs. The existing tool-call cap already bounds spend, but a client
-    that disconnects mid-stream shouldn't keep burning OpenAI tokens just
-    to populate a checkpoint nobody will read.
+    runs. A client that disconnects mid-stream shouldn't keep driving
+    Ollama generations just to populate a checkpoint nobody will read.
 
     Upstream LLM failures during the stream emit a single `event: error`
     then close cleanly — the frontend's onError handler tears down the
@@ -277,7 +276,7 @@ async def _stream_chat_events(
                 )
                 return
     except Exception as exc:
-        if is_openai_api_error(exc):
+        if is_llm_api_error(exc):
             log.warning(
                 "chat_upstream_failure",
                 session_id=session_id,

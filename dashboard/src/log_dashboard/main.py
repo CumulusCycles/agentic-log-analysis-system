@@ -74,9 +74,9 @@ def create_app() -> FastAPI:
         # of the process; the plaintext is never persisted or logged.
         app.state.admin_password_hash = hash_password(settings.admin_password)
 
-        # Phase 7d: Chroma + embeddings + watcher. Degrades cleanly when the
-        # OpenAI key is missing — /api/logs and /api/status keep working,
-        # /api/logs/search returns 503.
+        # Chroma + embeddings + watcher. Degrades cleanly when Ollama is
+        # unreachable — /api/logs and /api/status keep working,
+        # /api/logs/search returns 503 (Phase 8 / ADR-017).
         app.state.vectorstore = None
         app.state.watcher = None
         app.state.backfill_complete = False
@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
         if is_embeddings_disabled(settings):
             log.info(
                 "embeddings_disabled",
-                reason="missing_or_placeholder_openai_key",
+                reason="ollama_unreachable",
             )
             app.state.backfill_complete = True
         else:
@@ -100,10 +100,11 @@ def create_app() -> FastAPI:
             app.state.vectorstore = build_vectorstore(settings)
             backfill_task = asyncio.create_task(_backfill_and_start_watcher(app))
 
-        # Phase 7e (PR 4a): LangGraph agent + /api/chat. The graph and its
-        # InMemorySaver checkpointer + SessionIndex are built unconditionally
-        # — `vectorstore=None` is permitted so the chat route still responds
-        # in degraded mode (the `query_logs` tool returns a tool_error).
+        # LangGraph agent + /api/chat (ADR-015, amended by ADR-017). The
+        # graph and its InMemorySaver checkpointer + SessionIndex are built
+        # unconditionally — `vectorstore=None` is permitted so the chat
+        # route still responds in degraded mode (the `query_logs` tool
+        # returns a tool_error).
         from langgraph.checkpoint.memory import InMemorySaver
 
         agent_checkpointer = InMemorySaver()
@@ -114,13 +115,13 @@ def create_app() -> FastAPI:
             settings, app.state.vectorstore, agent_checkpointer
         )
 
-        # Phase 7e (PR 4c): proactive background scan. The findings buffer
-        # is created unconditionally so `/api/status` can always report
-        # `proactive_findings: []` + `scan_enabled` without state checks.
-        # The loop task only starts when the operator opts in via
-        # `DASHBOARD_PROACTIVE_SCAN_ENABLED=true` — dry-run is a soft gate
-        # the loop applies per-iteration so the scheduling stays visible
-        # even when DRY_RUN=true.
+        # Proactive background scan (ADR-016, amended by ADR-017). The
+        # findings buffer is created unconditionally so `/api/status` can
+        # always report `proactive_findings: []` + `scan_enabled` without
+        # state checks. The loop task only starts when the operator opts
+        # in via `DASHBOARD_PROACTIVE_SCAN_ENABLED=true` — dry-run is a
+        # soft gate the loop applies per-iteration so the scheduling stays
+        # visible even when DRY_RUN=true.
         app.state.findings_buffer = FindingsBuffer()
         proactive_task: asyncio.Task[None] | None = None
         if settings.proactive_scan_enabled:

@@ -11,7 +11,7 @@ suggest remediation, and proactively predict problems before they escalate.
 - **Backend**: Python 3.12 / FastAPI (`uv`)
 - **Frontend**: React 18 + Vite + TypeScript (`pnpm`)
 - **AI Framework**: LangChain + LangGraph
-- **LLM**: Ollama (`llama3.1:8b` for analysis, `nomic-embed-text` for embeddings) — local Docker container; replaces OpenAI per Phase 8 / ADR-017. *Implementation lands in PR 8b.*
+- **LLM**: Ollama (`llama3.1:8b` for analysis, `nomic-embed-text` for embeddings) — local Docker container; replaces OpenAI per Phase 8 / ADR-017.
 - **Vector Store**: Chroma (persistent Docker container)
 - **Observability**: LangSmith (trace every agent run) — provider-agnostic; traces `ChatOllama` calls the same way it traced `ChatOpenAI`
 - **Log ingestion**: `watchdog` file watcher → embeds entries into Chroma continuously
