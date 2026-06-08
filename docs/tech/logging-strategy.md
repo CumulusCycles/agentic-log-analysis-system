@@ -26,11 +26,11 @@ same diff.
    | API keys | `SHARED_DATA_API_KEY_FNOL`, `SHARED_DATA_API_KEY_CUSTOMER_PORTAL`, `SHARED_DATA_API_KEY_AGENT_PORTAL` |
    | Bearer tokens / JWTs | full token, or any segment (header / payload / signature) |
    | DB credentials | `POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_PASSWORD`, full connection strings with `user:pass@host` |
-   | LLM keys | `OPENAI_API_KEY`, `LANGSMITH_API_KEY` |
+   | LLM keys | `OPENAI_API_KEY` (Phase 8 / ADR-017 removes this env var in PR 8b); `LANGSMITH_API_KEY` (stays) |
    | Admin creds | `DASHBOARD_ADMIN_PASSWORD` |
    | Any other `.env` value that maps to a real secret in production |
 
-   **Why this matters in this project specifically:** logs are written to volumes, ingested by the dashboard, embedded via OpenAI's embedding API into Chroma, traced through LangSmith, and read by humans in PR comments. Any credential that crosses the log boundary leaks through every one of those surfaces simultaneously.
+   **Why this matters in this project specifically:** logs are written to volumes, ingested by the dashboard, embedded into Chroma (via OpenAI in Phase 7; via local Ollama in Phase 8 / ADR-017), traced through LangSmith, and read by humans in PR comments. Any credential that crosses the log boundary leaks through every one of those surfaces simultaneously.
 
    **What IS safe to log:** identifiers (`user_id`, `username`, `policy_number`, `claim_id`, `vin`, `caller="fnol"`), decoder error messages (`reason="Signature verification failed"`), outcomes (`status=401`, `duration_ms=12.3`), and counts. Use identifiers + outcomes — never the secret values themselves.
 
@@ -141,8 +141,8 @@ Every app's request-logger middleware reads an optional `X-Source: <value>`
 HTTP header and emits a `source=<value>` field on the per-request log line.
 When absent, the apps default to `source=unknown` (per ADR-011 2026-06-07
 amendment — see below). This lets the dashboard's ingest gate
-(`DASHBOARD_INGEST_SOURCES`) drop synthetic / test / health traffic from
-Chroma before any OpenAI embedding call.
+(`DASHBOARD_INGEST_SOURCES`) drop test / health traffic from
+Chroma before any embedding call (Phase 7: OpenAI; Phase 8 / ADR-017: local Ollama).
 
 Allowed vocabulary:
 

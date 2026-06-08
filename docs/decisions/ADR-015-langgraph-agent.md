@@ -206,6 +206,30 @@ PR 4c will add the scheduler + flag + scan body together.
 - Agitator's `_sanitize_error` is untouched; the planned dedupe is
   tracked as a follow-up chore PR.
 
+## Amendment 2026-06-08 — Phase 8 supersedes the cost-asymmetry rationale (ADR-017)
+
+Phase 8 ([ADR-017](ADR-017-local-ai-via-ollama.md)) replaces OpenAI with locally-run
+models via Ollama. External inference cost goes to zero. This rescinds the
+load-bearing justification for §5's `DASHBOARD_LLM_DRY_RUN=true` runtime default.
+
+**Changes:**
+
+- **Runtime default flips: `DASHBOARD_LLM_DRY_RUN=false`.** No surprise spend possible
+  (no external API to charge). Operators get real Ollama responses by default
+- **Test-harness default stays `true`** via a new autouse fixture in
+  `dashboard/tests/conftest.py`. Tests don't pay for real LLM inference time
+  (local Ollama calls take seconds; tests should take milliseconds)
+- **`_DryRunChatModel` is preserved** — same `BaseChatModel` interface; the swap from
+  `ChatOpenAI` to `ChatOllama` is transparent to the dry-run model
+- **`fail_if_openai_invoked` is renamed `fail_if_real_llm_invoked`** and monkeypatches
+  `ChatOllama.__init__` instead of `ChatOpenAI.__init__`. Defence-in-depth preserved
+- **Decisions §1, §2, §3, §4, §6, §7, §8 are UNCHANGED.** Only §5's cost-asymmetry
+  rationale evolves. The 5-node topology, manual tool dispatch, session memory,
+  cost caps (as values), credential redaction, and the non-streaming/SSE-streaming
+  contract all remain in force
+
+See ADR-017 for the full Phase 8 design.
+
 ## Amendment 2026-06-07 — credential-detection dedup landed
 
 The follow-up chore PR referenced in §8 and the Consequences section

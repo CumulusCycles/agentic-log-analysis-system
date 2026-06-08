@@ -74,10 +74,50 @@ Operators on a budget can either raise the interval (`DASHBOARD_PROACTIVE_SCAN_I
 - **`dashboard.md` gains a "Proactive Scan (PR 4c ✅)" block** mirroring the existing "LangGraph Agent (PR 4a ✅)" structure.
 - **Test surface:** ~17 new unit tests in `test_proactive_scan.py`, 2 new tests in `test_status_endpoint.py`, 2 new tests across `test_agitator_routes.py` + `test_agitator_scenarios.py`, 6 new frontend tests in `proactive-findings.test.tsx`, 1 new Playwright spec × 2 viewports, plus 2 new chaos tests per app × 4 apps.
 
+## Amendment 2026-06-08 — Phase 8 changes the cost-matrix rationale (ADR-017)
+
+Phase 8 ([ADR-017](ADR-017-local-ai-via-ollama.md)) replaces OpenAI with locally-run
+Ollama. External inference cost goes to zero. The proactive scan loop's opt-in
+mechanism is preserved but the rationale shifts.
+
+**What stays:**
+
+- Two-flag opt-in chain — real scans still require BOTH
+  `DASHBOARD_PROACTIVE_SCAN_ENABLED=true` AND `DASHBOARD_LLM_DRY_RUN=false`
+- Loop skip behaviour when `DASHBOARD_LLM_DRY_RUN=true` — same code path, same
+  `proactive_scan_skipped reason=llm_dry_run` log line
+- All other Decisions (1–2, 4–8) unchanged
+
+**What changes:**
+
+- **`DRY_RUN=false` becomes the runtime default** (ADR-015 §5 amendment). To run
+  the dashboard WITHOUT proactive scans, operators set `SCAN_ENABLED=false`
+  (the default for `SCAN_ENABLED` is unchanged: `false`)
+- **The skip-when-dry-run rationale shifts** from "cost-safety" to "scan-noise
+  control." `_DryRunChatModel` returns the same canned answer every time; a
+  dry-run scan would store identical noise findings on every cycle, polluting the
+  buffer + UI. Skipping is the cleanest answer regardless of cost
+- **The cost-analysis section above is OBSOLETE** under Phase 8. Real scans cost
+  $0 (local Ollama inference). The 96-scans/day calculation no longer applies
+
+**New "fires/skips" matrix (replaces the cost matrix at lines 31–36):**
+
+| `DRY_RUN` | `SCAN_ENABLED` | Behavior | Cost |
+|---|---|---|---|
+| false (default) | false (default) | No loop. Chat works (real Ollama). | $0 |
+| false | true | **Real scans.** ~96 scans/day at 15-min cadence. | $0 |
+| true | false | No loop. Chat returns canned dry-run responses. | $0 |
+| true | true | Loop wakes on schedule, logs `proactive_scan_skipped reason=llm_dry_run`, sleeps. Useful for verifying scheduling without dry-run noise. | $0 |
+
+The cost column is preserved for traceability — every row is now $0.
+
+See ADR-017 for the full Phase 8 design.
+
 ## References
 
 - ADR-013 — chaos middleware (amended 2026-06-06 for the level split)
-- ADR-015 — Phase 7e LangGraph agent (PR 4a) + the cost-safety asymmetry this ADR extends
+- ADR-015 — Phase 7e LangGraph agent (PR 4a); §5 cost-asymmetry amended by ADR-017
+- ADR-017 — Local AI via Ollama (Phase 8); amends this ADR's cost rationale
 - `project_no_error_path_in_apps` memory — the WARN-only corpus problem this PR solves
 - `feedback_bundle_when_feature_value_is_tied` memory — bundling rationale
-- `feedback_no_paid_api_calls_without_confirmation` — DRY_RUN-default-on protects operators from surprise spend
+- `feedback_no_paid_api_calls_without_confirmation` — preserved by Phase 8 (no API spend possible)

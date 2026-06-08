@@ -11,9 +11,9 @@ suggest remediation, and proactively predict problems before they escalate.
 - **Backend**: Python 3.12 / FastAPI (`uv`)
 - **Frontend**: React 18 + Vite + TypeScript (`pnpm`)
 - **AI Framework**: LangChain + LangGraph
-- **LLM**: OpenAI (`gpt-4o` for analysis, `text-embedding-3-small` for embeddings)
+- **LLM**: Ollama (`llama3.1:8b` for analysis, `nomic-embed-text` for embeddings) — local Docker container; replaces OpenAI per Phase 8 / ADR-017. *Implementation lands in PR 8b.*
 - **Vector Store**: Chroma (persistent Docker container)
-- **Observability**: LangSmith (trace every agent run)
+- **Observability**: LangSmith (trace every agent run) — provider-agnostic; traces `ChatOllama` calls the same way it traced `ChatOpenAI`
 - **Log ingestion**: `watchdog` file watcher → embeds entries into Chroma continuously
 - **Single container**: FastAPI serves React build as static files
 - **Standalone auth**: local JWT signed with `DASHBOARD_JWT_SECRET`; admin credentials from env (`DASHBOARD_ADMIN_USERNAME` / `DASHBOARD_ADMIN_PASSWORD`). Independent of the Shared Data API — the dashboard must function for diagnostics when SDA is down. See ADR-006.
@@ -59,7 +59,8 @@ volumes:
 ```
 
 ## Environment Variables
-- `OPENAI_API_KEY`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `DASHBOARD_CHROMA_URL`
+- `OLLAMA_BASE_URL`, `DASHBOARD_LLM_MODEL`, `DASHBOARD_EMBED_MODEL` (Phase 8 / ADR-017 — replaces `OPENAI_API_KEY` + `OPENAI_CHAT_MODEL` + `OPENAI_EMBEDDING_MODEL`)
+- `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, `DASHBOARD_CHROMA_URL`
 - `DASHBOARD_JWT_SECRET`, `DASHBOARD_ADMIN_USERNAME`, `DASHBOARD_ADMIN_PASSWORD` (standalone auth)
 
 ---
@@ -100,8 +101,8 @@ Routes land incrementally:
 | `GET` | `/api/agitator/runs/{run_id}` | Poll one run's counters | PR 3 ✅ |
 | `POST` | `/api/agitator/runs/{run_id}/cancel` | Cancel an in-flight run | PR 3 ✅ |
 | `POST` | `/api/chat` | AI Chat — submit question, get LangGraph response. `streaming: true` upgrades the response to SSE: one `event: node` per agent node, terminating `event: complete` mirrors the JSON `ChatResponse` shape. Pre-flight rejections (401 / 413 / 503) still return JSON. | 7e (PR 4a + 4b SSE) ✅ |
-| `GET` | `/api/errors/{id}` | Full error detail + LangGraph "Suggested Fix". JWT-gated. ID shape: `{app}:{sha1(raw)[:16]}` (same as Chroma doc ID). 400 on malformed ID; 404 when the entry isn't in Chroma (only WARN+ERROR pass the ingest gate); 503 when OPENAI_API_KEY is the placeholder. | 7e (PR 4b) ✅ |
-| `GET` | `/api/chroma/stats` | Aggregated stats over the Chroma collection — total count, by_app, by_level, by_source, by_event (top 10), by_day. Single `_collection.get(include=["metadatas"])` call; no OpenAI. 503 when vectorstore unavailable. PR 2 (post-7e) adds optional `since` + `until` that scope ONLY the `by_day` aggregation (whole-corpus rollups stay unscoped — operator's mental model). Default by-day window is 30 days when neither is provided; UI defaults to 7d. Backs the Vectorstore Stats tab. | post-7e ✅ |
+| `GET` | `/api/errors/{id}` | Full error detail + LangGraph "Suggested Fix". JWT-gated. ID shape: `{app}:{sha1(raw)[:16]}` (same as Chroma doc ID). 400 on malformed ID; 404 when the entry isn't in Chroma (post-Phase-8: full-corpus admits all levels, so 404 should be rare); 503 when the embedding store is unavailable (Phase 8: `OLLAMA_BASE_URL` unreachable). | 7e (PR 4b) ✅ |
+| `GET` | `/api/chroma/stats` | Aggregated stats over the Chroma collection — total count, by_app, by_level, by_source, by_event (top 10), by_day. Single `_collection.get(include=["metadatas"])` call; no LLM inference. 503 when vectorstore unavailable. PR 2 (post-7e) adds optional `since` + `until` that scope ONLY the `by_day` aggregation (whole-corpus rollups stay unscoped — operator's mental model). Default by-day window is 30 days when neither is provided; UI defaults to 7d. Backs the Vectorstore Stats tab. | post-7e ✅ |
 | `POST` | `/api/chroma/flush` | Delete every document in the Chroma collection. JWT-gated. 503 when vectorstore unavailable. Returns `{deleted_count, as_of}`. Collection itself + embedding model preserved — only docs are removed. Operator must `docker compose restart log-dashboard` to trigger the backfill task and repopulate. Backs the "Vectorstore maintenance" panel on the Vectorstore Stats tab. | post-7e ✅ |
 
 Swagger UI (`/docs`, `/redoc`, `/openapi.json`) is exposed — the dashboard's
@@ -114,14 +115,14 @@ the Authorize button. ADR-001 local-only threat model applies.
 
 ---
 
-## Ingest Gate (Phase 7d)
+## Ingest Gate (Phase 7d, amended Phase 8 / ADR-017)
 
-Backfill + watcher both apply a 3-knob filter BEFORE any OpenAI embedding call.
+Backfill + watcher both apply a 3-knob filter BEFORE any embedding call.
 The operator-facing `/api/logs` view reads volumes directly and is UNAFFECTED.
 
 | Knob | Default | Where set |
 |---|---|---|
-| `DASHBOARD_INGEST_LEVELS` | `WARN,ERROR` | `.env` (CSV) |
+| `DASHBOARD_INGEST_LEVELS` | `DEBUG,INFO,WARN,ERROR` (Phase 8 — full corpus per ADR-017; was `WARN,ERROR` Phase 7 cost-driven) | `.env` (CSV) |
 | `DASHBOARD_INGEST_SOURCES` | `prod,synthetic,unknown` | `.env` (CSV) — widened in PR 3 to admit Agitator traffic; further widened post-ADR-011 2026-06-07 amendment to admit propagation-gap signal |
 | `DASHBOARD_INGEST_DRY_RUN` | `false` | `.env` (bool) |
 
@@ -137,11 +138,13 @@ Allowed vocabulary: `prod` (React SPAs only), `synthetic` (Agitator, PR 3 ✅),
 `test` (Playwright `extraHTTPHeaders`), `health` (parser-derived),
 `unknown` (middleware default for missing-header / out-of-request events).
 
-The default `(level ∈ {WARN, ERROR}) AND (source ∈ {prod, synthetic})` predicate keeps healthcheck heartbeat, INFO business events, and Playwright E2E traffic out of Chroma — sharp signal, ~$0 ongoing cost. Agitator traffic is admitted by default so a `docker compose up` + scenario click is enough to populate Chroma.
+**Phase 8 predicate:** `(level ∈ {DEBUG, INFO, WARN, ERROR}) AND (source ∈ {prod, synthetic, unknown})` — admits all levels because local Ollama embeddings are free; agent gains baseline awareness via full-corpus RAG. Source gate stays for signal quality (drops Playwright `test` + parser-derived `health` noise), not cost.
 
-`DASHBOARD_INGEST_DRY_RUN=true` makes `upsert_entries` short-circuit before any embedder call — operator-safe preview of what the filter would pass without spending tokens. Backfill + watcher still log `parsed`, `passed_filter`, `embedded` so the filter behavior is visible.
+**Phase 7 historical predicate (pre-PR-8b):** `(level ∈ {WARN, ERROR}) AND (source ∈ {prod, synthetic})` — kept healthcheck heartbeat, INFO business events, and Playwright E2E traffic out of Chroma to control OpenAI embedding cost. Rescinded per ADR-017 §4.
 
-Cost-saver gate: `upsert_entries` queries Chroma for existing IDs (`store._collection.get(ids=..., include=[])`) BEFORE the embedder is called. Content-hash IDs (`{app}:{sha1(raw)[:16]}`) make restarts against a populated Chroma volume cost $0.
+`DASHBOARD_INGEST_DRY_RUN=true` makes `upsert_entries` short-circuit before any embedder call — operator-safe preview of what the filter would pass. Backfill + watcher still log `parsed`, `passed_filter`, `embedded` so the filter behavior is visible.
+
+Dedup gate: `upsert_entries` queries Chroma for existing IDs (`store._collection.get(ids=..., include=[])`) BEFORE the embedder is called. Content-hash IDs (`{app}:{sha1(raw)[:16]}`) avoid redundant embedding work on restarts (post-Phase-8: performance benefit, not cost benefit).
 
 ---
 
@@ -189,11 +192,11 @@ the design rationale.
 | `correlate` dispatches tools manually (not `langgraph.prebuilt.ToolNode`) | ToolNode needs LangGraph's internal runtime context; manual dispatch is ~20 lines + fully testable |
 | Session memory: `langgraph.checkpoint.memory.InMemorySaver`, thread_id = `{jwt_sub}:{session_id}` | Matches RunRegistry's stateless-by-design stance; restart-lossy on purpose |
 | `SessionIndex` LRU (default cap 200) evicts oldest via `adelete_thread` | Bounds in-process memory growth; eviction failures swallowed |
-| `DASHBOARD_LLM_DRY_RUN=true` is the **default** (safe-by-default) | Cost-safety asymmetry — see ADR-015 §5 |
-| Dry-run uses a custom `_DryRunChatModel` (subclass of `BaseChatModel`) that scripts: tool_call → ToolMessage → canned final answer | Exercises the FULL graph topology in tests without any network call |
+| `DASHBOARD_LLM_DRY_RUN` — runtime default `false` (Phase 8 / ADR-017 — was `true` Phase 7 cost-safety); test-harness default `true` via autouse fixture | Phase 7 cost-asymmetry (ADR-015 §5) rescinded by ADR-017 — no external spend possible. Mechanism kept as test convenience (avoids 5–30s Ollama latency per test) |
+| Dry-run uses a custom `_DryRunChatModel` (subclass of `BaseChatModel`) that scripts: tool_call → ToolMessage → canned final answer | Exercises the FULL graph topology in tests without any network call; provider-agnostic — works with `ChatOpenAI` and `ChatOllama` identically |
 | `analyze` + `predict` share `_invoke_llm_with_tools`; separate nodes only for the rule's 5-name palette | Single implementation, two graph slots, no duplicated logic |
 | `POST /api/chat` defaults to non-streaming JSON; `streaming: true` returns SSE (PR 4b — see additions block below). Both paths run the same graph, so the response shape can't drift. | Additive contract; pre-flight errors (401 / 413 / 503) always return JSON |
-| Cost caps (3): `LLM_MAX_TOOL_CALLS_PER_REQUEST=4`, `LLM_MAX_INPUT_TOKENS_PER_REQUEST=8000` (tiktoken `o200k_base`), `LLM_MAX_MESSAGES_PER_SESSION=40` | Deterministic in-graph bounds; no advisory middleware |
+| Bounds (3): `LLM_MAX_TOOL_CALLS_PER_REQUEST=4`, `LLM_MAX_INPUT_TOKENS_PER_REQUEST=8000` (Phase 8: `len(text) // 4` heuristic; Phase 7 used `tiktoken o200k_base`), `LLM_MAX_MESSAGES_PER_SESSION=40` | Deterministic in-graph bounds; no advisory middleware. Post-Phase-8 rationale is performance / UX bounding (was cost bounding) |
 | Credential redaction in NEW `credentials.py` — `sanitize_user_input` + `sanitize_log_raw` cover Bearer/X-API-Key/password/JWT-shape/DSN | Defence-in-depth at BOTH input (router + ingest_node) AND output (tool `raw` field) |
 | Shared shape detection in `credential_patterns.py` — JWT pattern + sensitive-keyword vocabulary; `credentials.py` and `agitator/runs.py::_sanitize_error` both import. Each keeps its own policy (surgical substitute vs. drop whole message). Landed in the 2026-06-07 dedup chore PR. | Single source of truth for what counts as "secret-shaped" — the two consumers can't drift |
 | LangSmith metadata: every `ainvoke` carries `{session_id, jwt_sub, dry_run}` | Filterable in LangSmith UI |
@@ -207,9 +210,9 @@ the design rationale.
 | `GET /api/errors/{id}` reuses the same compiled graph as `/api/chat` — synthesises a `HumanMessage` and invokes via `graph.ainvoke` | One code path; all 4a cost caps + redaction + dry-run + LangSmith metadata apply transparently. Ephemeral `session_id` per click, registered with `SessionIndex` so the LRU evicts it |
 | `lookup_entry_by_id` + `metadata_to_log_entry` live in `ingest/vectorstore.py` (PR 4b moved the conversion helper there) | Search router (`Document` path) and errors router (`_collection.get` path) share one inverse-of-`make_metadata` function — cannot drift |
 | `routers/chat.py` SSE path uses `graph.astream(stream_mode="updates")` + Starlette `StreamingResponse(media_type="text/event-stream")` + `X-Accel-Buffering: no` header. Frontend reads via `fetch` + `response.body.getReader()` (EventSource is GET-only) | No new server-side deps (no `sse-starlette`); no new client deps; per-node payloads are status snapshots, not full messages |
-| Agent response adapters (`extract_answer`, `extract_citations`, `count_tokens`, `is_openai_api_error`) live in `agent/responses.py` and are shared by both routers | Single source of truth for output shape — JSON `ChatResponse`, SSE `complete` event, and `ErrorDetailResponse.analysis` all run through the same sanitisation + reshape |
+| Agent response adapters (`extract_answer`, `extract_citations`, `count_tokens`, `is_llm_api_error`) live in `agent/responses.py` and are shared by both routers | Single source of truth for output shape — JSON `ChatResponse`, SSE `complete` event, and `ErrorDetailResponse.analysis` all run through the same sanitisation + reshape. Post-Phase-8: `is_openai_api_error` renamed to `is_llm_api_error`; catches httpx/connection/timeout errors from Ollama |
 | Defence-in-depth: errors route sanitises `entry.raw` BEFORE returning it AND before sending it to the LLM | A credential planted in a log line by an upstream-app bug never crosses into the response body OR the LangSmith trace |
-| Every OpenAI Chroma upsert prints a per-app level-count summary table to stdout (with per-batch tokens + USD + cumulative session spend) + emits a structured `embedding_complete` log event carrying `batch_tokens` / `batch_cost_usd` / `session_tokens` / `session_cost_usd` | Operator-visible — answers "what did I just pay OpenAI to embed?" and "what have I spent since startup?" without parsing JSON. Cost is computed from tiktoken `cl100k_base` token count × `text-embedding-3-small` list price ($0.02 / 1M tokens). Skipped on dry-run and on full-dedup batches (no embed = no table). |
+| Every Chroma upsert prints a per-app level-count summary table to stdout (with per-batch `tokens` + `wall_ms` + cumulative session totals) + emits a structured `embedding_complete` log event carrying `batch_tokens` / `batch_wall_ms` / `session_tokens` / `session_wall_ms` | Operator-visible throughput signal. Phase 8 dropped the USD cost columns (always $0 with local Ollama per ADR-017); wall-time replaces cost as the operationally meaningful metric. Skipped on dry-run and on full-dedup batches. |
 | `metadata_to_log_entry` round-trips `LogEntry.source` from Chroma metadata | Without this, Agitator-tagged `synthetic`, parser-derived `health`, and Playwright-tagged `test` (when admitted) all silently fall back to the historical `LogEntry.source = "prod"` default on read — destroying the provenance signal ADR-011's X-Source propagation works to preserve. PR 4b fix. (Post-ADR-011 2026-06-07 amendment, missing-source defaults to `unknown` at parse time, but the round-trip mechanism is what makes the labels durable.) |
 
 ---
@@ -222,8 +225,8 @@ findings ride on `/api/status`. ADR-016 captures the design rationale.
 
 | Invariant | Why |
 |---|---|
-| Loop skips invocation entirely when `DASHBOARD_LLM_DRY_RUN=true` — logs `proactive_scan_skipped reason=llm_dry_run`. **Real scans require the opt-in chain: `DRY_RUN=false` AND `SCAN_ENABLED=true`.** | Cost-safety asymmetry from ADR-015 §5 extends to the background loop. Either flag alone is safe — dry-run lets you verify scheduling without paid spend. |
-| Loop is opt-in via `DASHBOARD_PROACTIVE_SCAN_ENABLED=false` default; lifespan only schedules the task when true. `task.cancel()` on shutdown. | Asymmetric: forgotten env var → no loop, no spend. Mirrors the dry-run asymmetry. |
+| Loop skips invocation entirely when `DASHBOARD_LLM_DRY_RUN=true` — logs `proactive_scan_skipped reason=llm_dry_run`. **Real scans require the opt-in chain: `DRY_RUN=false` AND `SCAN_ENABLED=true`.** | Phase 7 rationale (cost-safety) rescinded by ADR-017. Post-Phase-8 rationale is noise-control: `_DryRunChatModel` returns the same canned answer every cycle — running it on schedule would pollute the findings buffer + UI. |
+| Loop is opt-in via `DASHBOARD_PROACTIVE_SCAN_ENABLED=false` default; lifespan only schedules the task when true. `task.cancel()` on shutdown. | Asymmetric: forgotten env var → no loop. Phase 8 (ADR-017) preserves the gate; cost rationale rescinded but operator opt-in for background work stays. |
 | Reuses the SAME compiled graph `app.state.agent_graph` that backs `/api/chat` + `GET /api/errors/{id}` | One code path; every PR 4a cost cap, credential redaction, dry-run, and LangSmith metadata tag applies transparently. |
 | `_run_one_scan` synthesises a HumanMessage from `PROACTIVE_SCAN_PROMPT` (in `agent/proactive_prompt.py`) with `{lookback_minutes}` interpolated | Prompt held in its own module so the wording can evolve without churning `proactive.py`; testable in isolation. |
 | Agent answers with `NO_ANOMALIES` sentinel for quiet scans → `_run_one_scan` returns `None`, buffer untouched | Sentinel keeps the buffer quiet during steady-state. Strip + startswith check tolerates trailing whitespace. |

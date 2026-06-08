@@ -1,6 +1,6 @@
 # Agentic Log Analysis System — Full System Integration
 
-A complete trace of how every component integrates: FNOL, Customer Portal, Agent Portal, Shared Data API, Agentic Dashboard, Agitator, Databases, Chroma Vector Store, and OpenAI.
+A complete trace of how every component integrates: FNOL, Customer Portal, Agent Portal, Shared Data API, Agentic Dashboard, Agitator, Databases, Chroma Vector Store, and Ollama (local AI per [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md) — Phase 8; replaces the prior OpenAI dependency). *Phase 8 implementation lands in PR 8b.*
 
 ---
 
@@ -252,39 +252,34 @@ graph LR
 Log volumes (4 files)
   → watchdog file watcher (detects new lines)
     → Parser (handles 3 formats: structlog JSON, Winston JSON, Logback text)
-      → Ingest gate #1: DASHBOARD_INGEST_LEVELS (WARN, ERROR by default)
-        → drops INFO, DEBUG → zero cost
+      → Ingest gate #1: DASHBOARD_INGEST_LEVELS (DEBUG, INFO, WARN, ERROR — Phase 8 / ADR-017 admits all levels; was WARN+ERROR Phase 7 cost-driven)
       → Ingest gate #2: DASHBOARD_INGEST_SOURCES (prod, synthetic, unknown by default)
-        → drops test (Playwright), health (healthchecks) → zero cost
+        → drops test (Playwright), health (healthchecks) → signal-quality, not cost
       → Content-hash dedup (skip if already in Chroma)
-        → OpenAI text-embedding-3-small embedding
+        → Ollama nomic-embed-text embedding (local, free — Phase 8 / ADR-017)
           → Chroma upsert
-            → embed-summary table printed to stdout
+            → embed-summary table printed to stdout (tokens + wall_ms; no USD)
 ```
 
-The two-gate system means the vast majority of log lines — INFO success events, healthcheck pings, Playwright E2E traffic — never hit OpenAI. Only WARN/ERROR from `prod`, `synthetic`, or `unknown` sources get embedded. The `unknown` admission preserves leak-detection visibility — propagation gaps surface as `unknown`-tagged entries in the corpus so the operator can spot drift. Cost stays in single-digit cents per demo session.
+The source gate drops Playwright `test` traffic and parser-derived `health` healthcheck pings for signal-quality reasons — Phase 8 / ADR-017 removed the cost-driven level gate so all levels enter Chroma, giving the agent baseline INFO data to anchor against. The `unknown` admission preserves leak-detection visibility — propagation gaps surface as `unknown`-tagged entries so the operator can spot drift.
 
 ```mermaid
 flowchart TB
     VOL["4 Log Volumes\n(watchdog file watcher)"]
     PARSE["Parser\nstructlog JSON · Winston JSON · Logback text"]
-    G1{"Gate 1\nLevel filter"}
-    G2{"Gate 2\nSource filter"}
+    G1{"Source filter"}
     DEDUP{"Content-hash\ndedup"}
-    EMBED["OpenAI\ntext-embedding-3-small"]
-    CHROMA[("Chroma\nvector store")]
-    DROP1["Dropped\nINFO · DEBUG\n→ zero cost"]
-    DROP2["Dropped\ntest · health\n→ zero cost"]
-    DROP3["Skipped\nalready in Chroma\n→ zero cost"]
+    EMBED["Ollama\nnomic-embed-text\n(local — free)"]
+    CHROMA[("Chroma\nvector store\nINFO + WARN + ERROR")]
+    DROP1["Dropped\ntest · health\n→ noise reduction"]
+    DROP2["Skipped\nalready in Chroma\n→ performance"]
 
     VOL --> PARSE
     PARSE --> G1
-    G1 -->|WARN · ERROR| G2
-    G1 -->|INFO · DEBUG| DROP1
-    G2 -->|prod · synthetic · unknown| DEDUP
-    G2 -->|test · health| DROP2
+    G1 -->|prod · synthetic · unknown| DEDUP
+    G1 -->|test · health| DROP1
     DEDUP -->|new entry| EMBED
-    DEDUP -->|duplicate| DROP3
+    DEDUP -->|duplicate| DROP2
     EMBED --> CHROMA
 ```
 
@@ -292,13 +287,13 @@ flowchart TB
 
 ## Dashboard UI — Data Paths
 
-**Path 1: Log Explorer + Overview** — reads the log volumes directly via `/api/logs`, `/api/status`, and `/api/status/history` (Overview trend sparklines). No Chroma, no OpenAI. Zero cost. Shows everything including INFO.
+**Path 1: Log Explorer + Overview** — reads the log volumes directly via `/api/logs`, `/api/status`, and `/api/status/history` (Overview trend sparklines). No Chroma, no LLM inference. Shows everything including INFO.
 
-**Path 2: Semantic Search** — queries Chroma via `POST /api/logs/search`. One OpenAI embedding call per search query. Returns WARN/ERROR entries ranked by semantic similarity.
+**Path 2: Semantic Search** — queries Chroma via `POST /api/logs/search`. One local Ollama embedding call per search query (Phase 8 / ADR-017). Returns entries ranked by semantic similarity — full corpus (INFO + WARN + ERROR), not just errors.
 
-**Path 3: AI Chat + Error Detail** — invokes the LangGraph agent via `POST /api/chat` (with optional SSE streaming) or `GET /api/errors/{id}`. The agent uses its two tools (`query_logs` hits Chroma, `get_app_status` reads volumes) to gather context, then reasons via OpenAI LLM calls. Cost bounded by three caps: max tool calls per request (4), max input tokens (8000), dry-run default-on.
+**Path 3: AI Chat + Error Detail** — invokes the LangGraph agent via `POST /api/chat` (with optional SSE streaming) or `GET /api/errors/{id}`. The agent uses its two tools (`query_logs` hits Chroma, `get_app_status` reads volumes) to gather context, then reasons via local Ollama `llama3.1:8b` LLM calls. Bounded by three caps: max tool calls per request (4), max input tokens (8000), dry-run optional (Phase 7 default `true` was cost-safety; Phase 8 default `false` since inference is free — see ADR-015 + ADR-017).
 
-**Path 4: Vectorstore Stats + maintenance** — `GET /api/chroma/stats` powers the Vectorstore Stats screen (aggregate counts by app/level/source/event/day). `POST /api/chroma/flush` deletes every embedded doc on operator confirm. Both JWT-gated; no OpenAI.
+**Path 4: Vectorstore Stats + maintenance** — `GET /api/chroma/stats` powers the Vectorstore Stats screen (aggregate counts by app/level/source/event/day). `POST /api/chroma/flush` deletes every embedded doc on operator confirm. Both JWT-gated; no LLM inference.
 
 **Path 5: Agitator (Log Generator)** — `/api/agitator/scenarios`, `/api/agitator/runs`, `/api/agitator/runs/{id}`, `/api/agitator/runs/{id}/cancel` back the `/log-generator` screen. In-memory run registry, ring-buffered to 50.
 
@@ -326,7 +321,7 @@ graph LR
     subgraph DataSources["Data Sources"]
         VOLS[("Log Volumes\ndirect read")]
         CHR[("Chroma\nvector search")]
-        LG["LangGraph Agent\n+ OpenAI LLM"]
+        LG["LangGraph Agent\n+ Ollama LLM\n(llama3.1:8b)"]
         RUNS["In-memory\nRunRegistry"]
     end
 
@@ -495,7 +490,7 @@ sequenceDiagram
 
 ## The Full Circle
 
-A single Agitator click produces a cascade that flows through every layer of the system: Dashboard → Agitator → FNOL/CP/AP → SDA → PostgreSQL/MongoDB → log volumes → watchdog → parser → ingest gates → OpenAI embeddings → Chroma → LangGraph agent → OpenAI LLM → React UI showing the root cause.
+A single Agitator click produces a cascade that flows through every layer of the system: Dashboard → Agitator → FNOL/CP/AP → SDA → PostgreSQL/MongoDB → log volumes → watchdog → parser → ingest gate (source-only post-Phase-8) → local Ollama embeddings → Chroma → LangGraph agent → local Ollama LLM → React UI showing the root cause. Zero external API calls in the entire loop.
 
 That's the integration story. Every component exists because the next component in the chain needs it.
 
@@ -510,11 +505,11 @@ graph TB
     APPS -->|"source=synthetic"| LOGS
 
     LOGS -->|watchdog| PARSE["Parser\n3 formats"]
-    PARSE --> GATE{"Ingest Gates\nlevel + source"}
-    GATE -->|"WARN/ERROR + prod/synthetic/unknown"| EMBED["OpenAI\nembeddings"]
-    EMBED --> CHROMA[("Chroma\nvector store")]
+    PARSE --> GATE{"Source filter\n(post-Phase-8: level gate removed)"}
+    GATE -->|"prod / synthetic / unknown"| EMBED["Ollama\nnomic-embed-text\n(local — free)"]
+    EMBED --> CHROMA[("Chroma\nfull corpus")]
     CHROMA --> AGENT["LangGraph\n5-node agent"]
-    AGENT --> LLM["OpenAI\nLLM reasoning"]
-    LLM --> UI["React UI\nroot cause + citations"]
+    AGENT --> LLM["Ollama LLM\nllama3.1:8b\n(local — free)"]
+    LLM --> UI["React UI\nroot cause + citations\n(baseline-aware)"]
     UI -->|"full circle"| CLICK
 ```

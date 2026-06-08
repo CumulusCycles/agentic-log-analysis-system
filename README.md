@@ -5,8 +5,10 @@
 ![License](https://img.shields.io/badge/license-MIT-yellow) ![Platform](https://img.shields.io/badge/platform-linux%2Farm64-blue)
 
 An AI-powered log management platform built on a realistic insurance application ecosystem.
-Four full-stack apps generate heterogeneous logs in their native formats; a LangGraph + OpenAI
-dashboard continuously monitors, correlates, and explains them.
+Four full-stack apps generate heterogeneous logs in their native formats; a LangGraph + Ollama
+dashboard continuously monitors, correlates, and explains them — all inference runs locally
+([ADR-017](docs/decisions/ADR-017-local-ai-via-ollama.md), Phase 8). *Phase 8 implementation
+lands in PR 8b.*
 
 The supporting apps are the raw material. **The dashboard is the product.**
 
@@ -38,13 +40,16 @@ Phases 1 through 7 are complete. The build sequence — including the Agitator s
 
 | Tool | Version | Used For |
 |---|---|---|
-| Docker Desktop | Latest | All containers (allocate ≥ 20 GB RAM, 8 CPUs on M1 Max) |
+| Docker Desktop | Latest | All containers (allocate ≥ **32 GB RAM**, 8 CPUs on M1 Max — bumped from 20 GB for Phase 8 Ollama container per ADR-017) |
 | `pnpm` | 9+ | Node/React apps and dashboard frontend |
 | `uv` | Latest | Python apps (Shared Data API, FNOL, Agentic Log Analysis Dashboard backend) |
 | Java | 21 | Agent Portal |
 | Maven | 3.9+ | Agent Portal build |
-| OpenAI API key | — | Dashboard LLM and embeddings |
-| LangSmith account | — | Agent observability |
+| LangSmith account | — | (optional) Agent observability — works with local Ollama, no longer required for LLM access |
+
+Phase 8 (ADR-017) replaces the OpenAI API dependency with locally-run Ollama models. No
+external API key required. First `docker compose up -d --build` after PR 8b ships pulls
+`llama3.1:8b` + `nomic-embed-text` (~5GB total, one-time, ~5–15 min on M1 Max).
 
 ---
 
@@ -102,7 +107,7 @@ runbook is in [`docs/operations/dashboard-guide.md`](docs/operations/dashboard-g
 | `docs/development-workflow.md` | Hooks, slash commands, review flow, phase checkpoints |
 | `docs/architecture/system-overview.md` | Container topology and log flow diagram |
 | `docs/operations/dashboard-guide.md` | Operator runbook — Agitator, chaos, embedding cost, Vectorstore Stats, Proactive Scan |
-| `docs/decisions/` | ADR-001 through ADR-016 |
+| `docs/decisions/` | ADR-001 through ADR-017 |
 | `docs/tech/tech-stack.md` | Full technology reference |
 | `docs/tech/logging-strategy.md` | Per-stack logging formats and volume paths |
 | `docs/tech/log-events.md` | Authoritative catalog of every structured log event emitted by the four apps |

@@ -8,9 +8,11 @@ This project has two goals running in parallel:
    representing a real insurance company's digital touchpoints, running locally in Docker.
 
 2. **Build an AI-powered log management tool** — a dashboard that consolidates logs from
-   the three logging apps (FNOL, Customer Portal, Agent Portal) and uses LangGraph + OpenAI
-   to surface real errors, explain root causes, and proactively predict problems before
-   they escalate. This is the primary deliverable.
+   the three logging apps (FNOL, Customer Portal, Agent Portal) and uses LangGraph + local
+   Ollama models ([ADR-017](decisions/ADR-017-local-ai-via-ollama.md) — Phase 8; replaces
+   OpenAI) to surface real errors, explain root causes, and proactively predict problems
+   before they escalate. This is the primary deliverable. *Phase 8 implementation lands in
+   PR 8b.*
 
 The insurance apps exist to generate meaningful, realistic logs. The dashboard is the real product.
 
@@ -72,7 +74,7 @@ The AI layer handles the heterogeneity.
 
 ## The Agentic Log Analysis Dashboard
 
-**Stack:** FastAPI + React + LangChain + LangGraph + OpenAI + Chroma vector store
+**Stack:** FastAPI + React + LangChain + LangGraph + Ollama (local AI per ADR-017; Phase 7 used OpenAI) + Chroma vector store
 
 **Agent flow:** ingest (watchdog) → embed (Chroma) → analyze (LangGraph) → correlate → predict → respond
 

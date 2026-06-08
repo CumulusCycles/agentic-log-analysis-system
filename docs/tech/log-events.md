@@ -242,7 +242,7 @@ Binding prohibition — see [`feedback_never_log_credentials`](../../.claude/rul
 - API keys (`SHARED_DATA_API_KEY_*`)
 - Bearer tokens, full JWTs, or any token segment
 - DB credentials (`POSTGRES_PASSWORD`, `MONGO_INITDB_ROOT_PASSWORD`)
-- LLM keys (`OPENAI_API_KEY`, `LANGSMITH_API_KEY`)
+- LLM keys (`OPENAI_API_KEY` — Phase 8 / ADR-017 removes this env var in PR 8b; `LANGSMITH_API_KEY` — stays)
 - Admin credentials
 - Any other `.env` value
 
