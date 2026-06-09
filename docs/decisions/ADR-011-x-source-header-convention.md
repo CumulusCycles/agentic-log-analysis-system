@@ -19,7 +19,7 @@
 | `health`    | Parser-derived from healthcheck path                  | NO                                     |
 
 ## Rationale
-The dashboard's 7d ingest gate filters log lines on `source` before any OpenAI embedding call. Without per-line tagging at the app layer, every Playwright E2E run leaks dozens of log lines into the embedding pipeline — both a cost surface and signal noise. Reading one header in each app's existing request-logger middleware is a one-line edit per stack; no new middleware file is needed.
+The dashboard's 7d ingest gate filters log lines on `source` before any embedding call. Without per-line tagging at the app layer, every Playwright E2E run leaks dozens of log lines into the embedding pipeline as signal noise. (Phase 7 also paid OpenAI embedding cost on each leak; Phase 8 / [ADR-017](ADR-017-local-ai-via-ollama.md) swapped embeddings to local Ollama so the residual concern is signal quality alone.) Reading one header in each app's existing request-logger middleware is a one-line edit per stack; no new middleware file is needed.
 
 Trust-the-edge keeps the convention from drifting across four apps. The dashboard parser is the single normalization point (`.strip().lower()`), and the ingest gate is the single enforcement point. Adding allow-list validation in four apps would mean four places to keep in sync for zero added safety in a local-only deployment (see ADR-001).
 

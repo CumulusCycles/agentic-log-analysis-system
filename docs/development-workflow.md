@@ -199,24 +199,46 @@ When you run `/ship`, Claude Code executes this entire sequence:
    ├─ Identify exposed internals
    └─ Auto-fix where possible
 
-5. Lint & Format
+5. Multi-Agent Local Review-Fix Loop — HIGH-STAKES PRs ONLY (conditional)
+   ├─ Trigger: diff matches any of
+   │    ├─ apps/*/middleware/
+   │    ├─ apps/shared-data-api/**
+   │    ├─ dashboard/src/log_dashboard/agent/
+   │    ├─ dashboard/src/log_dashboard/ingest/vectorstore.py
+   │    ├─ docker-compose.yml
+   │    ├─ .env.example
+   │    ├─ docs/decisions/ADR-*.md
+   │    └─ more than 20 files changed
+   ├─ Run /local-review (no args) → 4 parallel Explore agents review
+   │    git diff main...HEAD on design / security / correctness / test-coverage
+   ├─ Triage findings: fix Critical + High in place; push back or defer
+   │    Medium/Low with explicit rationale
+   ├─ Re-run /local-review on the fix commits
+   └─ Loop until no Critical or High findings remain — neither new ones from
+      the fixes NOR pre-existing ones that were deferred but later re-rated.
+      Stopping rule: 2-3 rounds is the sweet spot — round 4+ surfaces stylistic
+      nits, not bugs (per feedback_local_review_before_push). Operator
+      frustration is the explicit floor signal.
+
+6. Lint & Format
    └─ Run linting checks
 
-6. Production Build
+7. Production Build
    └─ Run full build, verify success
 
-7. Tests (every app — not just the changed one)
-   ├─ Backend: pytest / mvn / pnpm test for each app's backend
-   ├─ Frontend unit: Vitest for each app's frontend
-   └─ Frontend E2E: Playwright for each app with frontend/e2e/ — requires live stack
+8. Tests (scoped to the change set per /ship Step 9)
+   ├─ Backend unit: pytest / mvn / pnpm test for each CHANGED app's backend
+   ├─ Frontend unit: Vitest for each CHANGED app's frontend
+   └─ Frontend E2E: Playwright — changed apps' e2e/ by default;
+      ALL apps' e2e/ when shared infra (SDA / compose / .env.example) is touched
 
-8. Git Workflow
+9. Git Workflow
    ├─ Create/update commit with conventional message
    ├─ Push to origin
    └─ Open pull request (with summary)
 
-9. PR Created
-   └─ Ready for human review, agentreviewer, or auto-merge
+10. PR Created
+    └─ Ready for human review, agentreviewer, or auto-merge
 ```
 
 **Optional post-`/ship` step for high-stakes PRs:** operator runs
@@ -291,37 +313,58 @@ When you run `/ship`, Claude Code executes this entire sequence:
 /done
 ```
 
-### Workflow D: High-Stakes PR (Cross-Cutting / LangGraph / Phase 7e+)
+### Workflow D: High-Stakes PR (Cross-Cutting / LangGraph / Phase 7e+ / ADRs)
 
 ```bash
 # 1. Write code
 # ... (save file, post_format runs automatically)
 
-# 2. Ship
+# 2. Ship — the review-fix loop is now INSIDE /ship (Step 5)
 /ship
-# → Step 1 audit, doc check, /self-review, /security-review, lint, build, tests, PR opens
+# → Step 1 audit, doc check, /self-review, /security-review
+# → Step 5 triggers automatically when the local diff matches the
+#   high-stakes heuristic (apps/*/middleware/, apps/shared-data-api/**,
+#   dashboard/src/log_dashboard/agent/, dashboard/src/log_dashboard/
+#   ingest/vectorstore.py, docker-compose.yml, .env.example,
+#   docs/decisions/ADR-*.md, or >20 files)
+# → Step 5 runs /local-review against git diff main...HEAD, surfaces
+#   Critical + High findings, loops fix-commit → re-review until clean
+#   (2-3 rounds is the sweet spot; stop on operator frustration)
+# → Steps 6-9 then run lint, build, scoped tests, commit, push, open PR
 
-# 3. Wait for CI green on the PR
+# 3. CI runs on the PR (green expected — Step 5 caught the design /
+#    correctness / security / test-coverage issues before push)
 
-# 4. Run agentreviewer (operator types this — Claude cannot launch it)
+# 4. (Optional) Second-opinion cloud review for the highest-stakes PRs —
+#    operator types this; Claude cannot launch it
 /ultrareview <PR#>
-# → Multi-agent cloud review (Opus 4.7 preferred)
+# → Multi-agent cloud review with independent sandbox reproduction of
+#   every finding. The signature /local-review does NOT replicate;
+#   reserve for cases where you want the second opinion on top of the
+#   pre-push loop /ship already ran.
 
-# 5. Triage findings with Claude
+# 5. (If /ultrareview surfaced anything) Triage with Claude
 gh pr view <PR#> --comments   # or paste findings into the chat
 # → Claude fixes + pushes commits, or pushes back with rationale
 
-# 6. Re-run agentreviewer if findings were structural
+# 6. Merge
 
-# 7. Merge
-
-# 8. After merge
+# 7. After merge
 /done
 ```
 
 Use Workflow D for: Agitator PR 2 (chaos middleware), Agitator PR 3
-(Agitator), Phase 7e (LangGraph + AI Chat + Error Detail), and any
-future cross-cutting middleware or LangGraph work.
+(Agitator), Phase 7e (LangGraph + AI Chat + Error Detail), Phase 8 PR 8b
+(local Ollama swap), and any future cross-cutting middleware, LangGraph,
+ADR-touching, or compose-shape-changing work.
+
+**Difference from the old Workflow D:** the multi-agent review-fix loop
+now runs BEFORE the push, inside `/ship` Step 5. The old "ship → wait
+for CI → /ultrareview → fix on opened PR → re-review" sequence forced
+force-push churn on every finding round. The post-PR-#52 amendment moves
+the loop pre-push (per `feedback_local_review_before_push`); the diff
+is clean by the time the PR opens. `/ultrareview` becomes the optional
+second-opinion layer, not the primary gate.
 
 ---
 

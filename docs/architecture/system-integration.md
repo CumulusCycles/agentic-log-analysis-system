@@ -347,16 +347,18 @@ graph LR
 ## The LangGraph Agent — 5-Node StateGraph
 
 ```
-START → ingest → analyze → (tool_calls? → correlate → predict → analyze : → respond) → END
+START → ingest → analyze → (tool_calls? → correlate → predict → correlate* : → respond) → END
 ```
+
+(`predict → correlate*` = predict loops back to correlate while tool budget remains; otherwise terminates at respond.)
 
 **ingest** — sanitizes user input, strips credentials, pins session ID. No LLM call.
 
-**analyze** — first LLM call. The model decides: call `query_logs`/`get_app_status`, or answer directly.
+**analyze** — first LLM call. The model decides: call `query_logs`/`get_app_status`, or answer directly. Phase 8 / [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md) §8 — on the first turn of a session (one `HumanMessage`, no prior `AIMessage`), `analyze` prepends a `SystemMessage` that directs baseline-aware retrieval: query `query_logs` for INFO entries before flagging WARN/ERROR clusters as abnormal. Subsequent passes through `analyze` (post-tool returns) do not re-inject the SystemMessage, so the in-graph token budget calculation stays accurate.
 
 **correlate** — executes tool calls, decrements tool budget. Produces `ToolMessage` results.
 
-**predict** — second LLM call. Reflects on tool output. May request more tools (loops back to correlate) or finalize.
+**predict** — second LLM call. Reflects on tool output. May request more tools (loops back to **correlate**) or finalize.
 
 **respond** — terminal. Harvests cited log entries from tool results, builds the response.
 

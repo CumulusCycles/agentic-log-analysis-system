@@ -99,10 +99,21 @@ Request -> JwtAuthenticationFilter (order=1, /api/*)
 
 **Verified end-to-end 2026-06-06:** direct `X-Chaos: error:500` calls against SDA / FNOL / CP / AP each produced `chaos_honored` ERROR-level lines in the respective app's log volume (20 per app at FNOL/CP/AP via curl; 120 at SDA via the `error-burst` Agitator scenario). `X-Chaos: error:400` against CP/AP produced WARN-level `chaos_honored` as designed; `X-Chaos: slow:300` stayed WARN. All four apps' chaos tests pass unchanged on the live stack.
 
+## 2026-06-09 amendment — Phase 8 supersedes the ingest-level + OpenAI cost framing (ADR-017)
+
+Phase 8 ([ADR-017](ADR-017-local-ai-via-ollama.md)) replaces OpenAI with locally-run Ollama. Two ambient claims in the original body are now stale:
+
+- **`DASHBOARD_INGEST_LEVELS=WARN,ERROR` is no longer the default.** L13 + L94 + the Rationale at L35 reference the Phase 7 WARN+ERROR-only ingest gate. Phase 8 widened the default to `DEBUG,INFO,WARN,ERROR` because local embeddings are free; the agent gains baseline awareness via full-corpus RAG. The Decision 5 line that chaos events log at WARN "so they pass the dashboard's 7d ingest filter" still holds in spirit — chaos events still pass the gate — but the framing "INFO would not" no longer follows. INFO also passes the level gate now; it's the source gate (`prod`/`synthetic`/`unknown`) that does signal-quality filtering.
+
+- **L50 "does not change OpenAI cost" is obsolete.** External embedding spend went to zero. The defense-in-depth posture (chaos behind auth, no chaos on `/actuator/health`, scoped `/api/*` on AP) is the load-bearing reason chaos middleware is safe — and remains in force regardless of inference provider.
+
+**What stays in force:** Decisions 1–6, all stack-position diagrams, the dev-only `ENABLE_CHAOS` gate, the 2026-06-06 ERROR-for-5xx level split, and every stated security invariant. Only the ambient ingest-gate + cost framing evolves.
+
 ## References
 
 - [`.claude/rules/apps.md`](../../.claude/rules/apps.md) — per-app middleware/filter conventions
 - [`docs/tech/log-events.md`](../tech/log-events.md) — `chaos_honored` and `chaos_directive_invalid` event entries
 - ADR-011 — `X-Source` header convention (sibling cross-app header)
+- ADR-017 — Local AI via Ollama (amends the ingest-level + OpenAI cost framing above)
 - `project_agitator_design` memory — Agitator PR 3 scenario pack (uses chaos for `sda-degraded`)
 - `feedback_never_log_credentials` — chaos events do NOT include any credential value (no Authorization header, no API key)
