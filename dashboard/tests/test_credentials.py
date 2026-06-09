@@ -32,7 +32,8 @@ from log_dashboard.credentials import sanitize_log_raw, sanitize_user_input
         ),
         # AWS4 signature — both the credential and the signature must go
         (
-            "Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260609/us-east-1/s3/aws4_request",
+            "Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE"
+            "/20260609/us-east-1/s3/aws4_request",
             "[REDACTED]",
             "AKIAIOSFODNN7EXAMPLE",
         ),
