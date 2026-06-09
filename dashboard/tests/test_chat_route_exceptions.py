@@ -7,9 +7,12 @@ unavailable") now bubble through to the global 500 handler. These tests
 pin that behaviour so a future widening of the catch can't silently
 re-mask programming errors as upstream failures.
 
-Two routes exercise `is_llm_api_error`:
-- `POST /api/chat` — both streaming and non-streaming paths
+Three call sites exercise `is_llm_api_error`:
+- `POST /api/chat` — non-streaming JSON response path
+- `POST /api/chat` — streaming SSE path (`_stream_chat_events`)
 - `GET /api/errors/{id}` — Error Detail + Suggested Fix
+- (Also: `agent/proactive.py` — the background scan loop; covered
+  separately in `tests/test_proactive_scan.py`.)
 
 We use `monkeypatch` to inject a graph that raises `ValueError` (a
 non-LLM exception) and assert the response is 500, not 502.
@@ -203,6 +206,24 @@ def _decode_sse_events(body: bytes) -> list[dict[str, str]]:
     return events
 
 
+def _sse_error_detail(body: bytes) -> str:
+    """Pull the `detail` value out of the SSE `event: error` payload.
+
+    Parses the SSE wire format, finds the single `event: error` chunk,
+    and JSON-decodes its `data:` line to return the structured `detail`
+    field. Tighter than substring-matching the raw JSON because it
+    confines the assertion to the `detail` field only — accidental
+    matches in other JSON fields wouldn't satisfy the test.
+    """
+    import json
+
+    events = _decode_sse_events(body)
+    error_events = [e for e in events if e.get("event") == "error"]
+    assert len(error_events) == 1, f"expected exactly one error event; got {len(error_events)}"
+    data = json.loads(error_events[0]["data"])
+    return str(data.get("detail", ""))
+
+
 @pytest.mark.asyncio
 async def test_chat_streaming_emits_generic_error_for_non_llm_exception(
     client, valid_token, monkeypatch
@@ -227,10 +248,7 @@ async def test_chat_streaming_emits_generic_error_for_non_llm_exception(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
 
-    events = _decode_sse_events(response.content)
-    error_events = [e for e in events if e.get("event") == "error"]
-    assert len(error_events) == 1
-    detail = error_events[0]["data"]
+    detail = _sse_error_detail(response.content)
     assert (
         "upstream LLM" not in detail
     ), "non-LLM exceptions must not be mis-labeled as LLM-transport failures"
@@ -259,8 +277,5 @@ async def test_chat_streaming_emits_upstream_llm_error_for_real_transport_error(
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
 
-    events = _decode_sse_events(response.content)
-    error_events = [e for e in events if e.get("event") == "error"]
-    assert len(error_events) == 1
-    detail = error_events[0]["data"]
+    detail = _sse_error_detail(response.content)
     assert "upstream LLM" in detail

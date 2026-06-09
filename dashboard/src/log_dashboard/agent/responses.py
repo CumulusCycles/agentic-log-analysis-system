@@ -33,6 +33,11 @@ _LLM_API_ERROR_TYPES: tuple[type[BaseException], ...] = (
     httpx.WriteTimeout,
     httpx.PoolTimeout,
     httpx.HTTPStatusError,
+    # Python 3.11+ — `asyncio.TimeoutError` is the SAME class object as
+    # the builtin `TimeoutError`. Including only the builtin covers
+    # both names (`isinstance(asyncio.TimeoutError(), TimeoutError) is
+    # True`). Adding `asyncio.TimeoutError` here would create a silent
+    # duplicate.
     TimeoutError,
     ConnectionError,
 )

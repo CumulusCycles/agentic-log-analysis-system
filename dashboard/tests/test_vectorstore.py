@@ -384,19 +384,29 @@ def test_strip_url_userinfo_preserves_ipv6_brackets() -> None:
     """IPv6 hosts use bracket syntax (`[::1]`). The redactor must
     preserve the brackets — without them, the URL becomes malformed
     and the probe would fail to parse on retry."""
-    assert _strip_url_userinfo("http://user:pass@[::1]:11434") == "http://[::1]:11434"
+    out_with_userinfo = _strip_url_userinfo("http://user:pass@[::1]:11434")
+    assert out_with_userinfo == "http://[::1]:11434"
+    assert "[::1]" in out_with_userinfo  # explicit: brackets present in output
     # No-userinfo case — brackets still pass through unchanged.
-    assert _strip_url_userinfo("http://[::1]:11434") == "http://[::1]:11434"
+    out_no_userinfo = _strip_url_userinfo("http://[::1]:11434")
+    assert out_no_userinfo == "http://[::1]:11434"
+    assert "[::1]" in out_no_userinfo
 
 
 def test_strip_url_userinfo_leaves_query_string_unchanged() -> None:
-    """Only userinfo (`user:pass@`) is stripped — a `?password=secret`
-    in the query string is a different shape and must NOT be touched.
+    """Only userinfo (`user:pass@`) is stripped — secret-shaped values
+    in the query string are a different shape and must NOT be touched.
     The function's contract is URL-userinfo redaction, not blanket
-    secret scrubbing."""
-    out = _strip_url_userinfo("http://host:11434/api?password=secret")
-    assert out == "http://host:11434/api?password=secret"
-    assert "password=secret" in out  # query string survives intact
+    secret scrubbing. Covers several common parameter names + a
+    percent-encoded `@` in the value (which should NOT be confused
+    with userinfo)."""
+    cases = [
+        "http://host:11434/api?password=secret",
+        "http://host:11434/api?api_key=xyz&token=abc",
+        "http://host:11434/api?user=name%40example.com",  # percent-encoded @
+    ]
+    for url in cases:
+        assert _strip_url_userinfo(url) == url, f"query string altered for {url}"
 
 
 def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, caplog) -> None:

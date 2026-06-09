@@ -98,7 +98,11 @@ def test_llm_api_error_types_tuple_contents() -> None:
     of truth for what counts as an LLM transport failure. Asserting its
     contents directly pins the expected set — a future refactor that
     accidentally drops a type (or adds one without updating tests + docs)
-    will fail this test rather than silently change routing behavior."""
+    will fail this test rather than silently change routing behavior.
+
+    Cardinality is asserted explicitly so a swap (drop one, add another)
+    that keeps the size constant doesn't silently pass on set equality.
+    """
     import httpx
 
     from log_dashboard.agent.responses import _LLM_API_ERROR_TYPES
@@ -113,6 +117,7 @@ def test_llm_api_error_types_tuple_contents() -> None:
         TimeoutError,
         ConnectionError,
     }
+    assert len(_LLM_API_ERROR_TYPES) == 8
     assert set(_LLM_API_ERROR_TYPES) == expected
 
 

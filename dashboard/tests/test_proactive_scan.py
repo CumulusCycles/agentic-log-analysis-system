@@ -295,7 +295,15 @@ async def test_run_one_scan_returns_none_on_graph_exception() -> None:
     """If the graph raises a NON-LLM exception (bug in a tool, schema
     error), the scan swallows it and returns None, logging
     `proactive_scan_error` so the operator can grep for buggy iterations
-    distinctly from infrastructure failures."""
+    distinctly from infrastructure failures.
+
+    Note on log capture: this test uses `structlog.testing.capture_logs()`
+    which works because the autouse `_reset_structlog` fixture in
+    `conftest.py` resets structlog to native (non-stdlib-bridge) mode
+    before each test runs. Without that reset, captured events would be
+    empty because the routes' `configure_logging()` call switches
+    structlog to ProcessorFormatter mode where `capture_logs` is a no-op.
+    """
     import structlog
 
     class _Boom(Exception):

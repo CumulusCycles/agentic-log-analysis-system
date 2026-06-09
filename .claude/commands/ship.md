@@ -15,7 +15,7 @@ Lint, build, commit, push, and open a PR in one shot.
 4. **Security review** — run `/security-review`: scan for secrets, injection, auth gaps, exposed internals, fix all issues
 5. **Multi-agent local review for high-stakes PRs — iterate until clean.** If the local branch diff vs `main` touches any of:
    - `apps/*/middleware/` — cross-cutting request-handling code
-   - `apps/shared-data-api/**` — SDA is the auth boundary + sole data layer for all 4 apps; any change can cascade across consumers
+   - `apps/shared-data-api/**` — SDA is the auth boundary + sole data layer for the three SDA-consuming apps (FNOL, CP, AP); any change can cascade across them. The dashboard reads log volumes only and is independent (ADR-005, ADR-006).
    - `dashboard/src/log_dashboard/agent/` — LangGraph topology + tools
    - `dashboard/src/log_dashboard/ingest/vectorstore.py` — credential redaction + embedder boundary
    - `docker-compose.yml` — shared infra contract
