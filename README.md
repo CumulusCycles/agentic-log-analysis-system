@@ -32,7 +32,7 @@ Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; s
 
 ## Status
 
-Phases 1 through 7 are complete. The build sequence — including the Agitator series and the Phase 7e LangGraph slice — is logged in [`PLAN.md`](PLAN.md).
+Phases 1 through 8 are complete. The build sequence — including the Agitator series, the Phase 7e LangGraph slice, and the Phase 8 Ollama swap — is logged in [`PLAN.md`](PLAN.md).
 
 ---
 
