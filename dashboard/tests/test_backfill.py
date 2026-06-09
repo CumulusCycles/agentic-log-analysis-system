@@ -44,17 +44,16 @@ def _logback_line(event: str = "request", level: str = "INFO") -> str:
 
 
 def _settings(volume_root: Path) -> Settings:
-    # These mechanics tests run before the WARN+ERROR ingest filter exists.
-    # Open the gate to all levels + sources so the tests assert on the
-    # backfill plumbing (parse, dedup, gz archives, watcher offset handoff),
-    # not on the filter. Filter behavior is covered by test_ingest_filter.py.
+    # These mechanics tests assert on the backfill plumbing (parse, dedup,
+    # gz archives, watcher offset handoff), not on the ingest filter.
+    # Open the gate to all levels + sources so filter behavior doesn't
+    # interfere; filter behavior is covered by test_ingest_filter.py.
     from log_dashboard.schemas import LogLevel
 
     return Settings(
         jwt_secret="test-secret",
         admin_username="admin",
         admin_password="hunter2",
-        openai_api_key="sk-test",
         log_volume_root=volume_root,
         embedding_batch_size=50,
         dashboard_ingest_levels=frozenset(LogLevel),

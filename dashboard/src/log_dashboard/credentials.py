@@ -1,7 +1,8 @@
 """Credential-redaction helpers for the LangGraph agent path.
 
-Two-layer defence against credentials reaching OpenAI / LangSmith / chat
-responses:
+Two-layer defence against credentials reaching the LLM / LangSmith / chat
+responses (Phase 8 / ADR-017 — LLM is local Ollama; LangSmith traces still
+emit even in local-only mode):
 
 1. `sanitize_user_input` — strip secret-shaped substrings from a user's chat
    message BEFORE it enters the graph or any LangSmith trace.

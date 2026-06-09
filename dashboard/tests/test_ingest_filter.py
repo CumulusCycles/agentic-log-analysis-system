@@ -92,7 +92,6 @@ def _settings(volume_root: Path, **overrides: object) -> Settings:
         jwt_secret="test-secret",
         admin_username="admin",
         admin_password="hunter2",
-        openai_api_key="sk-test",
         log_volume_root=volume_root,
         embedding_batch_size=50,
     )
@@ -276,9 +275,11 @@ def test_dry_run_makes_zero_embedder_calls() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_backfill_with_default_filter_drops_info_and_health(log_volume, fake_vectorstore) -> None:
-    # 1 INFO request (not health) + 1 INFO health request +
-    # 1 WARN business event + 1 ERROR. Default filter keeps only the last two.
+def test_backfill_with_default_filter_drops_health_only(log_volume, fake_vectorstore) -> None:
+    # 1 INFO prod request + 1 INFO health request + 1 WARN business event
+    # + 1 ERROR. Phase 8 / ADR-017 default admits all 4 levels for baseline
+    # awareness; only the health-tagged request is dropped (source=health
+    # is parser-derived and not in `dashboard_ingest_sources`).
     log_volume["fnol"].write_text(
         "\n".join(
             [
@@ -290,14 +291,14 @@ def test_backfill_with_default_filter_drops_info_and_health(log_volume, fake_vec
         )
         + "\n"
     )
-    settings = _settings(log_volume["fnol"].parent.parent)  # defaults — WARN+ERROR, prod
+    settings = _settings(log_volume["fnol"].parent.parent)  # Phase 8 defaults
     results = run_initial_backfill(settings, fake_vectorstore)
     fnol = next(r for r in results if r.app == "fnol")
 
     assert fnol.active_lines == 4
-    assert fnol.passed_filter == 2  # WARN + ERROR
-    assert fnol.embedded == 2
-    assert fake_vectorstore._collection.count() == 2
+    assert fnol.passed_filter == 3  # INFO prod + WARN + ERROR (health dropped)
+    assert fnol.embedded == 3
+    assert fake_vectorstore._collection.count() == 3
 
 
 def test_backfill_dry_run_passes_filter_but_skips_chroma(log_volume, fake_vectorstore) -> None:
@@ -321,10 +322,10 @@ def test_backfill_dry_run_passes_filter_but_skips_chroma(log_volume, fake_vector
 # ---------------------------------------------------------------------------
 
 
-def test_watcher_with_default_filter_drops_info_and_health(log_volume, fake_vectorstore) -> None:
+def test_watcher_with_default_filter_drops_health_only(log_volume, fake_vectorstore) -> None:
     fnol_applog = next(al for al in APP_LOGS if al.name == "fnol")
     path = log_volume["fnol"]
-    settings = _settings(log_volume["fnol"].parent.parent)  # default filter
+    settings = _settings(log_volume["fnol"].parent.parent)  # Phase 8 default filter
     handler = _AppLogHandler(fnol_applog, path, fake_vectorstore, settings, initial_offset=0)
 
     path.write_text(
@@ -343,5 +344,6 @@ def test_watcher_with_default_filter_drops_info_and_health(log_volume, fake_vect
     ev.src_path = str(path)
     handler.on_modified(ev)
 
-    # Only the ERROR prod entry should land in Chroma.
-    assert fake_vectorstore._collection.count() == 1
+    # Phase 8 default admits all 4 levels; only the health-tagged request is
+    # dropped. INFO prod + ERROR prod both land in Chroma.
+    assert fake_vectorstore._collection.count() == 2

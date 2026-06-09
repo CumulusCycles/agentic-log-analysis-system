@@ -11,8 +11,7 @@ This project has two goals running in parallel:
    the three logging apps (FNOL, Customer Portal, Agent Portal) and uses LangGraph + local
    Ollama models ([ADR-017](decisions/ADR-017-local-ai-via-ollama.md) — Phase 8; replaces
    OpenAI) to surface real errors, explain root causes, and proactively predict problems
-   before they escalate. This is the primary deliverable. *Phase 8 implementation lands in
-   PR 8b.*
+   before they escalate. This is the primary deliverable.
 
 The insurance apps exist to generate meaningful, realistic logs. The dashboard is the real product.
 

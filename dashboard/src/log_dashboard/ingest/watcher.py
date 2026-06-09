@@ -110,8 +110,8 @@ class _AppLogHandler(FileSystemEventHandler):
         if not parsed:
             return
 
-        # Apply the same ingest gate as backfill — health/INFO never reach
-        # OpenAI even on the hot path.
+        # Apply the same ingest gate as backfill — filtered entries never
+        # reach the embedder even on the hot path.
         passing = filter_for_ingest(
             parsed,
             levels=self.settings.dashboard_ingest_levels,

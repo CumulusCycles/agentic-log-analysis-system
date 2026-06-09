@@ -8,7 +8,7 @@ test.describe("Error Detail screen (7e PR 4b)", () => {
     await page.goto("/errors/fnol:0000000000000000");
 
     // Wait for either the 404 copy OR the 503 banner (degraded mode when
-    // OPENAI_API_KEY is the placeholder). Both are valid empty-corpus paths.
+    // Ollama is unreachable). Both are valid empty-corpus paths.
     const notFound = page.getByRole("heading", { name: /Entry not found/i });
     const unavailable = page.getByRole("heading", { name: /Error detail unavailable/i });
     await expect(notFound.or(unavailable)).toBeVisible();

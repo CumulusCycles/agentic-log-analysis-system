@@ -1,18 +1,20 @@
-"""Chat-model factory — the single switch between paid OpenAI and dry-run fake.
+"""Chat-model factory — the switch between real Ollama and the dry-run fake.
 
 `build_chat_model(settings)` returns one of two things:
 
-- `settings.dashboard_llm_dry_run=True` (the default per Settings —
-  safe-by-default): `_DryRunChatModel` — a state-aware fake that emits
-  ONE tool call when no tool results are present, and the canned final
-  answer once a `ToolMessage` has been seen. The graph runs analyze →
-  correlate → predict → respond exactly once, exercising every node
-  without any network call.
-- `settings.dashboard_llm_dry_run=False`: real `ChatOpenAI` against
-  `settings.openai_chat_model` with `settings.openai_api_key`.
+- `settings.dashboard_llm_dry_run=True`: `_DryRunChatModel` — a state-aware
+  fake that emits ONE tool call when no tool results are present, and the
+  canned final answer once a `ToolMessage` has been seen. The graph runs
+  ingest → analyze → correlate → predict → respond exactly once,
+  exercising every node without any network call. Phase 7's safe-by-default
+  rationale (ADR-015 §5) was cost-asymmetry against OpenAI; Phase 8 /
+  ADR-017 rescinds that — the mechanism is preserved as a test-harness
+  convenience (tests don't pay the 5-30s of local LLM latency per call).
+- `settings.dashboard_llm_dry_run=False` (runtime default post-Phase-8):
+  real `ChatOllama` against `settings.dashboard_llm_model` reached at
+  `settings.ollama_base_url`.
 
-The factory is the ONLY place dry-run vs paid is decided. Tests can leave
-the default; CI cannot accidentally hit OpenAI.
+The factory is the ONLY place dry-run vs real is decided.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from ..config import Settings
 # Dry-run canned final answer. Surfaced verbatim to the chat UI; the React
 # page also shows a "DRY RUN" banner when `ChatResponse.dry_run=True`.
 _DRY_RUN_CANNED = (
-    "DRY_RUN: agent did not contact OpenAI. "
+    "DRY_RUN: agent did not contact the LLM. "
     "Set DASHBOARD_LLM_DRY_RUN=false in .env to enable real LLM responses."
 )
 
@@ -61,6 +63,9 @@ class _DryRunChatModel(BaseChatModel):
       canned final answer (no tool_calls) → `respond` finalises.
     * Input has no `ToolMessage` yet → first LLM call → request one
       `query_logs` tool call → `correlate` dispatches.
+
+    Provider-agnostic — works identically when the real model is
+    `ChatOpenAI` (Phase 7) or `ChatOllama` (Phase 8 / ADR-017).
     """
 
     @property
@@ -103,16 +108,19 @@ def build_chat_model(settings: Settings) -> BaseChatModel:
     """Return the chat model the agent should use this request."""
     if settings.dashboard_llm_dry_run:
         return _DryRunChatModel()
-    return _build_paid_model(settings)
+    return _build_real_model(settings)
 
 
-def _build_paid_model(settings: Settings) -> BaseChatModel:
-    """Real ChatOpenAI. Import is deferred so dry-run-only tests don't pay
-    the import cost (langchain_openai pulls a non-trivial dep tree)."""
-    from langchain_openai import ChatOpenAI
+def _build_real_model(settings: Settings) -> BaseChatModel:
+    """Real `ChatOllama` against the local Ollama container.
 
-    return ChatOpenAI(
-        model=settings.openai_chat_model,
-        api_key=settings.openai_api_key,
+    Import is deferred so dry-run-only tests don't pay the
+    `langchain_ollama` import cost.
+    """
+    from langchain_ollama import ChatOllama
+
+    return ChatOllama(
+        model=settings.dashboard_llm_model,
+        base_url=settings.ollama_base_url,
         temperature=0,
     )

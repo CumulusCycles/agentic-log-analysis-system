@@ -33,15 +33,15 @@ async def search_logs(
 ) -> LogsSearchResponse:
     store: Chroma | None = getattr(request.app.state, "vectorstore", None)
     if store is None:
-        # Degraded mode: OpenAI key missing/placeholder. /api/logs and /api/status
-        # still work — only semantic search is unavailable.
+        # Degraded mode: Ollama unreachable at lifespan. /api/logs and
+        # /api/status still work — only semantic search is unavailable.
         log.info(
             "search_unavailable_no_embeddings",
             query_preview=_truncate(body.query),
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="semantic search is unavailable — OPENAI_API_KEY is not configured",
+            detail="semantic search is unavailable — OLLAMA_BASE_URL is unreachable",
         )
 
     _validate_apps(body.apps)

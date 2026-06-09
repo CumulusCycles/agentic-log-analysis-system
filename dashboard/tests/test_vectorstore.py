@@ -1,30 +1,33 @@
 """Tests for the vectorstore factory + degraded-mode detection."""
 
 from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from log_dashboard.config import Settings
 from log_dashboard.ingest.vectorstore import (
-    _SESSION_SPEND,
+    _SESSION_TOTALS,
+    _strip_url_userinfo,
     build_vectorstore,
     is_embeddings_disabled,
     metadata_to_log_entry,
     upsert_entries,
 )
 from log_dashboard.schemas import LogEntry, LogLevel
+from tests._test_helpers import to_alias_kwargs
 
 
 @pytest.fixture(autouse=True)
-def _reset_session_spend():
-    """`_SESSION_SPEND` is module-level state; reset around every test so
-    one test's spend doesn't leak into the next test's session-total
+def _reset_session_totals():
+    """`_SESSION_TOTALS` is module-level state; reset around every test so
+    one test's totals don't leak into the next test's session-total
     assertions."""
-    _SESSION_SPEND.tokens = 0
-    _SESSION_SPEND.cost_usd = 0.0
+    _SESSION_TOTALS.tokens = 0
+    _SESSION_TOTALS.wall_ms = 0
     yield
-    _SESSION_SPEND.tokens = 0
-    _SESSION_SPEND.cost_usd = 0.0
+    _SESSION_TOTALS.tokens = 0
+    _SESSION_TOTALS.wall_ms = 0
 
 
 def _settings(**over) -> Settings:
@@ -32,10 +35,9 @@ def _settings(**over) -> Settings:
         jwt_secret="test-secret",
         admin_username="admin",
         admin_password="hunter2",
-        openai_api_key="sk-test-real-key",
     )
     defaults.update(over)
-    return Settings(**defaults)
+    return Settings(**to_alias_kwargs(defaults))
 
 
 def _entry(seq: int) -> LogEntry:
@@ -50,11 +52,47 @@ def _entry(seq: int) -> LogEntry:
     )
 
 
-def test_is_embeddings_disabled_flags_empty_and_placeholder_keys() -> None:
-    assert is_embeddings_disabled(_settings(openai_api_key="")) is True
-    assert is_embeddings_disabled(_settings(openai_api_key="your_openai_api_key_here")) is True
-    assert is_embeddings_disabled(_settings(openai_api_key="change_me_to_real_key")) is True
-    assert is_embeddings_disabled(_settings(openai_api_key="sk-proj-realxyz")) is False
+def test_is_embeddings_disabled_returns_true_when_ollama_unreachable() -> None:
+    """The test conftest defaults `OLLAMA_BASE_URL` to a closed port, so
+    `is_embeddings_disabled` should refuse the connection and return True
+    immediately."""
+    settings = _settings()
+    assert is_embeddings_disabled(settings) is True
+
+
+def test_is_embeddings_disabled_returns_true_on_non_200() -> None:
+    """A reachable URL that returns a non-200 status counts as disabled.
+
+    Belt-and-braces for the case where some other service answers on the
+    Ollama port but isn't actually Ollama — the dashboard still degrades
+    cleanly rather than crashing in the embedder.
+    """
+    settings = _settings(ollama_base_url="http://example.invalid:11434")
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 502
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
+        assert is_embeddings_disabled(settings) is True
+
+
+def test_is_embeddings_disabled_returns_false_on_200() -> None:
+    """A reachable Ollama that returns 200 to `/api/tags` is healthy."""
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
+        assert is_embeddings_disabled(settings) is False
 
 
 def test_build_vectorstore_against_in_memory_client(fake_embeddings) -> None:
@@ -87,9 +125,11 @@ def test_upsert_entries_is_idempotent_by_content_hash_id(fake_vectorstore) -> No
 
 
 def test_upsert_entries_skips_already_indexed_to_avoid_re_embedding() -> None:
-    """The dedup gate is the cost-saver: on a dashboard restart against a
-    populated Chroma volume, we MUST NOT pay OpenAI to re-embed the same
-    lines. Verified by counting calls on a tracking embedder.
+    """The dedup gate avoids redundant embedding work: on a dashboard
+    restart against a populated Chroma volume, we MUST NOT re-embed the
+    same lines. Phase 7 framed this as a cost saver against OpenAI; Phase
+    8 / ADR-017 makes it a performance saver against Ollama latency.
+    Verified by counting calls on a tracking embedder.
     """
     import uuid
 
@@ -137,9 +177,9 @@ def test_upsert_entries_skips_already_indexed_to_avoid_re_embedding() -> None:
 def test_upsert_entries_prints_level_count_table_after_embedding(
     fake_vectorstore, capfd, caplog
 ) -> None:
-    """Any time OpenAI is invoked to embed log lines, the operator gets a
-    level-count summary table on stdout AND a structured `embedding_complete`
-    log event. Mirrors the user request — visibility into what was paid for.
+    """Any time the embedder is invoked, the operator gets a level-count
+    summary table on stdout AND a structured `embedding_complete` log
+    event. Phase 8 / ADR-017 — table shows wall-time instead of USD cost.
     """
     entries = [
         _entry(0),  # INFO
@@ -189,15 +229,16 @@ def test_upsert_entries_prints_level_count_table_after_embedding(
     assert "| WARN    |                1 |" in captured.out
     assert "| ERROR   |                2 |" in captured.out
     assert "| TOTAL   |                4 |" in captured.out
-    # Spend rows: 4 entries → some tokens > 0, some USD > 0.
+    # Throughput rows: tokens > 0 and wall_ms reported (Phase 8 — no USD).
     assert "Tokens" in captured.out
-    assert "Cost" in captured.out
-    assert "$" in captured.out  # USD prefix on the cost row
-    # Session-spend footer.
+    assert "Wall" in captured.out
+    assert " ms" in captured.out  # wall-time suffix
+    assert "$" not in captured.out  # cost columns retired per ADR-017
+    # Session-totals footer.
     assert "Session total (since startup)" in captured.out
 
 
-def test_upsert_entries_accumulates_session_spend_across_calls(fake_vectorstore, capfd) -> None:
+def test_upsert_entries_accumulates_session_totals_across_calls(fake_vectorstore, capfd) -> None:
     """Two successive upserts (different content) drive the running session
     total — the second table's session row should show MORE tokens than
     the first."""
@@ -214,7 +255,7 @@ def test_upsert_entries_accumulates_session_spend_across_calls(fake_vectorstore,
     def _session_tokens(text: str) -> int:
         for line in text.splitlines():
             if "Session total" in line:
-                # Format: " Session total (since startup): N,NNN tokens · $0.xxxxxx"
+                # Format: " Session total (since startup): N,NNN tokens · NN ms"
                 return int(line.split(":", 1)[1].strip().split()[0].replace(",", ""))
         raise AssertionError("no session footer in output")
 
@@ -247,7 +288,7 @@ def test_metadata_to_log_entry_round_trips_source_field(fake_vectorstore) -> Non
 
 def test_upsert_entries_no_table_when_nothing_embedded(fake_vectorstore, capfd) -> None:
     """Re-running an upsert with all-deduped entries skips the table — there
-    is no OpenAI call to summarise."""
+    is no embed call to summarise."""
     entries = [_entry(0), _entry(1)]
     upsert_entries(fake_vectorstore, entries)  # first run prints
     capfd.readouterr()  # drain
@@ -258,7 +299,7 @@ def test_upsert_entries_no_table_when_nothing_embedded(fake_vectorstore, capfd) 
 
 
 def test_upsert_entries_no_table_on_dry_run(fake_vectorstore, capfd) -> None:
-    """Dry-run short-circuits before any OpenAI call — no table either."""
+    """Dry-run short-circuits before any embed call — no table either."""
     upsert_entries(fake_vectorstore, [_entry(0), _entry(1)], dry_run=True)
     captured = capfd.readouterr()
     assert "Chroma embedding complete" not in captured.out
@@ -290,3 +331,106 @@ def _make_noop_embeddings():
             return [0.0]
 
     return _Stub()
+
+
+# ---------------------------------------------------------------------------
+# _strip_url_userinfo — credential-redaction helper for Ollama probe logs
+# (defence-in-depth against operator misconfiguring `OLLAMA_BASE_URL`)
+# ---------------------------------------------------------------------------
+
+
+def test_strip_url_userinfo_removes_user_and_password() -> None:
+    assert _strip_url_userinfo("http://user:pass@host:11434") == "http://host:11434"
+
+
+def test_strip_url_userinfo_removes_user_only() -> None:
+    """RFC 3986 allows user-only userinfo (no password). Both must be
+    stripped from the netloc before logging."""
+    assert _strip_url_userinfo("http://user@host:11434") == "http://host:11434"
+
+
+def test_strip_url_userinfo_removes_percent_encoded_credentials() -> None:
+    """Operators can percent-encode `@`, `:`, `/` in credentials. The
+    redactor must still recognise the userinfo segment and strip it
+    (the password may contain `%40` for `@`, etc.)."""
+    out = _strip_url_userinfo("http://user:p%40ssword@host:11434")
+    assert out == "http://host:11434"
+    assert "p%40" not in out
+    assert "password" not in out
+
+
+def test_strip_url_userinfo_preserves_path_and_scheme() -> None:
+    assert _strip_url_userinfo("https://user:pass@host:11434/api/v1") == "https://host:11434/api/v1"
+
+
+def test_strip_url_userinfo_passthrough_when_no_userinfo() -> None:
+    """A clean URL must round-trip unchanged — no spurious netloc
+    rewrites that could alter what the operator sees in logs."""
+    assert _strip_url_userinfo("http://ollama:11434") == "http://ollama:11434"
+    assert _strip_url_userinfo("https://example.com/path") == "https://example.com/path"
+
+
+def test_strip_url_userinfo_passthrough_for_garbage_input() -> None:
+    """Malformed strings (not URLs at all) must pass through without
+    crashing. `urlparse` is permissive but we double-defend with a
+    try/except in the helper."""
+    # urlparse accepts these without raising; we just want no crash.
+    assert _strip_url_userinfo("") == ""
+    assert _strip_url_userinfo("not-a-url") == "not-a-url"
+    assert _strip_url_userinfo("///") == "///"
+
+
+def test_strip_url_userinfo_preserves_ipv6_brackets() -> None:
+    """IPv6 hosts use bracket syntax (`[::1]`). The redactor must
+    preserve the brackets — without them, the URL becomes malformed
+    and the probe would fail to parse on retry."""
+    out_with_userinfo = _strip_url_userinfo("http://user:pass@[::1]:11434")
+    assert out_with_userinfo == "http://[::1]:11434"
+    assert "[::1]" in out_with_userinfo  # explicit: brackets present in output
+    # No-userinfo case — brackets still pass through unchanged.
+    out_no_userinfo = _strip_url_userinfo("http://[::1]:11434")
+    assert out_no_userinfo == "http://[::1]:11434"
+    assert "[::1]" in out_no_userinfo
+
+
+def test_strip_url_userinfo_leaves_query_string_unchanged() -> None:
+    """Only userinfo (`user:pass@`) is stripped — secret-shaped values
+    in the query string are a different shape and must NOT be touched.
+    The function's contract is URL-userinfo redaction, not blanket
+    secret scrubbing. Covers several common parameter names + a
+    percent-encoded `@` in the value (which should NOT be confused
+    with userinfo)."""
+    cases = [
+        "http://host:11434/api?password=secret",
+        "http://host:11434/api?api_key=xyz&token=abc",
+        "http://host:11434/api?user=name%40example.com",  # percent-encoded @
+    ]
+    for url in cases:
+        assert _strip_url_userinfo(url) == url, f"query string altered for {url}"
+
+
+def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, caplog) -> None:
+    """End-to-end guarantee: `is_embeddings_disabled` must NOT emit the
+    raw userinfo on the structured log line, even when the probe fails
+    against a credentialed URL.
+
+    Constructs a Settings object pointing at an unroutable URL with
+    credentials, calls the probe, and asserts no part of the credential
+    appears in any captured log record's serialised form.
+    """
+    settings = _settings(ollama_base_url="http://leaky_user:leaky_pass@127.0.0.1:1")
+
+    import logging
+
+    caplog.set_level(logging.INFO)
+    assert is_embeddings_disabled(settings) is True
+
+    # Defensive: check the message AND every value in the record dict
+    # individually, in case a future structlog formatter wraps a value
+    # in an object whose `str()` masks the underlying credential.
+    for rec in caplog.records:
+        assert "leaky_user" not in rec.getMessage()
+        assert "leaky_pass" not in rec.getMessage()
+        for val in rec.__dict__.values():
+            assert "leaky_user" not in str(val)
+            assert "leaky_pass" not in str(val)

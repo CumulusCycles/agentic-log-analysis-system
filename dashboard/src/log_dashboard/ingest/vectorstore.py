@@ -1,19 +1,27 @@
-"""Chroma + OpenAI embeddings client factory + upsert + lookup helpers."""
+"""Chroma + Ollama embeddings client factory + upsert + lookup helpers.
+
+Phase 8 / ADR-017 — replaces the Phase 7 OpenAI dependency with local
+Ollama (`nomic-embed-text`, 768-dim). Cost tracking is removed because
+local inference is free; per-batch wall-time is tracked instead so the
+operator still has a throughput signal in the embed-summary table.
+"""
 
 from __future__ import annotations
 
 import os
 import sys
 import threading
+import time
 from collections import Counter
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import chromadb
+import httpx
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_ollama import OllamaEmbeddings
 
 from log_dashboard.config import Settings
 from log_dashboard.ingest.embeddings import (
@@ -28,18 +36,79 @@ log = get_logger("vectorstore")
 
 
 # Strings we treat as "operator hasn't set this yet" — the same prefixes the
-# `.env.example` template uses for placeholder values.
+# `.env.example` template uses for placeholder values. Used by the LangSmith
+# key check (Ollama reachability uses an HTTP probe instead).
 _PLACEHOLDER_PREFIXES = ("your_", "change_me")
+
+# How long to wait for Ollama's `/api/tags` probe at lifespan. Short — the
+# container is on the same docker network and `ollama-init` has already
+# completed before the dashboard starts. A long timeout would just push
+# back the healthcheck on a misconfigured stack.
+_OLLAMA_PROBE_TIMEOUT_SECONDS = 2.0
 
 
 def is_embeddings_disabled(settings: Settings) -> bool:
-    """True when `OPENAI_API_KEY` is empty or still the .env.example placeholder.
+    """True when Ollama at `OLLAMA_BASE_URL` is unreachable.
 
     The dashboard must stay usable for `/api/logs` and `/api/status` even
-    without an OpenAI key (ADR-006 spirit). When disabled, the lifespan skips
+    when Ollama is down (ADR-006 spirit). When disabled, the lifespan skips
     backfill + watcher, and `/api/logs/search` returns 503.
+
+    Probes `{ollama_base_url}/api/tags` with a short timeout. Any non-200
+    response or connection error counts as disabled.
     """
-    return _looks_like_placeholder(settings.openai_api_key)
+    url = settings.ollama_base_url.rstrip("/") + "/api/tags"
+    safe_url = _strip_url_userinfo(settings.ollama_base_url)
+    try:
+        with httpx.Client(timeout=_OLLAMA_PROBE_TIMEOUT_SECONDS) as client:
+            response = client.get(url)
+    except (httpx.HTTPError, OSError) as exc:
+        log.info(
+            "ollama_probe_failed",
+            error_class=type(exc).__name__,
+            base_url=safe_url,
+        )
+        return True
+    if response.status_code != 200:
+        log.info(
+            "ollama_probe_non_200",
+            status=response.status_code,
+            base_url=safe_url,
+        )
+        return True
+    return False
+
+
+def _strip_url_userinfo(url: str) -> str:
+    """Return `url` with any `user:pass@` segment removed.
+
+    Defence-in-depth for the operator-supplied `OLLAMA_BASE_URL` — if the
+    operator misconfigures with `http://user:pass@host:11434`, the probe's
+    structured log line would otherwise echo credentials into the log
+    stream. The DSN-style redactors in `credentials.py` cover
+    `postgres://` shapes but not arbitrary HTTP URLs with userinfo, so the
+    URL must be cleaned at the log-call site instead.
+    """
+    try:
+        parsed = urlparse(url)
+    except (ValueError, AttributeError):
+        return url
+    if not (parsed.username or parsed.password):
+        return url
+    host = parsed.hostname or ""
+    # IPv6 hostnames contain `:` — re-wrap in brackets per RFC 3986 §3.2.2.
+    # `parsed.hostname` strips the brackets on its way out; without them
+    # the rebuilt URL would be a malformed `http://::1:11434` and the
+    # probe would fail to parse on the next retry.
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = host
+    if parsed.port:
+        netloc = f"{netloc}:{parsed.port}"
+    try:
+        return urlunparse(parsed._replace(netloc=netloc))
+    except (ValueError, AttributeError):
+        return url
 
 
 def configure_langsmith(settings: Settings) -> None:
@@ -47,7 +116,8 @@ def configure_langsmith(settings: Settings) -> None:
 
     LangChain auto-tracing requires BOTH `LANGSMITH_TRACING=true` and
     `LANGSMITH_API_KEY` in the process env. We set TRACING here so operators
-    only need to provide the key.
+    only need to provide the key. Provider-agnostic — LangSmith traces
+    `ChatOllama` the same way it traced `ChatOpenAI`.
     """
     if _looks_like_placeholder(settings.langsmith_api_key):
         return
@@ -65,13 +135,13 @@ def build_vectorstore(
     """Construct a langchain-chroma store wrapping the live `chroma` server.
 
     Tests pass `client=chromadb.Client()` (in-memory) and a stub
-    `embedding_function` to avoid network + OpenAI calls. Production calls
-    with no kwargs to get the live HttpClient + real OpenAI embeddings.
+    `embedding_function` to avoid network calls. Production calls with no
+    kwargs to get the live HttpClient + real Ollama embeddings.
     """
     if embedding_function is None:
-        embedding_function = OpenAIEmbeddings(
-            api_key=settings.openai_api_key,
-            model=settings.openai_embedding_model,
+        embedding_function = OllamaEmbeddings(
+            base_url=settings.ollama_base_url,
+            model=settings.dashboard_embed_model,
         )
     if client is None:
         host, port = _parse_chroma_url(settings.chroma_url)
@@ -93,30 +163,34 @@ def upsert_entries(
     """Embed + add entries to the store, batched.
 
     Before each batch is sent to the embedder, we query Chroma for IDs that
-    already exist and skip those — content-stable IDs make this safe and it
-    avoids paying OpenAI to re-embed lines we already have. This is the
-    difference between a $0.01 restart and a $0 restart.
+    already exist and skip those — content-stable IDs make this safe and
+    avoids redundant embedding work on restarts (Phase 8: performance
+    benefit, not cost benefit).
 
     When `dry_run=True`, the function short-circuits: no Chroma read, no
-    OpenAI call, no upsert. Returns 0 so the caller can log that nothing was
-    persisted. Use this from the lifespan when `DASHBOARD_INGEST_DRY_RUN=true`
-    to preview ingestion gate behavior without spending any tokens.
+    embedding call, no upsert. Returns 0 so the caller can log that nothing
+    was persisted. Use this from the lifespan when
+    `DASHBOARD_INGEST_DRY_RUN=true` to preview ingestion-gate behavior
+    without disturbing the corpus.
 
-    Returns the number of entries actually embedded (excluding dedupes; 0 on
-    dry_run).
+    Returns the number of entries actually embedded (excluding dedupes; 0
+    on dry_run).
     """
     if not entries or dry_run:
         return 0
     embedded = 0
-    # Tally levels of entries that ACTUALLY hit OpenAI (post-dedup) so the
-    # operator-facing summary table shows what was paid for, not what was
-    # considered. Per-app — the callers (backfill + watcher) always pass a
-    # single-app batch, so `entries[0].app` is the canonical app name.
+    # Tally levels of entries that actually crossed the embed boundary
+    # (post-dedup) so the operator-facing summary table shows what was
+    # embedded, not what was considered. Per-app — the callers (backfill +
+    # watcher) always pass a single-app batch, so `entries[0].app` is the
+    # canonical app name.
     level_counts: Counter[str] = Counter()
-    # `page_content` strings for every entry that crossed the OpenAI
-    # boundary in this call — used post-loop to compute tokens + USD.
+    # `page_content` strings for every entry that crossed the embed
+    # boundary in this call — used post-loop to estimate token volume for
+    # the operator-facing summary.
     embedded_page_contents: list[str] = []
     app_name = entries[0].app
+    batch_started_at = time.perf_counter()
     for i in range(0, len(entries), batch_size):
         chunk = entries[i : i + batch_size]
         ids = [make_doc_id(e.app, e.raw) for e in chunk]
@@ -139,17 +213,17 @@ def upsert_entries(
         level_counts.update(e.level.value for e in new_entries)
         embedded_page_contents.extend(page_contents)
     if embedded > 0:
+        batch_wall_ms = int((time.perf_counter() - batch_started_at) * 1000)
         batch_tokens = _count_embedding_tokens(embedded_page_contents)
-        batch_cost = batch_tokens * _OPENAI_EMBEDDING_USD_PER_TOKEN
-        cumulative = _accumulate_session_spend(batch_tokens, batch_cost)
+        cumulative = _accumulate_session_totals(batch_tokens, batch_wall_ms)
         _emit_embed_summary(
             app_name,
             level_counts,
             embedded,
             batch_tokens=batch_tokens,
-            batch_cost_usd=batch_cost,
+            batch_wall_ms=batch_wall_ms,
             session_tokens=cumulative.tokens,
-            session_cost_usd=cumulative.cost_usd,
+            session_wall_ms=cumulative.wall_ms,
         )
     return embedded
 
@@ -159,62 +233,50 @@ def upsert_entries(
 # across calls — easier to scan visually in `docker compose logs`.
 _EMBED_SUMMARY_LEVELS = ("DEBUG", "INFO", "WARN", "ERROR")
 
-# OpenAI `text-embedding-3-small` list price (2026-Q1): $0.02 per 1M tokens.
-# Hard-coded because (a) it's a published price, not a secret, and (b)
-# fetching it dynamically would itself cost a request. Update when OpenAI
-# publishes new pricing.
-_OPENAI_EMBEDDING_USD_PER_TOKEN = 0.02 / 1_000_000
 
+class _SessionEmbedTotals:
+    """Process-lifetime cumulative totals tracker.
 
-class _SessionSpend:
-    """Process-lifetime cumulative spend tracker.
-
-    Single instance (`_SESSION_SPEND`) shared across watcher threads + the
+    Single instance (`_SESSION_TOTALS`) shared across watcher threads + the
     backfill task. Watcher emits run on the watchdog Observer thread pool,
     so the lock guards against torn reads when two apps embed in parallel.
     """
 
     def __init__(self) -> None:
         self.tokens: int = 0
-        self.cost_usd: float = 0.0
+        self.wall_ms: int = 0
         self._lock = threading.Lock()
 
-    def add(self, tokens: int, cost_usd: float) -> _SessionSpendSnapshot:
+    def add(self, tokens: int, wall_ms: int) -> _SessionEmbedSnapshot:
         with self._lock:
             self.tokens += tokens
-            self.cost_usd += cost_usd
-            return _SessionSpendSnapshot(tokens=self.tokens, cost_usd=self.cost_usd)
+            self.wall_ms += wall_ms
+            return _SessionEmbedSnapshot(tokens=self.tokens, wall_ms=self.wall_ms)
 
 
-class _SessionSpendSnapshot:
-    __slots__ = ("tokens", "cost_usd")
+class _SessionEmbedSnapshot:
+    __slots__ = ("tokens", "wall_ms")
 
-    def __init__(self, *, tokens: int, cost_usd: float) -> None:
+    def __init__(self, *, tokens: int, wall_ms: int) -> None:
         self.tokens = tokens
-        self.cost_usd = cost_usd
+        self.wall_ms = wall_ms
 
 
-_SESSION_SPEND = _SessionSpend()
+_SESSION_TOTALS = _SessionEmbedTotals()
 
 
-def _accumulate_session_spend(tokens: int, cost_usd: float) -> _SessionSpendSnapshot:
-    return _SESSION_SPEND.add(tokens, cost_usd)
+def _accumulate_session_totals(tokens: int, wall_ms: int) -> _SessionEmbedSnapshot:
+    return _SESSION_TOTALS.add(tokens, wall_ms)
 
 
 def _count_embedding_tokens(page_contents: list[str]) -> int:
-    """Sum tiktoken `cl100k_base` token counts across the embedded strings.
+    """Estimate token count via the `len(text) // 4` character-count heuristic.
 
-    `text-embedding-3-small` uses `cl100k_base` (same as gpt-3.5-turbo and
-    text-embedding-ada-002). Falls back to character-count/4 if tiktoken
-    can't load the encoding — better than crashing the watcher.
+    Phase 8 / ADR-017 drops `tiktoken` (OpenAI-specific) in favor of a
+    cheap heuristic that's good enough for an operator-facing throughput
+    signal. The number is a coarse proxy, not a billing meter.
     """
-    try:
-        import tiktoken
-
-        enc = tiktoken.get_encoding("cl100k_base")
-        return sum(len(enc.encode(c)) for c in page_contents)
-    except Exception:  # noqa: BLE001 — never crash the watcher to estimate cost
-        return sum(len(c) // 4 for c in page_contents)
+    return sum(len(c) // 4 for c in page_contents)
 
 
 def _emit_embed_summary(
@@ -223,16 +285,16 @@ def _emit_embed_summary(
     total: int,
     *,
     batch_tokens: int,
-    batch_cost_usd: float,
+    batch_wall_ms: int,
     session_tokens: int,
-    session_cost_usd: float,
+    session_wall_ms: int,
 ) -> None:
-    """Log + print a level-count summary after every OpenAI embed call.
+    """Log + print a level-count summary after every embed call.
 
     Emits two surfaces:
       1. A structured `embedding_complete` event (JSON via structlog) — the
          dashboard's own ingestion pipeline picks this up like any other
-         log line, so the operator can grep for it. Carries token + USD
+         log line, so the operator can grep for it. Carries token + wall-time
          counters for both this batch and the cumulative session.
       2. A human-readable ASCII table to stdout — distinct from the JSON
          stream so an operator tailing the container logs sees it at a
@@ -248,9 +310,9 @@ def _emit_embed_summary(
         level_counts=counts_dict,
         total=total,
         batch_tokens=batch_tokens,
-        batch_cost_usd=round(batch_cost_usd, 8),
+        batch_wall_ms=batch_wall_ms,
         session_tokens=session_tokens,
-        session_cost_usd=round(session_cost_usd, 8),
+        session_wall_ms=session_wall_ms,
     )
     # `flush=True` because uvicorn's stdout is line-buffered under Docker and
     # we want the table visible immediately, not buffered behind the next log.
@@ -260,9 +322,9 @@ def _emit_embed_summary(
             level_counts,
             total,
             batch_tokens=batch_tokens,
-            batch_cost_usd=batch_cost_usd,
+            batch_wall_ms=batch_wall_ms,
             session_tokens=session_tokens,
-            session_cost_usd=session_cost_usd,
+            session_wall_ms=session_wall_ms,
         ),
         flush=True,
         file=sys.stdout,
@@ -275,15 +337,16 @@ def _format_embed_summary(
     total: int,
     *,
     batch_tokens: int,
-    batch_cost_usd: float,
+    batch_wall_ms: int,
     session_tokens: int,
-    session_cost_usd: float,
+    session_wall_ms: int,
 ) -> str:
     """ASCII table — fixed-width so columns align in any terminal.
 
-    Includes per-batch counts + tokens + USD AND the cumulative session
-    spend so the operator can see "what did this upsert cost?" and "what
-    have I paid since startup?" in a single glance.
+    Includes per-batch counts + tokens + wall-time AND the cumulative
+    session totals so the operator can see "how long did this upsert
+    take?" and "how long have I spent embedding since startup?" in one
+    glance.
     """
     bar = "=" * 56
     sep = "+" + "-" * 9 + "+" + "-" * 18 + "+"
@@ -308,12 +371,12 @@ def _format_embed_summary(
     lines.append(f"| {'TOTAL':<7} | {total:>16} |")
     lines.append(sep)
     lines.append(f"| {'Tokens':<7} | {batch_tokens:>16,} |")
-    lines.append(f"| {'Cost':<7} | {f'${batch_cost_usd:.6f}':>16} |")
+    lines.append(f"| {'Wall':<7} | {f'{batch_wall_ms:,} ms':>16} |")
     lines.append(sep)
     # Cumulative session totals — separate footer block so the columns of
     # the per-batch table stay clean.
     lines.append(
-        f" Session total (since startup): {session_tokens:,} tokens · " f"${session_cost_usd:.6f}"
+        f" Session total (since startup): {session_tokens:,} tokens · " f"{session_wall_ms:,} ms"
     )
     lines.append(bar)
     lines.append("")
@@ -329,7 +392,7 @@ def lookup_entry_by_id(store: Chroma | None, entry_id: str) -> LogEntry | None:
     would also require an embedding round-trip just to discard the result.
 
     Returns None when:
-      - `store` is None (OpenAI key missing → embeddings disabled)
+      - `store` is None (Ollama unreachable → embeddings disabled)
       - the ID isn't in the collection (entry never passed the ingest gate)
       - the metadata is malformed (logged + skipped)
 

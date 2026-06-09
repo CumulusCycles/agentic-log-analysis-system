@@ -37,7 +37,7 @@ def _seed_vectorstore(store, entries: list[LogEntry]) -> None:
 
 @pytest.fixture
 def ready_app(app_instance, fake_vectorstore):
-    """Lifespan ran in embeddings-disabled mode (no OPENAI_API_KEY in test env).
+    """Lifespan ran in embeddings-disabled mode (Ollama unreachable in test env).
     Inject a pre-seeded fake vectorstore so the search endpoint behaves as if
     embeddings were configured."""
     _seed_vectorstore(
@@ -59,15 +59,16 @@ async def test_search_requires_auth(client) -> None:
 
 
 async def test_search_returns_503_when_embeddings_disabled(client, valid_token) -> None:
-    # Default lifespan path: OPENAI_API_KEY is not in the test env, so
-    # is_embeddings_disabled() short-circuits and app.state.vectorstore is None.
+    # Default lifespan path: Ollama is unreachable in the test env (probe URL
+    # points at a closed port), so is_embeddings_disabled() returns True and
+    # app.state.vectorstore is None.
     response = await client.post(
         "/api/logs/search",
         json={"query": "auth failures"},
         headers={"Authorization": f"Bearer {valid_token}"},
     )
     assert response.status_code == 503
-    assert "OPENAI_API_KEY" in response.json()["detail"]
+    assert "OLLAMA_BASE_URL" in response.json()["detail"]
 
 
 async def test_search_returns_entries_with_scores(client, valid_token, ready_app) -> None:

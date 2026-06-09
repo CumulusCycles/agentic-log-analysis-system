@@ -33,7 +33,7 @@ from langchain_core.messages import HumanMessage
 from ..logging_setup import get_logger
 from ..schemas import ProactiveFinding, ProactiveSeverity
 from .proactive_prompt import NO_ANOMALIES_SENTINEL, render_prompt
-from .responses import extract_answer, extract_citations, is_openai_api_error
+from .responses import extract_answer, extract_citations, is_llm_api_error
 from .sessions import new_session_id, thread_id_for
 
 if TYPE_CHECKING:
@@ -133,8 +133,8 @@ async def _run_one_scan(
     Importable in tests — the loop is a sleep + this call.
     """
     if vectorstore is None:
-        # Degraded mode (no OpenAI key → no Chroma). The agent could still
-        # be invoked but `query_logs` would return tool_error and the
+        # Degraded mode (Ollama unreachable → no Chroma). The agent could
+        # still be invoked but `query_logs` would return tool_error and the
         # answer would be useless. Skip to keep `last_scan_at` honest.
         log.info("proactive_scan_skipped", reason="vectorstore_unavailable")
         return None
@@ -177,7 +177,7 @@ async def _run_one_scan(
     try:
         result = await graph.ainvoke(initial_state, config=config)
     except Exception as exc:  # noqa: BLE001 — loop must survive bad iterations
-        if is_openai_api_error(exc):
+        if is_llm_api_error(exc):
             log.warning(
                 "proactive_scan_upstream_failure",
                 session_id=session_id,
@@ -248,8 +248,9 @@ async def run_proactive_scan_loop(app: FastAPI, settings: Settings) -> None:
 
         if settings.dashboard_llm_dry_run:
             # Opt-in chain: real scans need DRY_RUN=false AND ENABLED=true.
-            # Log + continue so the loop scheduling stays visible without
-            # touching OpenAI.
+            # Phase 7 rationale was cost-safety; Phase 8 / ADR-017 rescinds
+            # that — the gate stays for noise control (the dry-run fake
+            # returns the same canned answer every cycle).
             log.info("proactive_scan_skipped", reason="llm_dry_run")
             buffer.last_scan_at = datetime.now(tz=UTC)
             buffer.next_scan_at = buffer.last_scan_at + timedelta(seconds=interval)

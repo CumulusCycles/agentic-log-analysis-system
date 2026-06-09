@@ -61,11 +61,11 @@ def _seed_chroma_entry(
 async def client_with_chroma(monkeypatch, fake_vectorstore):
     """AsyncClient where the agent graph + lookup share a fake vectorstore.
 
-    Default lifespan disables embeddings (placeholder OPENAI_API_KEY), which
-    leaves `app.state.vectorstore = None` and the agent's `query_logs` tool
-    in degraded mode. The Error Detail route needs a live vectorstore both
-    for the entry lookup and for the agent's tool path, so we patch the two
-    seams the lifespan reads from.
+    Default lifespan disables embeddings (Ollama unreachable in the test
+    env), which leaves `app.state.vectorstore = None` and the agent's
+    `query_logs` tool in degraded mode. The Error Detail route needs a live
+    vectorstore both for the entry lookup and for the agent's tool path, so
+    we patch the two seams the lifespan reads from.
     """
     from log_dashboard import main as main_module
 
@@ -120,17 +120,17 @@ async def test_errors_malformed_id_returns_400(client, valid_token) -> None:
 
 @pytest.mark.asyncio
 async def test_errors_no_vectorstore_returns_503(client, valid_token) -> None:
-    """Default lifespan leaves `vectorstore=None` (placeholder OpenAI key).
+    """Default lifespan leaves `vectorstore=None` (Ollama unreachable).
 
-    The route surfaces 503 with a message that names the missing key, so the
-    operator knows to set OPENAI_API_KEY rather than chasing a 404.
+    The route surfaces 503 with a message that names the unreachable URL,
+    so the operator knows to check OLLAMA_BASE_URL rather than chasing a 404.
     """
     response = await client.get(
         "/api/errors/fnol:abcdef0123456789",
         headers={"Authorization": f"Bearer {valid_token}"},
     )
     assert response.status_code == 503
-    assert "OPENAI_API_KEY" in response.json()["detail"]
+    assert "OLLAMA_BASE_URL" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -160,7 +160,7 @@ async def test_errors_info_level_entry_is_rejected(client_with_chroma, valid_tok
 
 @pytest.mark.asyncio
 async def test_errors_happy_path_returns_entry_and_analysis(
-    client_with_chroma, valid_token, fail_if_openai_invoked
+    client_with_chroma, valid_token, fail_if_real_llm_invoked
 ) -> None:
     ac, store = client_with_chroma
     doc_id = _seed_chroma_entry(store)
@@ -191,7 +191,7 @@ async def test_errors_happy_path_returns_entry_and_analysis(
 
 @pytest.mark.asyncio
 async def test_errors_redacts_credentials_from_analysis_output(
-    client_with_chroma, valid_token, fail_if_openai_invoked
+    client_with_chroma, valid_token, fail_if_real_llm_invoked
 ) -> None:
     """A credential stored in `raw` (e.g. via an upstream-app bug) must not
     survive into the response body. PR 4a's `sanitize_log_raw` is the gate;
@@ -215,7 +215,7 @@ async def test_errors_redacts_credentials_from_analysis_output(
 
 @pytest.mark.asyncio
 async def test_errors_token_cap_rejects_huge_raw(
-    monkeypatch: pytest.MonkeyPatch, fake_vectorstore, fail_if_openai_invoked
+    monkeypatch: pytest.MonkeyPatch, fake_vectorstore, fail_if_real_llm_invoked
 ) -> None:
     """A massive raw line (large stack trace) blows the input token cap.
 

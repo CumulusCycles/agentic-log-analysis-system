@@ -33,7 +33,7 @@ function chatComplete(over: Partial<ChatResponse> = {}): SseEvent {
   return {
     event: "complete",
     data: {
-      answer: over.answer ?? "DRY_RUN: agent did not contact OpenAI.",
+      answer: over.answer ?? "DRY_RUN: agent did not contact the LLM.",
       citations: over.citations ?? [],
       session_id: over.session_id ?? "sess-1234",
       dry_run: over.dry_run ?? true,

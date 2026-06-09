@@ -10,10 +10,37 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+import httpx
 from langchain_core.messages import AIMessage
 
 from ..credentials import sanitize_log_raw
 from ..schemas import Citation
+
+# Exception types that surface as a 502 "upstream LLM unavailable" via
+# `is_llm_api_error`. Hoisted to module scope so a future maintainer can
+# extend the set in one place — and so the rationale (these are the
+# specific failure modes ChatOllama actually raises, NOT the bare
+# `httpx.HTTPError` base) lives next to the list.
+#
+# Previously this catch was `httpx.HTTPError`, the base class. That would
+# misclassify any future non-LLM httpx caller in the graph (e.g., a tool
+# that fetches an upstream URL) as a 502. The narrowed set keeps the
+# 502-mapping scoped to actual LLM-transport failures.
+_LLM_API_ERROR_TYPES: tuple[type[BaseException], ...] = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.PoolTimeout,
+    httpx.HTTPStatusError,
+    # Python 3.11+ — `asyncio.TimeoutError` is the SAME class object as
+    # the builtin `TimeoutError`. Including only the builtin covers
+    # both names (`isinstance(asyncio.TimeoutError(), TimeoutError) is
+    # True`). Adding `asyncio.TimeoutError` here would create a silent
+    # duplicate.
+    TimeoutError,
+    ConnectionError,
+)
 
 
 def extract_answer(state: dict[str, Any]) -> str:
@@ -67,25 +94,37 @@ def extract_citations(state: dict[str, Any]) -> list[Citation]:
     return citations
 
 
-def is_openai_api_error(exc: BaseException) -> bool:
-    """Lazy-import isinstance check so dry-run installs without `openai` work."""
-    try:
-        from openai import APIError
-    except ImportError:
-        return False
-    return isinstance(exc, APIError)
+def is_llm_api_error(exc: BaseException) -> bool:
+    """True for upstream LLM transport failures the router should surface as 502.
 
-
-def count_tokens(text: str, model: str) -> int:
-    """Tiktoken count for `text` against `model`'s encoding.
-
-    Falls back to `o200k_base` (gpt-4o family) for unknown model strings so
-    we still get a usable estimate.
+    Phase 8 / ADR-017 — broadened from the Phase 7 `openai.APIError` check
+    to cover the failure modes the local Ollama client emits. `ChatOllama`
+    is built on `httpx`, so connection errors and timeouts come through as
+    specific `httpx.HTTPError` subclasses (see `_LLM_API_ERROR_TYPES`).
+    The underlying `ollama` python client also raises `ResponseError` on
+    non-200 replies; we match it by module + class name to avoid an
+    import-time dependency.
     """
-    import tiktoken
+    if isinstance(exc, _LLM_API_ERROR_TYPES):
+        return True
+    # Match the `ollama` client's `ResponseError` by module + class name
+    # without an import. Tightened to `module == "ollama"` or
+    # `startswith("ollama.")` so a third-party `ollama_utils.ResponseError`
+    # wouldn't false-positive.
+    cls = type(exc)
+    module = getattr(cls, "__module__", "") or ""
+    if (module == "ollama" or module.startswith("ollama.")) and cls.__name__ == "ResponseError":
+        return True
+    return False
 
-    try:
-        enc = tiktoken.encoding_for_model(model)
-    except KeyError:
-        enc = tiktoken.get_encoding("o200k_base")
-    return len(enc.encode(text))
+
+def count_tokens(text: str) -> int:
+    """Estimate token count via the `len(text) // 4` character-count heuristic.
+
+    Phase 8 / ADR-017 drops `tiktoken` (OpenAI-specific) in favor of a
+    cheap heuristic that's good enough for an in-graph safety bound on
+    input size. The number is a coarse proxy, not a billing meter — the
+    bound exists to keep one absurdly large request from filling the
+    context window, not to track spend.
+    """
+    return len(text) // 4

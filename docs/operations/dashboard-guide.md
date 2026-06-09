@@ -1,8 +1,8 @@
 # Operating the Dashboard
 
 Operator-facing runbook for the Agentic Log Analysis Dashboard. Covers the
-Agitator load generator, chaos middleware, OpenAI embedding cost tracking,
-the Vectorstore Stats screen, and the Proactive Scan loop.
+Agitator load generator, chaos middleware, the embed-summary throughput
+table, the Vectorstore Stats screen, and the Proactive Scan loop.
 
 Design rationale lives in the ADRs cross-linked below
 ([ADR-013](../decisions/ADR-013-chaos-middleware.md),
@@ -11,7 +11,14 @@ Design rationale lives in the ADRs cross-linked below
 [ADR-016](../decisions/ADR-016-proactive-scan.md),
 [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md)).
 
-> **Phase 8 status (this PR is 8a — docs only):** [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md) replaces OpenAI with locally-run Ollama in PR 8b. After PR 8b ships, the embed-summary "tokens + USD" cost table becomes "tokens + wall_ms" (local inference is free), the ingest level gate is removed (full-corpus embedding), and the `DASHBOARD_LLM_DRY_RUN` runtime default flips to `false`. Until PR 8b merges, the operational reality below — OpenAI cost tracking, WARN+ERROR-only Chroma corpus, dry-run-true default — describes the live system. PR 8b will rewrite this guide for the post-Phase-8 reality.
+> **Phase 8 / [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md):** the
+> dashboard now talks to a local Ollama container (`llama3.1:8b` for the
+> LangGraph agent, `nomic-embed-text` for Chroma embeddings) instead of
+> OpenAI. The embed-summary table reports tokens + wall-time (no USD);
+> the ingest level gate is open by default (DEBUG ∪ INFO ∪ WARN ∪ ERROR)
+> so the agent gains baseline awareness via RAG; and
+> `DASHBOARD_LLM_DRY_RUN` defaults to `false` at runtime so AI Chat
+> returns real responses out of the box.
 
 > **How a log line travels from an app to the dashboard:**
 > see [`docs/architecture/log-flow.md`](../architecture/log-flow.md) (or
@@ -22,7 +29,8 @@ Design rationale lives in the ADRs cross-linked below
 
 Prerequisite: stack is up via `docker compose up -d` and the dashboard is
 reachable at [http://localhost:4001/](http://localhost:4001/) with the admin
-credentials from `.env`.
+credentials from `.env`. First boot pulls ~5GB of Ollama models — 5–15 min
+on M1 Max; cached on subsequent boots.
 
 ---
 
@@ -39,7 +47,7 @@ Ten built-in scenarios, one+ per app:
 | `auth-spike` | N login attempts with bad credentials against FNOL | WARN `login_failed` + `sda_upstream_rejected` (FNOL + SDA) | No |
 | `payload-fuzz` | Malformed claim submissions against FNOL | WARN `request_validation_error` | No |
 | `policy-not-found` | Reads against unknown policy numbers | WARN `policy_not_found` | No |
-| `claim-burst` | Valid claim submissions at high rate | INFO `claim_created` (filtered from Chroma) | No |
+| `claim-burst` | Valid claim submissions at high rate | INFO `claim_created` | No |
 | `sda-degraded` | 240 reads with `X-Chaos: slow:500` over 120s | WARN `chaos_honored` | **Yes** — see below |
 | `error-burst` | 120 reads with `X-Chaos: error:500` over 60s | ERROR `chaos_honored` (5xx → ERROR per ADR-013 amendment) | **Yes** |
 | `cp-read-burst` | 100 GETs against CP `/policies/me` over 30s | INFO at CP + SDA (no DB writes) | No |
@@ -53,9 +61,9 @@ concurrent runs. Run history persists in-memory only — the dashboard restart c
 which is fine because the durable signal lives in Chroma + the log volumes.
 
 Every Agitator request tags `X-Source: synthetic` so the dashboard's ingest gate
-(`DASHBOARD_INGEST_SOURCES=prod,synthetic`) admits it into Chroma. Playwright E2E traffic
-gets `X-Source: test` which the same gate drops — so test runs don't pollute the corpus.
-This is per [ADR-011](../decisions/ADR-011-x-source-header-convention.md).
+(`DASHBOARD_INGEST_SOURCES=prod,synthetic,unknown`) admits it into Chroma. Playwright E2E
+traffic gets `X-Source: test` which the same gate drops — so test runs don't pollute the
+corpus. This is per [ADR-011](../decisions/ADR-011-x-source-header-convention.md).
 
 ---
 
@@ -86,9 +94,9 @@ chaos to `/api/*` only, so `/actuator/health` is never disturbed.
 
 ## Reading the embed-summary table
 
-Every time the dashboard's watcher (or backfill) sends new log lines to OpenAI for
-embedding, you'll see a table in `docker compose logs log-dashboard`. Two real shapes
-captured during a 2026-06-06 live validation run illustrate what to expect.
+Every time the dashboard's watcher (or backfill) sends new log lines to Ollama for
+embedding, you'll see a table in `docker compose logs log-dashboard`. Two representative
+shapes from a live stack:
 
 **Typical (size-1) batch — what you see most of the time.** The file watcher
 fires once per new log line, so most batches contain a single entry:
@@ -101,22 +109,22 @@ fires once per new log line, so most batches contain a single entry:
 | Level   |            Count |
 +---------+------------------+
 | DEBUG   |                0 |
-| INFO    |                0 |
+| INFO    |                1 |
 | WARN    |                0 |
-| ERROR   |                1 |
+| ERROR   |                0 |
 +---------+------------------+
 | TOTAL   |                1 |
 +---------+------------------+
 | Tokens  |               44 |
-| Cost    |        $0.000001 |
+| Wall    |            52 ms |
 +---------+------------------+
- Session total (since startup): 6,980 tokens · $0.000140
+ Session total (since startup): 6,980 tokens · 8,420 ms
 ========================================================
 ```
 
 **Occasional coalesced batch — what you see during traffic bursts.** When new
 lines arrive faster than the watcher's debounce window, the watcher buffers
-and submits a multi-entry batch in one OpenAI call:
+and submits a multi-entry batch in one Ollama call:
 
 ```
 ========================================================
@@ -126,35 +134,36 @@ and submits a multi-entry batch in one OpenAI call:
 | Level   |            Count |
 +---------+------------------+
 | DEBUG   |                0 |
-| INFO    |                0 |
+| INFO    |                3 |
 | WARN    |                0 |
-| ERROR   |               20 |
+| ERROR   |                0 |
 +---------+------------------+
-| TOTAL   |               20 |
+| TOTAL   |                3 |
 +---------+------------------+
-| Tokens  |              920 |
-| Cost    |        $0.000018 |
+| Tokens  |              113 |
+| Wall    |            68 ms |
 +---------+------------------+
- Session total (since startup): 19,155 tokens · $0.000383
+ Session total (since startup): 19,155 tokens · 22,400 ms
 ========================================================
 ```
 
-**Cost expectation.** A full Agitator + cross-app chaos run (~340 WARN+ERROR
-lines across all 4 apps) costs about **$0.0006** in embedding tokens on
-`text-embedding-3-small`. Ongoing steady-state traffic in normal operation
-is far less — most batches are size 1 and the per-batch cost rounds to a
-fraction of a cent.
+**Throughput expectation.** Each `nomic-embed-text` call takes ~30–80ms on M1 Max
+(varies with batch size and CPU pressure). A full Agitator + cross-app chaos run
+(~340 entries across all 4 apps) embeds in a few seconds of cumulative wall time.
+Phase 8 / ADR-017 — local inference is free, so the operator focuses on wall-time
+budget, not USD.
 
-- **Level rows:** count of entries per level that just hit OpenAI. Only WARN + ERROR are
-  embedded by default — the `DASHBOARD_INGEST_LEVELS=WARN,ERROR` gate drops INFO/DEBUG
-  before the embedder is called.
-- **TOTAL:** the count actually paid for in this batch (post-dedup; if a line was already in
-  Chroma it doesn't appear here).
-- **Tokens + Cost:** computed via `tiktoken cl100k_base` × `text-embedding-3-small` list
-  price ($0.02 per 1M tokens — update the constant in
-  `dashboard/src/log_dashboard/ingest/vectorstore.py` if OpenAI re-prices).
-- **Session total:** cumulative since dashboard container startup. A restart resets this
-  counter (the spend itself doesn't persist anywhere durable).
+- **Level rows:** count of entries per level that just hit the embedder. Phase 8
+  default admits all 4 levels (DEBUG ∪ INFO ∪ WARN ∪ ERROR) so the agent gains
+  baseline awareness via RAG.
+- **TOTAL:** the count actually embedded in this batch (post-dedup; if a line was
+  already in Chroma it doesn't appear here).
+- **Tokens:** rough character-count heuristic (`len(text) // 4`). Operator-facing
+  throughput proxy, not a billing meter.
+- **Wall:** wall-clock milliseconds the batch's `store.add_documents` call took
+  (includes Ollama embedding round-trip + Chroma write).
+- **Session total:** cumulative since dashboard container startup. A restart resets
+  these counters; durable signal lives in Chroma + the log volumes.
 
 If `TOTAL` is zero, the operator never sees this table — there's no embed call to
 summarise. Dry-run mode (`DASHBOARD_INGEST_DRY_RUN=true`) also short-circuits before
@@ -164,23 +173,24 @@ The same fields land in a structured `embedding_complete` log event for grep-abi
 
 ```bash
 docker compose logs log-dashboard | grep embedding_complete | jq -r \
-  '"\(.app) batch=$\(.batch_cost_usd) session=$\(.session_cost_usd)"'
+  '"\(.app) batch=\(.batch_wall_ms)ms session=\(.session_wall_ms)ms"'
 ```
 
 ---
 
 ## What ends up in Chroma vs. the log volumes
 
-| Surface | Reads | Filters | Cost |
+| Surface | Reads | Filters | LLM traffic |
 |---|---|---|---|
-| `/api/logs`, `/api/status` (Log Explorer, Overview) | Log volumes directly | None | Zero — no OpenAI |
-| `/api/logs/search` (semantic search) | Chroma | WARN+ERROR ∩ `prod`/`synthetic` only | OpenAI embed cost for ingestion + 1 query embedding per call |
-| `/api/errors/{id}` (Error Detail + Suggested Fix) | Chroma | Same gate + WARN+ERROR only | One agent run per click — dry-run by default (`DASHBOARD_LLM_DRY_RUN=true`) |
-| Proactive scan loop (opt-in) | Chroma | Same gate | One agent run per cycle when enabled AND `DRY_RUN=false` |
+| `/api/logs`, `/api/status` (Log Explorer, Overview) | Log volumes directly | None | None |
+| `/api/logs/search` (semantic search) | Chroma | All levels ∩ `prod`/`synthetic`/`unknown` | 1 embedding round-trip per query |
+| `/api/errors/{id}` (Error Detail + Suggested Fix) | Chroma | Same source gate | One agent run per click — real LLM by default; dry-run via `DASHBOARD_LLM_DRY_RUN=true` |
+| Proactive scan loop (opt-in) | Chroma | Same source gate | One agent run per cycle when `SCAN_ENABLED=true` AND `DRY_RUN=false` |
 
-So healthcheck noise, Playwright E2E traffic, INFO success events, and full-dedup
-restarts all cost **zero**. Real Chroma spend only happens when WARN+ERROR `prod` or
-`synthetic` lines arrive that aren't already indexed.
+Phase 8 / ADR-017 — local Ollama inference is free, so traffic budgeting is about
+wall-time + resource contention, not USD. The source gate still drops Playwright
+`test` traffic and parser-derived `health` heartbeats — that's signal quality, not
+cost control.
 
 ---
 
@@ -189,17 +199,18 @@ restarts all cost **zero**. Real Chroma spend only happens when WARN+ERROR `prod
 Visit [http://localhost:4001/vectorstore-stats](http://localhost:4001/vectorstore-stats)
 after logging in to see what's actually embedded in Chroma:
 
-- Total document count + embedding model + vector dimensions
+- Total document count + embedding model + vector dimensions (768 for `nomic-embed-text`)
 - Breakdowns by app, level, source, top-10 events, and last-30-days time series
 - Polls `GET /api/chroma/stats` every 30s; bar charts are pure Tailwind (no JS chart library)
 
 Backed by `GET /api/chroma/stats` — a single `_collection.get(include=["metadatas"])` call;
-no OpenAI traffic. 503 when the vectorstore is unavailable (placeholder `OPENAI_API_KEY`).
+no LLM traffic. 503 when the vectorstore is unavailable (`OLLAMA_BASE_URL` unreachable).
 
 A "Vectorstore maintenance" panel on the same screen exposes `POST /api/chroma/flush` for
 deleting every embedded document. The confirm dialog shows the current doc count + an
-estimated OpenAI cost to re-embed the same volume. After flush, run
-`docker compose restart log-dashboard` to trigger the startup backfill task and repopulate.
+estimated wall-time to re-embed the same volume (~50ms per doc on M1 Max). After flush,
+run `docker compose restart log-dashboard` to trigger the startup backfill task and
+repopulate.
 
 ---
 
@@ -207,16 +218,21 @@ estimated OpenAI cost to re-embed the same volume. After flush, run
 
 The dashboard can scan the recent log corpus on a schedule and surface findings
 inline on the Overview screen without anyone asking. Design rationale in
-[ADR-016](../decisions/ADR-016-proactive-scan.md).
+[ADR-016](../decisions/ADR-016-proactive-scan.md) (amended by ADR-017 — the
+opt-in chain stays, the rationale shifts from cost-safety to scan-noise control).
 
 **Opt-in chain** — BOTH must flip from default for real scans to fire:
 
 | Env var | Default | Flip to | Effect |
 |---|---|---|---|
-| `DASHBOARD_LLM_DRY_RUN` | `true`  | `false` | Use real OpenAI (canned response in dry-run) |
-| `DASHBOARD_PROACTIVE_SCAN_ENABLED` | `false` | `true`  | Start the background loop on dashboard boot |
+| `DASHBOARD_LLM_DRY_RUN` | `false` (runtime) | `false` (default already) | Use real Ollama (canned response in dry-run) |
+| `DASHBOARD_PROACTIVE_SCAN_ENABLED` | `false` | `true` | Start the background loop on dashboard boot |
 
-Edit both in `.env` (do not commit) and restart `log-dashboard`:
+Phase 8 / ADR-017 — `DASHBOARD_LLM_DRY_RUN` defaults to `false` at runtime, so the only
+flag the operator typically flips is `DASHBOARD_PROACTIVE_SCAN_ENABLED`. Tests inherit
+`DRY_RUN=true` via an autouse fixture so unit tests don't pay LLM latency.
+
+Edit in `.env` (do not commit) and restart `log-dashboard`:
 
 ```bash
 docker compose up -d --build log-dashboard
@@ -225,10 +241,11 @@ docker compose up -d --build log-dashboard
 Either flag alone is safe:
 
 - `DRY_RUN=true` + `SCAN_ENABLED=true` → loop wakes on schedule, logs
-  `proactive_scan_skipped reason=llm_dry_run`, and goes back to sleep — zero cost.
-  Useful for verifying the loop scheduling without paid spend.
+  `proactive_scan_skipped reason=llm_dry_run`, and goes back to sleep. Useful for
+  verifying the loop scheduling without polluting the findings buffer with the
+  fake's canned answer.
 - `DRY_RUN=false` + `SCAN_ENABLED=false` → no loop. Chat still works
-  (operator-driven, real OpenAI). No background spend.
+  (operator-driven, real Ollama).
 
 **Tuning** (all optional, env defaults shown):
 
@@ -238,7 +255,7 @@ DASHBOARD_PROACTIVE_SCAN_LOOKBACK_MINUTES=30    # how far back each scan looks (
 DASHBOARD_PROACTIVE_SCAN_MAX_FINDINGS=5         # top-N surfaced on /api/status (1..20)
 ```
 
-**Driving ERROR-tier signal on demand.** Once `ENABLE_CHAOS=true`, the new
+**Driving ERROR-tier signal on demand.** Once `ENABLE_CHAOS=true`, the
 `error-burst` Agitator scenario sends `X-Chaos: error:500` against SDA `/policies`.
 The chaos middleware logs `chaos_honored` at ERROR (5xx → ERROR per ADR-013
 2026-06-06 amendment), the ingest gate admits it into Chroma, and the next scan
@@ -255,7 +272,8 @@ Overview screen above the per-app status grid:
 Findings are restart-lossy by design — same posture as Agitator runs. The
 durable signal lives in Chroma + the log volumes.
 
-**Cost ballpark.** With both flags on at 15-min cadence, expect ~96 scans/day.
-At gpt-4o list prices and PR 4a cost caps (≤4 tool calls + ≤2 LLM calls per
-scan), worst case is ~$3/day. Raise the interval to 1 hour for ~$0.72/day.
-See [ADR-016](../decisions/ADR-016-proactive-scan.md) for the full cost analysis.
+**Wall-time ballpark.** Each scan invokes the same compiled LangGraph used by
+`/api/chat`. At PR 4a cost caps (≤4 tool calls + ≤2 LLM calls per scan) on
+`llama3.1:8b`, expect ~15–60s per scan cycle on M1 Max. At a 15-min cadence
+that's ~96 scans/day with ~30 min/day of cumulative LLM wall time. Raise the
+interval to 1 hour for ~24 scans/day.

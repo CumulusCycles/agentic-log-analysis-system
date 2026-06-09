@@ -94,7 +94,7 @@ export function LogExplorer() {
           return;
         }
         if (err instanceof HttpError && err.status === 503 && isSearchMode) {
-          setError("semantic search is unavailable — set OPENAI_API_KEY to enable it");
+          setError("semantic search is unavailable — OLLAMA_BASE_URL is unreachable");
         } else if (err instanceof HttpError) {
           setError(`${isSearchMode ? "search" : "logs"} request failed (${err.status})`);
         } else {

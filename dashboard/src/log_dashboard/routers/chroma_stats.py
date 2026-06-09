@@ -1,7 +1,8 @@
 """GET /api/chroma/stats — aggregated stats over the embedded corpus.
 
 Operator-facing diagnostic. Answers "what's actually in Chroma?" in one
-call. Reuses the dashboard's `app.state.vectorstore`; never hits OpenAI.
+call. Reuses the dashboard's `app.state.vectorstore`; never invokes the
+LLM or embedder.
 
 Aggregation strategy: a single `_collection.get(include=["metadatas"])`
 pulls every doc's metadata in one Chroma RPC, then we count in Python.
@@ -27,10 +28,11 @@ from ..schemas import ChromaFlushResponse, ChromaStatsResponse, DayCount, EventC
 router = APIRouter(tags=["chroma-stats"])
 log = get_logger("chroma_stats")
 
-# text-embedding-3-small returns 1536-dim vectors. The dashboard pins this
-# model via `OPENAI_EMBEDDING_MODEL` in .env.example; changing the model
-# requires wiping the collection (different dims, vectors aren't comparable).
-_EMBEDDING_DIMENSIONS = 1536
+# nomic-embed-text returns 768-dim vectors (Phase 8 / ADR-017). The
+# dashboard pins this via `DASHBOARD_EMBED_MODEL` in .env.example;
+# changing the model requires wiping the collection (different dims,
+# vectors aren't comparable).
+_EMBEDDING_DIMENSIONS = 768
 
 # Top-N caps for the breakdowns. Bar charts beyond these N values become
 # unreadable; the operator can drill into the Log Explorer for the long tail.
@@ -68,8 +70,8 @@ async def get_chroma_stats(
 ) -> ChromaStatsResponse:
     """Return aggregated stats over the Chroma collection.
 
-    Returns 503 when the vectorstore is not configured (degraded mode with
-    placeholder OpenAI key) — same posture as `GET /api/errors/{id}`.
+    Returns 503 when the vectorstore is not configured (degraded mode
+    when Ollama is unreachable) — same posture as `GET /api/errors/{id}`.
 
     `since` + `until` scope the `by_day` series only. Whole-corpus rollups
     (by_app / by_level / by_source / by_event) stay unscoped because the
@@ -104,7 +106,7 @@ async def get_chroma_stats(
             by_source={},
             by_event=[],
             by_day=_count_by_day([], since=since, until=until, now=now),
-            embedding_model=settings.openai_embedding_model,
+            embedding_model=settings.dashboard_embed_model,
             dimensions=_EMBEDDING_DIMENSIONS,
             as_of=now,
         )
@@ -129,7 +131,7 @@ async def get_chroma_stats(
         by_source=_count_by_key(metadatas, "source"),
         by_event=_top_events(metadatas, n=_TOP_EVENTS),
         by_day=_count_by_day(metadatas, since=since, until=until, now=now),
-        embedding_model=settings.openai_embedding_model,
+        embedding_model=settings.dashboard_embed_model,
         dimensions=_EMBEDDING_DIMENSIONS,
         as_of=now,
     )

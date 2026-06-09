@@ -58,7 +58,7 @@ async def get_status(
 
     # PR 3: corpus_empty drives the Overview "go run the Agitator" banner.
     # Only true when the vectorstore is wired up AND has zero docs — degraded
-    # mode (no OpenAI key) reports False so the banner doesn't dangle.
+    # mode (Ollama unreachable) reports False so the banner doesn't dangle.
     findings, last_scan_at, next_scan_at = _proactive_state(
         request, settings.proactive_scan_max_findings
     )

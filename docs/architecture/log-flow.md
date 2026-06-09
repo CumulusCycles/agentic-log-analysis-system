@@ -5,7 +5,7 @@ to the dashboard's two reading surfaces — the unfiltered operator view and the
 
 For a visual rendering of the same flow, open [`log-flow.html`](log-flow.html) in a browser (HTML/CSS, not GitHub-rendered).
 
-> **Phase 8 / [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md):** the embed step (10) and the level-gate row in (9) describe the post-Phase-8 design — local Ollama embeddings + full-corpus ingest. *Phase 8 implementation lands in PR 8b.*
+> **Phase 8 / [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md):** the embed step (10) and the level-gate row in (9) describe the live post-Phase-8 design — local Ollama embeddings + full-corpus ingest.
 
 ---
 

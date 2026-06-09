@@ -79,6 +79,62 @@ services:
     networks:
       - insurance-net
 
+  # Phase 8 / ADR-017 — local AI inference. Replaces OpenAI as the LLM +
+  # embeddings provider for the log-dashboard. No host port exposure: only the
+  # dashboard reaches it, on the insurance-net bridge.
+  ollama:
+    image: ollama/ollama:latest
+    platform: linux/arm64
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    # Reserve enough RAM for llama3.1:8b (Q4, ~4.5GB resident) plus headroom
+    # for nomic-embed-text and concurrent generations. Operator must allocate
+    # ≥32GB to Docker Desktop on M1 Max per ADR-017 §5.
+    deploy:
+      resources:
+        reservations:
+          memory: 16G
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - insurance-net
+
+  # One-shot model puller — runs once on first stack boot, pulls both models
+  # into the persistent ollama-data volume, then exits. Subsequent boots find
+  # the models already cached and the container exits ~immediately. First
+  # boot from cold pulls ~5GB total and takes 5-15 min on a typical link.
+  #
+  # `restart: on-failure` retries transient network flakes mid-pull;
+  # without it a momentary connection drop would leave the dashboard
+  # permanently unstartable (depends_on requires this service to complete
+  # successfully). Each command prints a clear marker before exiting so
+  # the operator's `docker logs` shows which pull failed.
+  ollama-init:
+    image: ollama/ollama:latest
+    platform: linux/arm64
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "[ollama-init] pulling llama3.1:8b…"
+        ollama pull llama3.1:8b || { echo "[ollama-init] ERROR: llama3.1:8b pull failed — will retry on container restart"; exit 1; }
+        echo "[ollama-init] pulling nomic-embed-text…"
+        ollama pull nomic-embed-text || { echo "[ollama-init] ERROR: nomic-embed-text pull failed — will retry on container restart"; exit 1; }
+        echo "[ollama-init] done."
+    restart: on-failure
+    networks:
+      - insurance-net
+
   # ============================================================================
   # App tier — Phase 2 placeholders
   #
@@ -210,6 +266,10 @@ services:
     depends_on:
       chroma:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
     networks:
       - insurance-net
 
@@ -221,6 +281,7 @@ volumes:
   customer-portal-logs:
   agent-portal-logs:
   chroma-data:
+  ollama-data:
 
 networks:
   insurance-net:

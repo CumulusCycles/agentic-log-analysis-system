@@ -95,7 +95,7 @@ describe("ErrorDetail", () => {
         .fn()
         .mockResolvedValue(
           jsonResponse(
-            { detail: "error detail is unavailable — OPENAI_API_KEY is not configured" },
+            { detail: "error detail is unavailable — OLLAMA_BASE_URL is unreachable" },
             503,
           ),
         ),
@@ -108,7 +108,7 @@ describe("ErrorDetail", () => {
         screen.getByRole("heading", { name: /Error detail unavailable/i }),
       ).toBeInTheDocument(),
     );
-    expect(screen.getByText(/OPENAI_API_KEY/)).toBeInTheDocument();
+    expect(screen.getByText(/OLLAMA_BASE_URL/)).toBeInTheDocument();
   });
 
   it("renders citations as links pointing at each cited entry", async () => {
