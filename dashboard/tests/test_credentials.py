@@ -194,3 +194,40 @@ def test_multiple_credential_shapes_on_same_line_all_redacted() -> None:
     # broadened Authorization redactor sweeps from "Authorization:" to
     # end-of-line, so the count check is loose — just confirm presence).
     assert "[REDACTED]" in out
+
+
+def test_sanitize_log_raw_credential_mid_java_stack_trace() -> None:
+    """A multi-line Java stack trace with an Authorization header on an
+    interior line. The `_AUTH_BEARER` boundary `[^\\r\\n\\\"]+` stops at
+    newline, so neighbouring stack frames must survive — the redactor
+    must not eat the whole trace.
+
+    Why: agent-portal exceptions can carry the original request headers
+    in the trace's MDC dump (Logback's `%X` pattern). A bearer token in
+    that dump would otherwise reach Chroma + LangSmith. Belt-and-braces
+    coverage for the parser → vectorstore → LLM-context pipeline.
+    """
+    raw = (
+        "ERROR c.c.agentportal.web.ClaimsController : claim_fetch_failed\n"
+        "java.lang.RuntimeException: SDA call failed\n"
+        "\tat com.cumuluscycles.agentportal.sda.SdaClient.getClaim(SdaClient.java:142)\n"
+        "\tat com.cumuluscycles.agentportal.web.ClaimsController.getClaim"
+        "(ClaimsController.java:67)\n"
+        '\trequest.headers: {Authorization: "Bearer eyJtokenABCDEFGHIJKL1234567890", '
+        'X-Source: "prod"}\n'
+        "\tat org.springframework.web.method.support.InvocableHandlerMethod.doInvoke"
+        "(IHM.java:209)\n"
+        "Caused by: org.springframework.web.client.HttpClientErrorException$NotFound\n"
+    )
+    out = sanitize_log_raw(raw)
+    assert "[REDACTED]" in out
+    assert "eyJtokenABCDEFGHIJKL1234567890" not in out
+    # Neighbouring stack frames + adjacent header value MUST survive — the
+    # redactor stops at the closing quote, not at end-of-trace.
+    assert "ClaimsController.getClaim" in out
+    assert "InvocableHandlerMethod.doInvoke" in out
+    assert "HttpClientErrorException$NotFound" in out
+    # X-Source is on the same line but after the closing quote — must
+    # survive because the Authorization redactor is bounded.
+    assert "X-Source" in out
+    assert '"prod"' in out

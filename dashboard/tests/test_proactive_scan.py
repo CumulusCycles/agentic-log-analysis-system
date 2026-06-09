@@ -520,6 +520,93 @@ def test_new_finding_id_uniqueness() -> None:
     assert a.startswith("proactive:") and b.startswith("proactive:")
 
 
+class _CyclingErrorGraph:
+    """Stub that raises a distinct exception on every consecutive
+    `ainvoke` call. When the list is exhausted, raises the LAST error
+    again indefinitely — never returns a normal result. Lets a multi-
+    iteration test assert the loop survives several DIFFERENT transport
+    failures, not just one repeated."""
+
+    def __init__(self, errors: list[BaseException]) -> None:
+        if not errors:
+            raise ValueError("at least one error required")
+        self._errors = errors
+        self.invoked: list[tuple[dict, dict]] = []
+
+    async def ainvoke(self, state: dict, config: dict | None = None) -> dict:
+        self.invoked.append((state, config or {}))
+        idx = min(len(self.invoked) - 1, len(self._errors) - 1)
+        raise self._errors[idx]
+
+
+@pytest.mark.asyncio
+async def test_loop_survives_distinct_httpx_transport_errors_across_iterations(
+    monkeypatch,
+) -> None:
+    """The scan loop must survive a SEQUENCE of distinct httpx transport
+    errors — not just the one shape tested in
+    `test_run_one_scan_returns_none_on_llm_transport_failure`.
+
+    Why: `is_llm_api_error` covers ConnectError + ReadTimeout +
+    WriteTimeout + ResponseError. A regression that narrows the matcher
+    to just ConnectError would let a ReadTimeout escape the broad
+    `except Exception` in `run_proactive_scan_loop`, but the existing
+    one-error tests wouldn't notice.
+
+    Verifies: 3 iterations, 3 distinct httpx errors, buffer stays empty
+    (no `None` is appended), `last_scan_at` advances on every iteration,
+    loop reaches the final cancellation cleanly.
+    """
+    import httpx
+
+    errors: list[BaseException] = [
+        httpx.ConnectError("ollama unreachable"),
+        httpx.ReadTimeout("ollama read timeout"),
+        httpx.WriteTimeout("ollama write timeout"),
+    ]
+    graph = _CyclingErrorGraph(errors)
+    session_index = _StubSessionIndex()
+    buffer = FindingsBuffer()
+    app = SimpleNamespace(
+        state=SimpleNamespace(
+            agent_graph=graph,
+            vectorstore=object(),
+            session_index=session_index,
+            findings_buffer=buffer,
+        )
+    )
+    settings = _settings(dashboard_llm_dry_run=False)
+
+    iterations = 0
+    timestamps_seen: list[object] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        nonlocal iterations
+        # Capture last_scan_at AFTER each iteration's failure-handling
+        # writes it. The first sleep call happens BEFORE iteration 1
+        # runs, so we record from iteration 2 onwards.
+        if iterations > 0:
+            timestamps_seen.append(buffer.last_scan_at)
+        iterations += 1
+        if iterations >= 4:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr("log_dashboard.agent.proactive.asyncio.sleep", _fake_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await run_proactive_scan_loop(app, settings)  # type: ignore[arg-type]
+
+    # All 3 errors saw the graph; loop survived every one.
+    assert len(graph.invoked) == 3
+    # No iteration produced a finding (failures all returned None).
+    assert len(buffer) == 0
+    # `last_scan_at` was written on every iteration — proves the loop
+    # ran the timestamp-update branch each time, not just on the first
+    # success. 3 sleep calls follow the first iteration, so 3 snapshots.
+    assert len(timestamps_seen) == 3
+    assert all(t is not None for t in timestamps_seen)
+
+
 # ---------------- helpers ----------------
 
 

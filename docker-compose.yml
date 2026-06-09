@@ -95,12 +95,28 @@ services:
       resources:
         reservations:
           memory: 16G
+    # Verify the daemon is up AND both v1.1.0 models are loaded into the
+    # cache. The daemon-only check (pre-v1.1.1) marked the container
+    # healthy before ollama-init finished pulling, which let the
+    # dashboard's depends_on race ahead and fail its first chat call.
+    # `awk` runs both pattern matches in a single `ollama list` invocation.
+    # If you change the model env vars (qwen2.5:14b trial, etc.), update
+    # both the patterns below AND the `ollama pull` commands in
+    # `ollama-init` below — these must stay in lock-step.
+    #
+    # `start_period: 900s` covers ollama-init's worst-case 15-min cold-pull
+    # window (per the comment on ollama-init's command). During start_period,
+    # failing probes don't mark the container unhealthy — they just keep it
+    # in `starting`. Once both models land, the first success flips it to
+    # `healthy` and the dashboard's `depends_on: service_healthy` proceeds.
     healthcheck:
-      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      test:
+        - "CMD-SHELL"
+        - "ollama list 2>/dev/null | awk '/^llama3.1:8b/{f=1} /^nomic-embed-text/{g=1} END{exit !(f&&g)}'"
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 30s
+      start_period: 900s
     networks:
       - insurance-net
 
