@@ -434,3 +434,37 @@ def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, 
         for val in rec.__dict__.values():
             assert "leaky_user" not in str(val)
             assert "leaky_pass" not in str(val)
+
+
+def test_build_vectorstore_forwards_timeout_to_ollama_embeddings(monkeypatch) -> None:
+    """v1.1.1 symmetry guard: `OllamaEmbeddings` must receive the same
+    `client_kwargs={"timeout": N}` plumbing that `ChatOllama` got in v1.1.0.
+
+    Without this, backfill / watcher embedding calls would hang indefinitely
+    on the default httpx 5-second read timeout when Ollama stalls, while the
+    chat path remains bounded at `llm_timeout_seconds`. Asymmetric blind
+    spot. See [[reference_langchain_ollama_timeout_kwarg]] for the
+    silent-absorption gotcha — same shape applies to `OllamaEmbeddings`.
+    """
+    import chromadb
+
+    captured: dict[str, object] = {}
+
+    class _Spy:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def embed_documents(self, texts):  # noqa: ANN001, ANN201 — stub
+            return [[0.0] for _ in texts]
+
+        def embed_query(self, text):  # noqa: ANN001, ANN201 — stub
+            return [0.0]
+
+    monkeypatch.setattr("log_dashboard.ingest.vectorstore.OllamaEmbeddings", _Spy)
+
+    settings = _settings(llm_timeout_seconds=77, chroma_collection="vs-timeout-test")
+    build_vectorstore(settings, client=chromadb.Client())
+
+    assert captured.get("client_kwargs") == {"timeout": 77}
+    assert captured.get("base_url") == settings.ollama_base_url
+    assert captured.get("model") == settings.dashboard_embed_model

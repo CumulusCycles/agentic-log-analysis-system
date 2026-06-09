@@ -18,6 +18,7 @@ client doesn't need an SSE parser to read `401 / 413 / 503`.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
@@ -183,6 +184,7 @@ async def post_chat(
             },
         )
 
+    started_at = time.perf_counter()
     try:
         result = await graph.ainvoke(initial_state, config=config)
     except Exception as exc:
@@ -190,16 +192,29 @@ async def post_chat(
         # errors, schema issues) bubbles to the global 500 handler.
         # `is_llm_api_error` matches httpx / connection / timeout / Ollama
         # response errors (Phase 8 / ADR-017).
+        #
+        # `duration_ms` is logged for BOTH branches — operators need timing
+        # context for programming errors just as much as for LLM transport
+        # failures. The non-LLM branch then re-raises so the global 500
+        # handler runs as before.
+        duration_ms = int((time.perf_counter() - started_at) * 1000)
         if is_llm_api_error(exc):
             log.warning(
                 "chat_upstream_failure",
                 session_id=session_id,
                 error_class=type(exc).__name__,
+                duration_ms=duration_ms,
             )
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="upstream LLM unavailable — try again shortly",
             ) from exc
+        log.warning(
+            "chat_unexpected_failure",
+            session_id=session_id,
+            error_class=type(exc).__name__,
+            duration_ms=duration_ms,
+        )
         raise
 
     answer = extract_answer(result)
@@ -213,6 +228,7 @@ async def post_chat(
         dry_run=dry_run,
         citation_count=len(citations),
         tool_budget_exhausted=tool_budget_exhausted,
+        duration_ms=int((time.perf_counter() - started_at) * 1000),
     )
 
     return ChatResponse(
@@ -250,6 +266,7 @@ async def _stream_chat_events(
     fetch-reader.
     """
     aborted = False
+    started_at = time.perf_counter()
     try:
         async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
             # `stream_mode="updates"` yields {node_name: partial_state_update}.
@@ -282,6 +299,7 @@ async def _stream_chat_events(
                 session_id=session_id,
                 error_class=type(exc).__name__,
                 streaming=True,
+                duration_ms=int((time.perf_counter() - started_at) * 1000),
             )
             yield _sse_event(
                 "error",
@@ -294,6 +312,7 @@ async def _stream_chat_events(
             "chat_stream_failed",
             session_id=session_id,
             error_class=type(exc).__name__,
+            duration_ms=int((time.perf_counter() - started_at) * 1000),
         )
         yield _sse_event("error", {"detail": "stream failed unexpectedly"})
         return
@@ -319,6 +338,7 @@ async def _stream_chat_events(
         citation_count=len(citations),
         tool_budget_exhausted=tool_budget_exhausted,
         streaming=True,
+        duration_ms=int((time.perf_counter() - started_at) * 1000),
     )
 
     # Re-use ChatResponse's serializer so the SSE `complete` event mirrors

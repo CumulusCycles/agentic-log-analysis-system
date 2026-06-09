@@ -142,6 +142,7 @@ def build_vectorstore(
         embedding_function = OllamaEmbeddings(
             base_url=settings.ollama_base_url,
             model=settings.dashboard_embed_model,
+            client_kwargs={"timeout": settings.llm_timeout_seconds},
         )
     if client is None:
         host, port = _parse_chroma_url(settings.chroma_url)

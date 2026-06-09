@@ -33,7 +33,7 @@ Quick-reference data for the running stack: host ports, healthcheck commands, an
 | postgres | `pg_isready -U $POSTGRES_USER` |
 | mongodb | `mongosh --eval "db.runCommand({ping:1})"` |
 | chroma | `bash + /dev/tcp` against `http://localhost:8000/api/v2/heartbeat` (no curl/wget in image) |
-| ollama | `ollama list >/dev/null 2>&1 \|\| exit 1` (CMD-SHELL — Phase 8 / ADR-017) |
+| ollama | `ollama list \| awk` checks BOTH `llama3.1:8b` + `nomic-embed-text` are loaded (CMD-SHELL — v1.1.1 tightened the daemon-only check that pre-existed in Phase 8 / ADR-017; `start_period: 900s` covers ollama-init's worst-case cold-pull window). |
 | shared-data-api / fnol-app / customer-portal / log-dashboard | HTTP `GET /health` |
 | agent-portal | HTTP `GET /actuator/health` |
 

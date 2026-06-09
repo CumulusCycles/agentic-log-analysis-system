@@ -62,3 +62,48 @@ async def test_chat_session_id_reused_carries_history(
     )
     assert second.status_code == 200
     assert second.json()["session_id"] == session_id
+
+
+@pytest.mark.asyncio
+async def test_chat_complete_log_carries_duration_ms(
+    client, valid_token, fail_if_real_llm_invoked, caplog
+) -> None:
+    """v1.1.1 telemetry: the `chat_complete` log event MUST include a
+    `duration_ms` integer field. Without this, operators have no
+    structured way to spot cold-start regressions or latency cliffs
+    (e.g. a future qwen2.5:14b trial running 3-4x slower than llama3.1).
+
+    Asserts presence + sanity (>= 0). The exact value depends on
+    machine speed; dry-run graphs typically land in single-digit ms.
+
+    structlog collapses the whole event dict into the LogRecord's
+    message string. Under pytest caplog the renderer emits a Python
+    dict repr (single quotes), so we use `ast.literal_eval` rather than
+    `json.loads` to recover the structured payload.
+    """
+    import ast
+    import logging
+
+    caplog.set_level(logging.INFO, logger="chat")
+
+    response = await client.post(
+        "/api/chat",
+        json={"message": "hello"},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+
+    chat_complete_payloads: list[dict] = []
+    for rec in caplog.records:
+        try:
+            payload = ast.literal_eval(rec.getMessage())
+        except (ValueError, SyntaxError):
+            continue
+        if isinstance(payload, dict) and payload.get("event") == "chat_complete":
+            chat_complete_payloads.append(payload)
+
+    assert len(chat_complete_payloads) == 1, "expected exactly one chat_complete log"
+    duration = chat_complete_payloads[0].get("duration_ms")
+    assert duration is not None, "chat_complete must carry a duration_ms field"
+    assert isinstance(duration, int)
+    assert duration >= 0

@@ -85,7 +85,7 @@ Each app row links the three conceptual endpoints where they apply:
 | PostgreSQL | `pg_isready` via Docker on TCP `localhost:5433` (not HTTP) | — | — |
 | MongoDB | `mongosh` ping via Docker on TCP `localhost:27018` (not HTTP) | — | — |
 | Chroma | `bash + /dev/tcp` via Docker, internal port `8000` only (not host-exposed) | — | — |
-| Ollama | `ollama list` via Docker, internal port `11434` only (not host-exposed) | — | — |
+| Ollama | `ollama list \| awk` verifies BOTH `llama3.1:8b` + `nomic-embed-text` are loaded (v1.1.1); internal port `11434` only (not host-exposed) | — | — |
 
 > The Shared Data API exposes Swagger as the system's integration target. The Dashboard exposes Swagger as an admin diagnostic surface. The three end-user apps (FNOL / Customer Portal / Agent Portal) are SPA + thin proxy and intentionally do not expose `/docs`. Both Swagger UIs are browser-accessible without an API key for local dev ([ADR-001](docs/decisions/ADR-001-local-docker-only.md)); to **call** endpoints from them you still need a JWT — click **Authorize** and paste a `Bearer <token>` from a login round-trip.
 
