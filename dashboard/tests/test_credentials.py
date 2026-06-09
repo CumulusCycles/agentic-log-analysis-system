@@ -52,6 +52,15 @@ from log_dashboard.credentials import sanitize_log_raw, sanitize_user_input
             "[REDACTED]",
             "dXNlcjpzZWNyZXRwdw==",
         ),
+        # JSON-quoted AWS4 — symmetry with the JSON-quoted Basic case above.
+        # Confirms the rest-of-line redactor catches non-Bearer schemes when
+        # they appear inside a JSON object too.
+        (
+            '{"Authorization": "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE'
+            '/20260609/us-east-1/s3/aws4_request, Signature=abc123def456"}',
+            "[REDACTED]",
+            "AKIAIOSFODNN7EXAMPLE",
+        ),
         # Bare Bearer (note: token must be ≥20 chars to match)
         (
             "use Bearer ghp_abcdefghijklmnopqrst when calling",
@@ -168,3 +177,20 @@ def test_both_sanitisers_share_redaction_pool() -> None:
     against future drift between the two."""
     raw = "header Authorization: Bearer eyJabcdefghijklmnopqrstuvwxyz"
     assert sanitize_user_input(raw) == sanitize_log_raw(raw)
+
+
+def test_multiple_credential_shapes_on_same_line_all_redacted() -> None:
+    """X-API-Key + Authorization on the same line — both must be redacted,
+    not just the first match. Regression guard against any future regex
+    rewrite that accidentally short-circuits after the first hit."""
+    raw = (
+        "X-API-Key: fnol_app_api_key_change_me "
+        "Authorization: Bearer eyJabcdefghijklmnopqrstuvwxyz"
+    )
+    out = sanitize_user_input(raw)
+    assert "fnol_app_api_key_change_me" not in out
+    assert "eyJabcdefghijklmnopqrstuvwxyz" not in out
+    # Both shapes get replaced, so [REDACTED] appears in the output (the
+    # broadened Authorization redactor sweeps from "Authorization:" to
+    # end-of-line, so the count check is loose — just confirm presence).
+    assert "[REDACTED]" in out

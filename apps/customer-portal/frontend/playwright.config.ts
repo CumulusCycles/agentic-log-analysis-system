@@ -1,4 +1,16 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { defineConfig, devices } from "@playwright/test";
+import { config as loadEnv } from "dotenv";
+
+// Load the repo-root .env so TEST_CUSTOMER_USERNAME (and any other
+// playwright-relevant overrides) reach process.env before fixtures
+// resolve. Playwright is launched from `apps/customer-portal/frontend/`,
+// three levels below the .env file. Missing .env is harmless —
+// `loadEnv` returns without erroring and fixtures fall back to defaults.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+loadEnv({ path: path.resolve(__dirname, "../../../.env") });
 
 // Playwright runs against a LIVE stack — `docker compose up -d` first.
 // The customer-portal container exposes host port 3001.

@@ -154,6 +154,22 @@ class Settings(BaseSettings):
         default=40, alias="DASHBOARD_LLM_MAX_MESSAGES_PER_SESSION", ge=2, le=200
     )
 
+    # Wall-clock cap on every Ollama HTTP call. Forwarded into
+    # `ChatOllama(client_kwargs={"timeout": ...})` so it reaches both the
+    # sync and async httpx clients (`langchain_ollama` has no `timeout`
+    # field on the model itself — passing `timeout=` directly is silently
+    # absorbed by pydantic `extra="allow"`).
+    #
+    # Default of 120 is sized empirically for cold-start on M1 Max
+    # llama3.1:8b: the first agent-graph round after a container restart
+    # loads the 8B weights into memory and routinely takes 60-100s. 30s
+    # and 60s both false-fail cold-start chat. Operators with larger
+    # models (planned qwen2.5:14b trial) or slower hardware can raise
+    # this; the cap is 600s so a true Ollama hang still surfaces.
+    llm_timeout_seconds: int = Field(
+        default=120, alias="DASHBOARD_LLM_TIMEOUT_SECONDS", ge=5, le=600
+    )
+
     # SessionIndex bounds the in-process LRU of `thread_id` checkpoints. When
     # the cap is hit, the oldest thread is evicted via `checkpointer.adelete_thread`.
     session_index_max: int = Field(
