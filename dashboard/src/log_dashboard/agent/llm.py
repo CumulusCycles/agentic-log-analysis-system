@@ -123,11 +123,12 @@ def _build_real_model(settings: Settings) -> BaseChatModel:
         model=settings.dashboard_llm_model,
         base_url=settings.ollama_base_url,
         temperature=0,
-        # Without this, an Ollama hang would block graph.ainvoke indefinitely.
-        # 30s covers a slow generation on a saturated M1 Max; longer-form
-        # reasoning hits the `timeout` boundary, surfaces as
-        # is_llm_api_error, and the router maps it to 502 instead of
-        # hanging the response. Standard LangChain ChatModel parameter
-        # (forwarded to the langchain-ollama transport).
-        timeout=30,
+        # 30s wall-clock cap on every Ollama HTTP call. ChatOllama itself
+        # has no `timeout` field; the supported path is `client_kwargs`,
+        # which langchain-ollama merges into both sync and async client
+        # constructors and forwards to `ollama.AsyncClient` →
+        # `httpx.AsyncClient(timeout=...)`. Without this, an Ollama hang
+        # would block graph.ainvoke indefinitely; with it, the timeout
+        # surfaces via httpx.ReadTimeout → is_llm_api_error → 502.
+        client_kwargs={"timeout": 30},
     )
