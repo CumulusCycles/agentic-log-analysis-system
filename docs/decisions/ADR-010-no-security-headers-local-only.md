@@ -45,9 +45,10 @@ with zero risk reduction in the local-only context.
   - X-Frame-Options: DENY
   - Content-Security-Policy: per-app allow-list (template at backfill time)
   - Referrer-Policy: strict-origin-when-cross-origin
-- The Customer Portal's Express app does NOT call `app.disable("x-powered-by")` for
-  security reasons — it's already disabled to avoid the cosmetic `X-Powered-By: Express`
-  header leak. That existing line stays.
+- The Customer Portal's Express app DOES call `app.disable("x-powered-by")`. That line
+  is kept as a cosmetic-leak guard (suppresses the `X-Powered-By: Express` response
+  header), not a security control. This ADR's "no security-header middleware" stance
+  does not affect that line.
 - Tests do not assert the absence of security headers; if a future PR adds them,
   the absence assertion isn't a regression to fix.
 
