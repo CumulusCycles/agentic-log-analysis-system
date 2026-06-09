@@ -43,18 +43,25 @@ _REDACTED = "[REDACTED]"
 # the head so a giant blob can never become a runaway regex problem.
 _MAX_INPUT_LEN = 8000
 
-# `Authorization: <scheme> <value>` — case-insensitive. The regex matches
-# everything from `authorization:` to end-of-line (or to a closing quote
-# in JSON-shaped inputs, so adjacent fields like `"user": "..."` survive).
-# Covers Bearer, Basic, AWS4-HMAC-SHA256, Hawk, Negotiate, and any other
-# scheme whose secret value lives on one line.
+# `Authorization: <scheme> <value>` — case-insensitive. Matches the
+# `authorization` keyword and consumes everything up to end-of-line or to
+# a closing quote (so adjacent fields in JSON inputs like `"user": "..."`
+# survive). Covers Bearer, Basic, AWS4-HMAC-SHA256, Hawk, Negotiate, and
+# any other scheme whose secret value lives on one line.
+#
+# The `\"?` flanking the keyword admits both bare (`Authorization: ...`)
+# and JSON-quoted (`"Authorization": "..."`) forms. Without the leading
+# `\"?`, JSON-quoted non-Bearer headers (Basic, AWS4) would slip past
+# this redactor — the bare-`Bearer` redactor below catches Bearer tokens
+# regardless of the surrounding shape, but won't help for other schemes.
 #
 # Boundary: schemes that pack multiple `key="value"` segments inside one
-# Authorization header (RFC 7616 Digest, OAuth1 signature) are only partially
-# redacted — the regex stops at the first inner quote. None of the apps in
-# this codebase use those schemes; the realistic threat is Bearer/Basic/AWS4.
+# Authorization header (RFC 7616 Digest, OAuth1 signature) are only
+# partially redacted — the regex stops at the first inner quote. None of
+# the apps in this codebase use those schemes; the realistic threat is
+# Bearer/Basic/AWS4.
 _AUTH_BEARER = re.compile(
-    r"(?i)(authorization\s*[:=]\s*\"?)[^\r\n\"]+",
+    r"(?i)(\"?authorization\"?\s*[:=]\s*\"?)[^\r\n\"]+",
 )
 
 # Bare `Bearer <token>` not preceded by `authorization:` — catches the case

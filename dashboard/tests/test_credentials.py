@@ -42,6 +42,15 @@ from log_dashboard.credentials import sanitize_log_raw, sanitize_user_input
             "[REDACTED]",
             "eyJabcdefghijklmnopqrstuvwxyz",
         ),
+        # JSON-quoted Basic auth — regression guard for the bug where the
+        # broadened _AUTH_BEARER missed the JSON-quoted keyword form. The
+        # bare-Bearer redactor wouldn't catch Basic, so without the leading
+        # `\"?` on the keyword this case would leak.
+        (
+            '{"Authorization": "Basic dXNlcjpzZWNyZXRwdw==", "user_id": 42}',
+            "[REDACTED]",
+            "dXNlcjpzZWNyZXRwdw==",
+        ),
         # Bare Bearer (note: token must be ≥20 chars to match)
         (
             "use Bearer ghp_abcdefghijklmnopqrst when calling",
