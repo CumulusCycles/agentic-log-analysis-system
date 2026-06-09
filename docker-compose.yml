@@ -126,10 +126,14 @@ services:
     command:
       - |
         set -e
+        # Hard wall-clock cap per pull. Without `timeout`, a hung pull
+        # would never return and `restart: on-failure` below would loop
+        # the container indefinitely. 900s ≈ 15 min covers a slow first
+        # download; warm-cache pulls finish in ~5 min.
         echo "[ollama-init] pulling llama3.1:8b…"
-        ollama pull llama3.1:8b || { echo "[ollama-init] ERROR: llama3.1:8b pull failed — will retry on container restart"; exit 1; }
+        timeout 900 ollama pull llama3.1:8b || { echo "[ollama-init] ERROR: llama3.1:8b pull failed or timed out — will retry on container restart"; exit 1; }
         echo "[ollama-init] pulling nomic-embed-text…"
-        ollama pull nomic-embed-text || { echo "[ollama-init] ERROR: nomic-embed-text pull failed — will retry on container restart"; exit 1; }
+        timeout 900 ollama pull nomic-embed-text || { echo "[ollama-init] ERROR: nomic-embed-text pull failed or timed out — will retry on container restart"; exit 1; }
         echo "[ollama-init] done."
     restart: on-failure
     networks:
