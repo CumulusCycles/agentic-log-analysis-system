@@ -123,18 +123,11 @@ def _build_real_model(settings: Settings) -> BaseChatModel:
         model=settings.dashboard_llm_model,
         base_url=settings.ollama_base_url,
         temperature=0,
-        # 120s wall-clock cap on every Ollama HTTP call. ChatOllama itself
-        # has no `timeout` field; the supported path is `client_kwargs`,
-        # which langchain-ollama merges into both sync and async client
+        # Wall-clock cap on every Ollama HTTP call. ChatOllama itself has
+        # no `timeout` field; the supported path is `client_kwargs`, which
+        # langchain-ollama merges into both sync and async client
         # constructors and forwards to `ollama.AsyncClient` →
-        # `httpx.AsyncClient(timeout=...)`.
-        #
-        # Sized empirically for the cold-start case on M1 Max llama3.1:8b:
-        # the first agent-graph round after a container restart loads the
-        # 8B weights into memory and routinely takes 60-100s. 30s and 60s
-        # values both false-failed the cold-start chat (measured during
-        # pre-v1.1.0 validation). 120s covers cold start with margin
-        # while still bounding a true Ollama hang. The timeout surfaces
-        # via httpx.ReadTimeout → is_llm_api_error → 502.
-        client_kwargs={"timeout": 120},
+        # `httpx.AsyncClient(timeout=...)`. Sizing rationale + default
+        # justification live on `Settings.llm_timeout_seconds`.
+        client_kwargs={"timeout": settings.llm_timeout_seconds},
     )

@@ -2,8 +2,13 @@ import { test as base, expect, type Page } from "@playwright/test";
 
 // Seeded test data — the SDA seed is deterministic (random.seed(0)) so the
 // agent1 account is guaranteed on every cold boot.
+//
+// Username is read from `TEST_AGENT_USERNAME` (loaded from repo-root
+// .env by `playwright.config.ts`) so operators with customised seed
+// usernames don't have to edit this file. The default matches the
+// `.env.example` value of `AGITATOR_AGENT_USERNAME=agent1`.
 export const AGENT1 = {
-  username: "agent1",
+  username: process.env.TEST_AGENT_USERNAME ?? "agent1",
   password: "agent",
 };
 

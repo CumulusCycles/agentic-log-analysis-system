@@ -4,12 +4,12 @@ import { test as base, expect, type Page } from "@playwright/test";
 // has the same policy + vehicles on every cold boot. If the seed shape ever
 // changes, these tests will fail loudly and need updating.
 //
-// Username format must match `DEMO_CUSTOMER_USERNAMES` in `.env` — the
-// operator's seed uses the email form (`alice@test.com`). `.env.example`
-// retains the bare `alice` form for plain demo flow; tests hit the live
-// seed, so they track the operator's `.env`.
+// Username is read from `TEST_CUSTOMER_USERNAME` (loaded from repo-root
+// .env by `playwright.config.ts`) so operators with customised seed
+// usernames don't have to edit this file. The default matches the
+// `.env.example` baseline `DEMO_CUSTOMER_USERNAMES=alice,bob,...`.
 export const ALICE = {
-  username: "alice@test.com",
+  username: process.env.TEST_CUSTOMER_USERNAME ?? "alice",
   password: "customer",
   policyNumber: "POL-1004",
   vin: "BH0WSDSFF8EJJ7LT4",
