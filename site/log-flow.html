@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Log Flow — Agentic Log Analysis System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,12 +20,19 @@
   }
   .page-header { text-align: center; margin-bottom: 2rem; animation: fadeDown 0.6s ease both; }
   .page-header .label { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #58a6ff; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 0.5rem; }
-  .page-header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .page-header h1 { font-size: 1.8rem; font-weight: 600; line-height: 1.3; margin-bottom: 0.5rem; }
   .page-header p { font-size: 0.85rem; color: #8b949e; font-family: 'JetBrains Mono', monospace; }
 
-  .nav { text-align: center; margin-bottom: 2rem; animation: fadeDown 0.6s ease 0.1s both; }
-  .nav a { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #58a6ff; text-decoration: none; padding: 4px 12px; border: 1px solid #388bfd40; border-radius: 4px; margin: 0 0.25rem; }
-  .nav a:hover { background: #388bfd15; }
+  .topnav { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 2rem; flex-wrap: wrap; gap: 12px; animation: fadeDown 0.6s ease 0.1s both; }
+  .topnav .brand { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #58a6ff; text-decoration: none; padding: 5px 11px; border: 1px solid #388bfd40; border-radius: 4px; transition: background 0.2s; }
+  .topnav .brand:hover { background: #388bfd15; }
+  .topnav .brand.active { background: #388bfd20; cursor: default; }
+  .topnav-links { display: flex; gap: 4px; flex-wrap: wrap; }
+  .topnav-links a { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b949e; text-decoration: none; padding: 5px 11px; border-radius: 4px; border: 1px solid transparent; transition: all 0.15s; }
+  .topnav-links a:hover { color: #c9d1d9; background: #21262d; }
+  .topnav-links a.active { color: #79c0ff; background: #388bfd15; border-color: #388bfd40; cursor: default; }
+  .topnav-links a.active:hover { background: #388bfd15; }
+  .topnav-links a.external::after { content: ' ↗'; opacity: 0.6; font-size: 10px; }
 
   .legend-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-bottom: 2rem; animation: fadeUp 0.6s ease 0.2s both; }
   .chip { padding: 3px 9px; border-radius: 999px; border: 1px solid; font-family: 'JetBrains Mono', monospace; font-size: 10px; }
@@ -224,10 +233,15 @@
   <p>End-to-end path of a single log line · operator + AI surfaces · local Ollama AI</p>
 </div>
 
-<div class="nav">
-  <a href="docker-architecture.html">&larr; Docker Architecture</a>
-  <a href="system-integration.md">System Integration &rarr;</a>
-</div>
+<nav class="topnav">
+  <a class="brand" href="index.html">Diagrams</a>
+  <div class="topnav-links">
+    <a href="system-overview.html">System Overview</a>
+    <a href="docker-architecture.html">Docker Architecture</a>
+    <a href="log-flow.html" class="active" aria-current="page">Log Flow</a>
+    <a href="../docs/architecture/system-integration.md" class="external">System Integration</a>
+  </div>
+</nav>
 
 <div class="legend-row">
   <span class="chip chip-writer">Writer (FNOL)</span>
@@ -246,7 +260,7 @@
     <div class="num">1</div>
     <div>
       <h3>Browser → FNOL backend</h3>
-      <p>User submits the claim form in the React SPA. The frontend POSTs to <code>http://localhost:8001/fnol/submit</code> with <code>Authorization: Bearer &lt;jwt&gt;</code> and <code>X-Source: prod</code> (explicitly set by the SPA's fetch wrapper per <a href="../decisions/ADR-011-x-source-header-convention.md" style="color:#79c0ff;text-decoration:none">ADR-011</a> amendment).</p>
+      <p>User submits the claim form in the React SPA. The frontend POSTs to <code>http://localhost:8001/fnol/submit</code> with <code>Authorization: Bearer &lt;jwt&gt;</code> and <code>X-Source: prod</code> (explicitly set by the SPA's fetch wrapper per <a href="../docs/decisions/ADR-011-x-source-header-convention.md" style="color:#79c0ff;text-decoration:none">ADR-011</a> amendment).</p>
       <div class="refs">
         <span class="ref">apps/fnol/frontend/src/lib/api.ts</span>
         <span class="ref">ADR-011</span>
@@ -274,7 +288,7 @@
     <div class="num">3</div>
     <div>
       <h3>FNOL → Shared Data API</h3>
-      <p>Handler builds the SDA <code>POST /claims</code> with <code>X-API-Key: $SHARED_DATA_API_KEY_FNOL</code> (inter-service), forwarded <code>Authorization: Bearer &lt;user-jwt&gt;</code>, and <code>X-Source</code> read from the contextvar. SDA enforces <strong><code>jwt.app == "fnol"</code></strong> defense-in-depth (per <a href="../decisions/ADR-006-auth-strategy.md" style="color:#79c0ff;text-decoration:none">ADR-006</a>), inserts the claim into Postgres, and logs its own request line. Non-2xx from SDA → FNOL logs <code>sda_upstream_rejected</code> (WARN) with <code>detail</code> parsed from the response body, never from response headers (which could echo <code>Authorization</code> / <code>X-API-Key</code>).</p>
+      <p>Handler builds the SDA <code>POST /claims</code> with <code>X-API-Key: $SHARED_DATA_API_KEY_FNOL</code> (inter-service), forwarded <code>Authorization: Bearer &lt;user-jwt&gt;</code>, and <code>X-Source</code> read from the contextvar. SDA enforces <strong><code>jwt.app == "fnol"</code></strong> defense-in-depth (per <a href="../docs/decisions/ADR-006-auth-strategy.md" style="color:#79c0ff;text-decoration:none">ADR-006</a>), inserts the claim into Postgres, and logs its own request line. Non-2xx from SDA → FNOL logs <code>sda_upstream_rejected</code> (WARN) with <code>detail</code> parsed from the response body, never from response headers (which could echo <code>Authorization</code> / <code>X-API-Key</code>).</p>
       <div class="refs">
         <span class="ref">apps/fnol/src/fnol/routers/claims.py</span>
         <span class="ref">apps/shared-data-api/.../services/claims_service.py</span>
@@ -382,7 +396,7 @@
           <p>&nbsp;&nbsp;1. <code>event=request</code> and path ∈ healthcheck paths → <code>"health"</code><br>
              &nbsp;&nbsp;2. Explicit <code>source=&lt;value&gt;</code> in the line → that value<br>
              &nbsp;&nbsp;3. Otherwise → <strong><code>"unknown"</code></strong></p>
-          <p>Step 3 is the <a href="../decisions/ADR-011-x-source-header-convention.md" style="color:#79c0ff;text-decoration:none">ADR-011</a> amendment (2026-06-07): React SPAs explicitly tag <code>prod</code>; anything missing the header lands in <code>unknown</code> as a propagation-gap signal.</p>
+          <p>Step 3 is the <a href="../docs/decisions/ADR-011-x-source-header-convention.md" style="color:#79c0ff;text-decoration:none">ADR-011</a> amendment (2026-06-07): React SPAs explicitly tag <code>prod</code>; anything missing the header lands in <code>unknown</code> as a propagation-gap signal.</p>
           <div class="refs">
             <span class="ref">ingest/parsers.py:_infer_source</span>
             <span class="ref">ADR-011 amendment</span>
@@ -396,7 +410,7 @@
         <div class="num">9</div>
         <div>
           <h3>3-knob ingest gate (two seams, both before any embed call)</h3>
-          <p>&nbsp;&nbsp;• <code>DASHBOARD_INGEST_LEVELS</code> — default <code>DEBUG,INFO,WARN,ERROR</code> (Phase 8 / <a href="../decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a> — full corpus; was <code>WARN,ERROR</code> Phase 7 cost-driven) — checked in <code>filter_for_ingest</code><br>
+          <p>&nbsp;&nbsp;• <code>DASHBOARD_INGEST_LEVELS</code> — default <code>DEBUG,INFO,WARN,ERROR</code> (Phase 8 / <a href="../docs/decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a> — full corpus; was <code>WARN,ERROR</code> Phase 7 cost-driven) — checked in <code>filter_for_ingest</code><br>
              &nbsp;&nbsp;• <code>DASHBOARD_INGEST_SOURCES</code> — default <strong><code>prod,synthetic,unknown</code></strong> — same <code>filter_for_ingest</code><br>
              &nbsp;&nbsp;• <code>DASHBOARD_INGEST_DRY_RUN</code> — default <code>false</code> — checked on <code>upsert_entries(..., dry_run=...)</code> which short-circuits before any Chroma read or embedding call</p>
           <p>Post-Phase-8, every level enters Chroma so the agent has baseline INFO data to anchor against. A successful claim submission (INFO) is now embedded — the agent uses it to learn what "normal" looks like. The source filter still drops Playwright <code>test</code> and parser-derived <code>health</code> traffic (signal-quality, not cost).</p>
@@ -414,7 +428,7 @@
         <div class="num">10</div>
         <div>
           <h3>Dedup → Ollama → Chroma</h3>
-          <p>For surviving entries, <code>upsert_entries</code> queries Chroma for <code>{app}:{sha1(raw)[:16]}</code> IDs (content-hash, single SQL-shape <code>_collection.get(ids=..., include=[])</code>). New ones go to local Ollama <code>nomic-embed-text</code> as a batch — 768-dim vectors (Phase 8 / <a href="../decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a>; replaces OpenAI <code>text-embedding-3-small</code> 1536-dim). The vectors land in the <code>dashboard-logs</code> collection in the <code>chroma-data</code> volume. Same line twice = same content hash = single row.</p>
+          <p>For surviving entries, <code>upsert_entries</code> queries Chroma for <code>{app}:{sha1(raw)[:16]}</code> IDs (content-hash, single SQL-shape <code>_collection.get(ids=..., include=[])</code>). New ones go to local Ollama <code>nomic-embed-text</code> as a batch — 768-dim vectors (Phase 8 / <a href="../docs/decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a>; replaces OpenAI <code>text-embedding-3-small</code> 1536-dim). The vectors land in the <code>dashboard-logs</code> collection in the <code>chroma-data</code> volume. Same line twice = same content hash = single row.</p>
           <div class="refs">
             <span class="ref">ingest/vectorstore.py</span>
             <span class="ref">collection: dashboard-logs</span>
@@ -443,7 +457,7 @@
   <ul>
     <li><strong>Source default flipped from <code>prod</code> to <code>unknown</code></strong> (step 8b) — ADR-011 amendment 2026-06-07 (PR #42). React SPAs now explicitly tag <code>X-Source: prod</code>.</li>
     <li><strong>Ingest gate sources widened to <code>prod,synthetic,unknown</code></strong> (step 9) — admits Agitator traffic and the propagation-gap signal so the operator can see drift.</li>
-    <li><strong>JWT app-claim defense-in-depth lives in <a href="../decisions/ADR-006-auth-strategy.md">ADR-006</a></strong>, not ADR-007 (which is the background claim-status simulator).</li>
+    <li><strong>JWT app-claim defense-in-depth lives in <a href="../docs/decisions/ADR-006-auth-strategy.md">ADR-006</a></strong>, not ADR-007 (which is the background claim-status simulator).</li>
     <li><strong>The file handler is <code>RotatingFileHandler</code></strong> (10 MB cap, 5 backups), not a plain <code>FileHandler</code>.</li>
   </ul>
 </section>
@@ -451,8 +465,8 @@
 <section class="refidx">
   <div class="refidx-label">Reference index</div>
   <dl>
-    <dt>ADR-006</dt><dd>Auth strategy — JWT issuance, per-app API keys, <code>jwt.app</code> defense in depth · <a href="../decisions/ADR-006-auth-strategy.md">file</a></dd>
-    <dt>ADR-011</dt><dd>X-Source header convention + 2026-06-07 amendment · <a href="../decisions/ADR-011-x-source-header-convention.md">file</a></dd>
+    <dt>ADR-006</dt><dd>Auth strategy — JWT issuance, per-app API keys, <code>jwt.app</code> defense in depth · <a href="../docs/decisions/ADR-006-auth-strategy.md">file</a></dd>
+    <dt>ADR-011</dt><dd>X-Source header convention + 2026-06-07 amendment · <a href="../docs/decisions/ADR-011-x-source-header-convention.md">file</a></dd>
     <dt>logs router</dt><dd><code>dashboard/src/log_dashboard/routers/logs.py</code></dd>
     <dt>reader</dt><dd><code>dashboard/src/log_dashboard/ingest/reader.py</code> — backward seek + line read</dd>
     <dt>watcher</dt><dd><code>dashboard/src/log_dashboard/ingest/watcher.py</code> — observer, per-file offset</dd>
