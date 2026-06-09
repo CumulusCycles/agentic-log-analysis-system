@@ -1,9 +1,10 @@
 # Log Event Catalog
 
 Enumerates every structured log event emitted by the four supporting apps. The
-Phase 7 dashboard agent ingests every line written to the four log volumes;
-this catalog is the authoritative inventory of WHAT each app emits, at WHICH
-level, with WHICH fields, and on WHICH trigger.
+dashboard agent ingests every line written to the four log volumes (subject to
+the ingest gate — see [`.claude/rules/dashboard.md`](../../.claude/rules/dashboard.md)
+§Ingest Gate); this catalog is the authoritative inventory of WHAT each app
+emits, at WHICH level, with WHICH fields, and on WHICH trigger.
 
 For HOW each app's logger is configured (libraries, formats, volume mounts)
 see [`logging-strategy.md`](./logging-strategy.md). For the binding
@@ -29,7 +30,7 @@ All four apps also log to stdout (`docker compose logs <service>`).
 
 ---
 
-## Shared Data API — 26 events
+## Shared Data API — 35 events
 
 Python `structlog` JSON. Module-level `log = get_logger(<name>)`; each event
 emits a JSON line with `event`, `level`, `logger`, `timestamp`, plus the
@@ -203,9 +204,13 @@ The dashboard's parser tokenizes `key=value` pairs from the message.
 ## Dashboard — Agitator events (PR 3)
 
 The dashboard logs to stdout only (no log volume; per `.claude/rules/logging.md`).
-These Agitator events are the only PR-3-introduced lines; they emit at INFO so
-they're visible via `docker compose logs log-dashboard` but are dropped by the
-default ingest gate (`DASHBOARD_INGEST_LEVELS=WARN,ERROR`) and never enter Chroma.
+These Agitator events are the only PR-3-introduced lines; they emit at INFO and
+are visible via `docker compose logs log-dashboard`. **Phase 8 / [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md):**
+the default ingest gate now admits all levels (`DASHBOARD_INGEST_LEVELS=DEBUG,INFO,WARN,ERROR`)
+because local Ollama embeddings are free — but the dashboard does not write to
+any log volume, so these events stay out of Chroma by virtue of having no
+ingestion path, not because of the level gate. Phase 7 framing — "dropped by
+the WARN+ERROR-only ingest gate" — is no longer the load-bearing reason.
 
 | Event | Producer | Fields | Meaning |
 |---|---|---|---|

@@ -18,7 +18,7 @@ Per-app API keys give the Shared Data API a reliable caller identity independent
 Login-only (no registration, no password reset) is a deliberate scope cap. Form validation, email verification, and reset flows would add 2–3 days for zero project value — none of these apps are real signup products.
 
 ## Consequences
-- JWT claims: `{ user_id, role, app, exp }`. Roles are `customer`, `agent`, `admin`. Access tokens are short-lived (60 min). No refresh tokens.
+- JWT claims: `{ iss, aud, user_id, role, app, iat, exp }`. `iss = "shared-data-api"` and `aud = "agentic-log-analysis-insurance-apps"` are constants in `apps/shared-data-api/src/shared_data_api/auth/jwt.py`; consumers (FNOL / CP / AP) MUST validate both when decoding (defense-in-depth against cross-app token replay — `POST /claims` additionally enforces `jwt.app == "fnol"`). Roles are `customer`, `agent`, `admin`. Access tokens are short-lived (60 min). No refresh tokens.
 - Demo credentials live in `.env.example`: customers (5), agents (5), and one `Admin/Admin` dashboard login.
 - The Shared Data API logs every inbound request with caller and user attribution to its log volume `shared-data-api-logs`. See ADR-005 and `.claude/rules/logging.md`.
 - Library choices are documented in `docs/tech/tech-stack.md` (`PyJWT`, `jsonwebtoken`, `jjwt`, `bcrypt`/`bcryptjs`/`BCryptPasswordEncoder`).

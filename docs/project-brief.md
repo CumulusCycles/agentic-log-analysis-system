@@ -89,4 +89,4 @@ The AI layer handles the heterogeneity.
 
 - **Machine:** Mac Studio, Apple M1 Max, 64GB RAM
 - **IDE:** VS Code + Claude Code
-- **Containers:** Docker Desktop (allocate 20GB RAM, 8 CPUs)
+- **Containers:** Docker Desktop (allocate 32GB RAM, 8 CPUs — Phase 8 / ADR-017 bumped from 20GB to accommodate the local Ollama container)
