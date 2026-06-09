@@ -2,9 +2,10 @@
 
 Quick-reference data for the running stack: host ports, healthcheck commands, and the startup dependency order. For diagrams and narrative, see the sibling docs:
 
-- [`docker-architecture.html`](docker-architecture.html) — visual rendering of the container topology, volumes, and infrastructure flows. Open in a browser.
+- [`site/system-overview.html`](../../site/system-overview.html) — visual rendering of the tables on this page (port grid, healthcheck cards, startup dependency DAG). Open in a browser.
+- [`site/docker-architecture.html`](../../site/docker-architecture.html) — visual rendering of the container topology, volumes, and infrastructure flows. Open in a browser.
 - [`system-integration.md`](system-integration.md) — wide-view integration narrative with 14 Mermaid diagrams (data layer, auth, request flows, simulator, log volumes, X-Source, ingest pipeline, UI data paths, agent, Agitator, chaos cascade, full circle).
-- [`log-flow.md`](log-flow.md) / [`log-flow.html`](log-flow.html) — deep slice of one log line's journey.
+- [`log-flow.md`](log-flow.md) / [`site/log-flow.html`](../../site/log-flow.html) — deep slice of one log line's journey.
 
 ---
 

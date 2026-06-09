@@ -22,7 +22,7 @@ Design rationale lives in the ADRs cross-linked below
 
 > **How a log line travels from an app to the dashboard:**
 > see [`docs/architecture/log-flow.md`](../architecture/log-flow.md) (or
-> [`log-flow.html`](../architecture/log-flow.html) for the visual diagram).
+> [`site/log-flow.html`](../../site/log-flow.html) for the visual diagram).
 > That is the canonical reference for the FNOL → SDA → structlog → volume →
 > watcher → ingest gate → Chroma pipeline. This document focuses on
 > **operating** the dashboard once that pipeline is up.

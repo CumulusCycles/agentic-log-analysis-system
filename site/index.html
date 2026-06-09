@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agentic Log Analysis System — Diagrams</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0d1117;
+    color: #e6edf3;
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    padding: 2rem;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .page-header { text-align: center; margin-bottom: 2.5rem; animation: fadeDown 0.6s ease both; }
+  .page-header .label { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #58a6ff; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 0.5rem; }
+  .page-header h1 { font-size: 2rem; font-weight: 600; line-height: 1.3; margin-bottom: 0.75rem; }
+  .page-header p { font-size: 0.9rem; color: #8b949e; font-family: 'JetBrains Mono', monospace; line-height: 1.6; max-width: 720px; margin: 0 auto; }
+
+  .topnav { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 2rem; flex-wrap: wrap; gap: 12px; animation: fadeDown 0.6s ease 0.05s both; }
+  .topnav .brand { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #58a6ff; text-decoration: none; padding: 5px 11px; border: 1px solid #388bfd40; border-radius: 4px; transition: background 0.2s; }
+  .topnav .brand:hover { background: #388bfd15; }
+  .topnav .brand.active { background: #388bfd20; cursor: default; }
+  .topnav-links { display: flex; gap: 4px; flex-wrap: wrap; }
+  .topnav-links a { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b949e; text-decoration: none; padding: 5px 11px; border-radius: 4px; border: 1px solid transparent; transition: all 0.15s; }
+  .topnav-links a:hover { color: #c9d1d9; background: #21262d; }
+  .topnav-links a.active { color: #79c0ff; background: #388bfd15; border-color: #388bfd40; cursor: default; }
+  .topnav-links a.active:hover { background: #388bfd15; }
+  .topnav-links a.external::after { content: ' ↗'; opacity: 0.6; font-size: 10px; }
+
+  .intro {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 2rem;
+    font-size: 13.5px;
+    line-height: 1.7;
+    color: #c9d1d9;
+    animation: fadeUp 0.6s ease 0.1s both;
+  }
+  .intro strong { color: #e6edf3; font-weight: 600; }
+  .intro code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #0d1117; padding: 1px 6px; border-radius: 3px; color: #d2a8ff; }
+  .intro a { color: #79c0ff; text-decoration: none; }
+  .intro a:hover { text-decoration: underline; }
+
+  .section-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #8b949e; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 0.5px solid #30363d; }
+
+  .diagrams { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; animation: fadeUp 0.6s ease 0.2s both; }
+
+  .card {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 22px 24px;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.2s, transform 0.2s;
+    display: block;
+  }
+  .card:hover { border-color: #58a6ff80; transform: translateY(-2px); }
+
+  .card-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #58a6ff; margin-bottom: 10px; }
+  .card-title { font-family: 'Syne', sans-serif; font-size: 1.15rem; font-weight: 700; margin-bottom: 10px; color: #e6edf3; }
+  .card-desc { font-size: 12.5px; color: #8b949e; line-height: 1.6; margin-bottom: 14px; }
+  .card-chip { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #79c0ff; padding: 3px 9px; border-radius: 4px; background: #388bfd15; border: 1px solid #388bfd40; display: inline-block; }
+
+  .ref { margin-top: 28px; animation: fadeUp 0.6s ease 0.3s both; }
+  .ref-grid {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 16px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 10px;
+    padding: 18px 22px;
+    font-size: 12px;
+  }
+  .ref-grid dt { font-family: 'JetBrains Mono', monospace; color: #58a6ff; white-space: nowrap; }
+  .ref-grid dd { color: #c9d1d9; margin: 0; }
+  .ref-grid a { color: #79c0ff; text-decoration: none; }
+  .ref-grid a:hover { text-decoration: underline; }
+  .ref-grid code { font-family: 'JetBrains Mono', monospace; color: #d2a8ff; font-size: 11.5px; }
+
+  footer {
+    margin-top: 32px;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: #6e7681;
+    line-height: 1.7;
+  }
+  footer a { color: #58a6ff; text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes fadeDown { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="label">Diagrams · Phase 8 (ADR-017)</div>
+  <h1>Agentic Log Analysis System</h1>
+  <p>Visual companions to the markdown architecture docs. Local Docker Compose stack — 9 long-running containers, 8 persistent volumes, local Ollama AI replacing OpenAI.</p>
+</div>
+
+<nav class="topnav">
+  <a class="brand active" href="index.html" aria-current="page">Diagrams</a>
+  <div class="topnav-links">
+    <a href="system-overview.html">System Overview</a>
+    <a href="docker-architecture.html">Docker Architecture</a>
+    <a href="log-flow.html">Log Flow</a>
+    <a href="../docs/architecture/system-integration.md" class="external">System Integration</a>
+  </div>
+</nav>
+
+<div class="intro">
+  <p>This site is the <strong>visual layer</strong> over the project's architecture documentation. The markdown files under <code>docs/</code> remain the source of truth — these diagrams illustrate, they do not replace. When something disagrees, trust the markdown and <a href="https://github.com/CumulusCycles/agentic-log-analysis-system">the code</a>.</p>
+</div>
+
+<div class="section-label">Diagrams</div>
+
+<div class="diagrams">
+
+  <a class="card" href="system-overview.html">
+    <div class="card-label">Quick reference</div>
+    <div class="card-title">System Overview</div>
+    <div class="card-desc">Host ports · healthcheck probes · startup dependency DAG. The data you reach for during <code>docker compose</code> sessions — port table, probe commands, who-waits-for-whom.</div>
+    <span class="card-chip">system-overview.html →</span>
+  </a>
+
+  <a class="card" href="docker-architecture.html">
+    <div class="card-label">Infrastructure</div>
+    <div class="card-title">Docker Architecture</div>
+    <div class="card-desc">Host → Docker Desktop → <code>insurance-net</code> bridge. 9 long-running containers in two tiers (apps + DB/AI), 8 persistent volumes, data / log / auth / startup-dependency flows. Phase 8 / ADR-017 — local Ollama replaces OpenAI.</div>
+    <span class="card-chip">docker-architecture.html →</span>
+  </a>
+
+  <a class="card" href="log-flow.html">
+    <div class="card-label">Walkthrough</div>
+    <div class="card-title">Log Flow — FNOL claim → dashboard</div>
+    <div class="card-desc">End-to-end path of a single log line. 11 steps, branching at the volume into the operator path (unfiltered <code>/api/logs</code>) and the AI path (3-knob ingest gate → Ollama embed → Chroma → agent surfaces).</div>
+    <span class="card-chip">log-flow.html →</span>
+  </a>
+
+</div>
+
+<div class="section-label">Markdown source</div>
+
+<div class="ref">
+  <dl class="ref-grid">
+    <dt>System overview</dt>
+    <dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/architecture/system-overview.md">docs/architecture/system-overview.md</a> — port table, healthcheck commands, startup dependency order</dd>
+    <dt>System integration</dt>
+    <dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/architecture/system-integration.md">docs/architecture/system-integration.md</a> — wide-view integration narrative; 14 Mermaid diagrams</dd>
+    <dt>Log flow walkthrough</dt>
+    <dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/architecture/log-flow.md">docs/architecture/log-flow.md</a> — text walkthrough mirroring this diagram</dd>
+    <dt>ADR index</dt>
+    <dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/decisions/README.md">docs/decisions/</a> — every architectural decision, including Phase 8 / ADR-017</dd>
+    <dt>Operator guide</dt>
+    <dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/operations/dashboard-guide.md">docs/operations/dashboard-guide.md</a> — runbook for the live stack</dd>
+  </dl>
+</div>
+
+<footer>
+  Markdown is canon, HTML is illustrative — sync diagrams in the same PR that changes their source markdown.<br>
+  <a href="https://github.com/CumulusCycles/agentic-log-analysis-system">github.com/CumulusCycles/agentic-log-analysis-system</a>
+</footer>
+
+</body>
+</html>

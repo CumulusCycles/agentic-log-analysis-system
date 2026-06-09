@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Docker Architecture — Agentic Log Analysis System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,11 +20,18 @@
   }
   .page-header { text-align: center; margin-bottom: 2rem; animation: fadeDown 0.6s ease both; }
   .page-header .label { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #58a6ff; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 0.5rem; }
-  .page-header h1 { font-size: 1.8rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .page-header h1 { font-size: 1.8rem; font-weight: 600; line-height: 1.3; margin-bottom: 0.5rem; }
   .page-header p { font-size: 0.85rem; color: #8b949e; font-family: 'JetBrains Mono', monospace; }
-  .nav { text-align: center; margin-bottom: 2rem; animation: fadeDown 0.6s ease 0.1s both; }
-  .nav a { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #58a6ff; text-decoration: none; padding: 4px 12px; border: 1px solid #388bfd40; border-radius: 4px; margin: 0 0.25rem; }
-  .nav a:hover { background: #388bfd15; }
+  .topnav { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 2rem; flex-wrap: wrap; gap: 12px; animation: fadeDown 0.6s ease 0.1s both; }
+  .topnav .brand { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: #58a6ff; text-decoration: none; padding: 5px 11px; border: 1px solid #388bfd40; border-radius: 4px; transition: background 0.2s; }
+  .topnav .brand:hover { background: #388bfd15; }
+  .topnav .brand.active { background: #388bfd20; cursor: default; }
+  .topnav-links { display: flex; gap: 4px; flex-wrap: wrap; }
+  .topnav-links a { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8b949e; text-decoration: none; padding: 5px 11px; border-radius: 4px; border: 1px solid transparent; transition: all 0.15s; }
+  .topnav-links a:hover { color: #c9d1d9; background: #21262d; }
+  .topnav-links a.active { color: #79c0ff; background: #388bfd15; border-color: #388bfd40; cursor: default; }
+  .topnav-links a.active:hover { background: #388bfd15; }
+  .topnav-links a.external::after { content: ' ↗'; opacity: 0.6; font-size: 10px; }
 
   .boundary { border-radius: 14px; padding: 20px; position: relative; animation: fadeUp 0.6s ease both; }
   .boundary-label { position: absolute; top: -11px; left: 20px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; padding: 2px 12px; border-radius: 4px; }
@@ -110,10 +119,15 @@
   <p>9 containers · 8 persistent volumes · insurance-net bridge network</p>
 </div>
 
-<div class="nav">
-  <a href="log-flow.html">Log Flow &rarr;</a>
-  <a href="system-integration.md">System Integration &rarr;</a>
-</div>
+<nav class="topnav">
+  <a class="brand" href="index.html">Diagrams</a>
+  <div class="topnav-links">
+    <a href="system-overview.html">System Overview</a>
+    <a href="docker-architecture.html" class="active" aria-current="page">Docker Architecture</a>
+    <a href="log-flow.html">Log Flow</a>
+    <a href="../docs/architecture/system-integration.md" class="external">System Integration</a>
+  </div>
+</nav>
 
 <div class="boundary host">
   <div class="boundary-label">Mac Studio (Mac13,1)</div>
@@ -160,7 +174,7 @@
             <div class="svc-name">log-dashboard</div>
             <div class="svc-stack">Python / FastAPI + React</div>
             <div class="svc-port">:4001 &rarr; :4000</div>
-            <div class="svc-dep">depends: <span>chroma, ollama</span></div>
+            <div class="svc-dep">depends: <span>chroma, ollama, ollama-init</span></div>
           </div>
         </div>
       </div>
@@ -241,7 +255,7 @@
       <div class="flow-title">Startup dependency chain</div>
       postgres + mongodb <span class="arr">&rarr;</span> shared-data-api<br>
       shared-data-api <span class="arr">&rarr;</span> fnol / cp / ap<br>
-      chroma + ollama <span class="arr">&rarr;</span> log-dashboard
+      chroma + ollama + ollama-init <span class="arr">&rarr;</span> log-dashboard
     </div>
   </div>
 </div>

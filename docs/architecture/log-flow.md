@@ -3,7 +3,7 @@
 End-to-end path of a log line, from a user submitting a claim through the FNOL React app
 to the dashboard's two reading surfaces — the unfiltered operator view and the filtered AI corpus.
 
-For a visual rendering of the same flow, open [`log-flow.html`](log-flow.html) in a browser (HTML/CSS, not GitHub-rendered).
+For a visual rendering of the same flow, open [`site/log-flow.html`](../../site/log-flow.html) in a browser (HTML/CSS, not GitHub-rendered).
 
 > **Phase 8 / [ADR-017](../decisions/ADR-017-local-ai-via-ollama.md):** the embed step (10) and the level-gate row in (9) describe the live post-Phase-8 design — local Ollama embeddings + full-corpus ingest.
 

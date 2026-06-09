@@ -105,6 +105,15 @@ Follow the toolchain default for each stack:
 | kebab-case service names in Compose | `shared-data-api`, `log-dashboard` |
 | Standard Compose filename | `docker-compose.yml` |
 
+### Static site (`site/`)
+
+The `site/` folder is the GitHub Pages root — polished HTML diagrams + landing page that visualise the canonical `docs/`. Markdown remains the source of truth.
+
+| Rule | Example |
+| --- | --- |
+| kebab-case `.html` | `docker-architecture.html`, `log-flow.html`, `system-overview.html` |
+| Landing page: `index.html` (fixed) | `site/index.html` |
+
 ---
 
 ## Anti-patterns

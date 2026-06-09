@@ -26,6 +26,7 @@ reference update.
 | `.claude/rules/` | kebab-case `.md` | `file-naming.md` |
 | `.claude/skills/*/` | kebab-case dir + `SKILL.md` | `.claude/skills/log-analysis/SKILL.md` |
 | `.claude/hooks/` | snake_case `.sh` | `.claude/hooks/pre_bash_guard.sh` |
+| `site/` | kebab-case `.html` + `index.html` | `site/docker-architecture.html`, `site/index.html` |
 | Root exempt only | See convention doc | `CLAUDE.md`, `PLAN.md`, `README.md`, and others — full list in `docs/tech/file-naming-convention.md` |
 
 ---
