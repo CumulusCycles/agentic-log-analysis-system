@@ -218,4 +218,32 @@ describe("LogExplorer (7d semantic search)", () => {
     await screen.findByTestId("score-header");
     expect(screen.queryByTestId("partial-corpus-hint")).toBeNull();
   });
+
+  it("renders the partial-corpus hint with EMPTY results — the cold-start UX case", async () => {
+    // v1.1.2 post-review — the most operator-confusing scenario:
+    // partial_corpus: true AND entries: []. Without the hint, the
+    // empty-state would read as "no matches" when the truth is
+    // "still indexing." This test pins the cold-start UX explicitly.
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const searchResp: LogsSearchResponse = {
+      entries: [],
+      scores: [],
+      partial_corpus: true,
+    };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(jsonResponse(searchResp));
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    const hint = await screen.findByTestId("partial-corpus-hint");
+    expect(hint).toBeInTheDocument();
+    expect(hint).toHaveTextContent(/indexing/i);
+  });
 });

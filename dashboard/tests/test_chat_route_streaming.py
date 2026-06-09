@@ -79,6 +79,54 @@ async def test_chat_streaming_emits_node_events_then_complete(
 
 
 @pytest.mark.asyncio
+async def test_chat_streaming_complete_log_carries_duration_ms(
+    client, valid_token, fail_if_real_llm_invoked, caplog
+) -> None:
+    """v1.1.2 post-review — the streaming success path's `chat_complete`
+    log event MUST also carry `duration_ms >= 1`. Covers chat.py:341
+    (the streaming-side equivalent of the non-streaming success path
+    tested by `test_chat_complete_log_carries_duration_ms` in
+    `test_chat_route_dry_run.py`).
+
+    The `streaming=True` field on the event distinguishes it from the
+    non-streaming `chat_complete` so both paths can coexist in the same
+    capture without colliding.
+    """
+    import ast
+    import logging
+
+    caplog.set_level(logging.INFO, logger="chat")
+
+    response = await client.post(
+        "/api/chat",
+        json={"message": "hello", "streaming": True},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+
+    streaming_complete: list[dict] = []
+    for rec in caplog.records:
+        try:
+            payload = ast.literal_eval(rec.getMessage())
+        except (ValueError, SyntaxError):
+            continue
+        if (
+            isinstance(payload, dict)
+            and payload.get("event") == "chat_complete"
+            and payload.get("streaming") is True
+        ):
+            streaming_complete.append(payload)
+
+    assert len(streaming_complete) == 1, (
+        "expected exactly one streaming chat_complete log; " f"got {len(streaming_complete)}"
+    )
+    duration = streaming_complete[0].get("duration_ms")
+    assert duration is not None
+    assert isinstance(duration, int)
+    assert duration >= 1
+
+
+@pytest.mark.asyncio
 async def test_chat_streaming_complete_event_mirrors_chat_response_shape(
     client, valid_token, fail_if_real_llm_invoked
 ) -> None:

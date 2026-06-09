@@ -451,6 +451,25 @@ def test_strip_url_userinfo_redacts_on_urlunparse_failure(monkeypatch) -> None:
     assert "leaky_pass" not in out
 
 
+def test_strip_url_userinfo_redacts_on_unexpected_exception_type(monkeypatch) -> None:
+    """v1.1.2 post-review hardening — the except clause was broadened to
+    `except Exception` so future Python versions or unexpected input
+    types can't slip past the (ValueError, AttributeError) tuple. This
+    test pins a non-tuple exception type (RuntimeError) and verifies the
+    redaction still fires.
+    """
+    import log_dashboard.ingest.vectorstore as vs_mod
+
+    def _boom(_: str):
+        raise RuntimeError("hypothetical future-Python urlparse error")
+
+    monkeypatch.setattr(vs_mod, "urlparse", _boom)
+    out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert out == "<unparseable-url-redacted>"
+    assert "leaky_user" not in out
+    assert "leaky_pass" not in out
+
+
 def test_strip_url_userinfo_preserves_ipv6_brackets() -> None:
     """IPv6 hosts use bracket syntax (`[::1]`). The redactor must
     preserve the brackets — without them, the URL becomes malformed
@@ -539,3 +558,58 @@ def test_build_vectorstore_forwards_timeout_to_ollama_embeddings(monkeypatch) ->
     assert captured.get("client_kwargs") == {"timeout": 77}
     assert captured.get("base_url") == settings.ollama_base_url
     assert captured.get("model") == settings.dashboard_embed_model
+
+
+def test_build_vectorstore_forwards_chroma_timeout_to_http_client(
+    monkeypatch, fake_embeddings
+) -> None:
+    """v1.1.2 — `chroma_timeout_seconds` MUST reach the underlying
+    `chromadb.HttpClient` via `ChromaClientSettings`. A typo on the
+    setting name (e.g., `chroma_query_request_timeoutsec_onds`) would
+    silently no-op — `chromadb.config.Settings` accepts arbitrary kwargs
+    that don't match a defined field, which would mean the timeout never
+    binds to httpx.
+
+    Asserts the spy's captured `settings` arg has BOTH the query and
+    sysdb request-timeout fields set to the configured value. Closes the
+    integration gap that the bounds test (`test_settings_bounds.py`)
+    doesn't cover — that test only pins env→Settings, not Settings→Chroma.
+    """
+    captured: dict[str, object] = {}
+
+    class _FakeChromaClient:
+        """Stand-in for `chromadb.HttpClient` — captures the constructor
+        kwargs and exposes the minimum surface `Chroma()` needs to wrap
+        it (collection access via `get_or_create_collection`).
+        """
+
+        def __init__(self, host=None, port=None, settings=None, **kwargs):  # noqa: ANN001
+            captured["host"] = host
+            captured["port"] = port
+            captured["settings"] = settings
+            captured["extra"] = kwargs
+
+        def get_or_create_collection(self, *args, **kwargs):  # noqa: ANN001
+            # langchain-chroma calls this during Chroma() init; return a
+            # minimal stub that won't crash subsequent .add/.query attempts.
+            import chromadb
+
+            real = chromadb.Client()
+            return real.get_or_create_collection(*args, **kwargs)
+
+    monkeypatch.setattr("log_dashboard.ingest.vectorstore.chromadb.HttpClient", _FakeChromaClient)
+
+    settings = _settings(
+        chroma_timeout_seconds=42,
+        chroma_url="http://chroma-test:8000",
+        chroma_collection="vs-chroma-timeout-test",
+    )
+    # No `client=` so the HttpClient construction path runs.
+    build_vectorstore(settings, embedding_function=fake_embeddings)
+
+    assert captured.get("host") == "chroma-test"
+    assert captured.get("port") == 8000
+    chroma_settings = captured.get("settings")
+    assert chroma_settings is not None, "ChromaClientSettings must be forwarded to HttpClient"
+    assert chroma_settings.chroma_query_request_timeout_seconds == 42
+    assert chroma_settings.chroma_sysdb_request_timeout_seconds == 42

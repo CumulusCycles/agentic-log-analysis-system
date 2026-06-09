@@ -97,10 +97,19 @@ def _strip_url_userinfo(url: str) -> str:
     function returns a constant redaction placeholder rather than the raw
     input — v1.1.2 closes a silent-pass-through gap where a URL that
     confused `urlparse` would otherwise echo its credentials unchanged.
+
+    Exception handling is intentionally broad (`except Exception`). This
+    is a credential-redaction boundary; any unhandled exception type
+    would otherwise let the raw URL leak through the unhandled-exception
+    path (logged with traceback). Defence-in-depth wins over fail-fast
+    here. Per the v1.1.2 /local-review reviewer (Security Medium):
+    `(ValueError, AttributeError)` covers urllib.parse's documented
+    surface but not future versions or unexpected inputs (e.g.,
+    TypeError on `None`).
     """
     try:
         parsed = urlparse(url)
-    except (ValueError, AttributeError):
+    except Exception:
         return _UNPARSEABLE_URL_REDACTION
     if not (parsed.username or parsed.password):
         return url
@@ -116,7 +125,7 @@ def _strip_url_userinfo(url: str) -> str:
         netloc = f"{netloc}:{parsed.port}"
     try:
         return urlunparse(parsed._replace(netloc=netloc))
-    except (ValueError, AttributeError):
+    except Exception:
         return _UNPARSEABLE_URL_REDACTION
 
 

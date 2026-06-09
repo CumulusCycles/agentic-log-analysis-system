@@ -74,9 +74,12 @@ async def search_logs(
     # frontend can distinguish "no matches" from "still indexing". The flag is
     # set by the lifespan task (`main.py`) to False on entry and True after
     # backfill completes (or when embeddings are disabled and backfill is
-    # skipped). Reading via `getattr` keeps tests that don't touch
-    # `app.state.backfill_complete` working.
-    backfill_complete = bool(getattr(request.app.state, "backfill_complete", True))
+    # skipped). Default-False is deliberate — if the lifespan somehow failed
+    # to set the flag (startup race, future test path that skips lifespan),
+    # the safer report is "still indexing" rather than the silent-degraded-
+    # mode "complete" the inverse default would produce. Per the v1.1.2
+    # /local-review consensus across 3 reviewer angles.
+    backfill_complete = bool(getattr(request.app.state, "backfill_complete", False))
     partial_corpus = not backfill_complete
 
     log.info(
