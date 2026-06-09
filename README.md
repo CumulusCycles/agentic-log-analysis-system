@@ -12,6 +12,8 @@ shipped in PR 8b.*
 
 The supporting apps are the raw material. **The dashboard is the product.**
 
+📐 **Live diagrams:** [cumuluscycles.github.io/agentic-log-analysis-system](https://cumuluscycles.github.io/agentic-log-analysis-system/) — visual companions to the architecture docs (system overview · Docker architecture · log flow).
+
 ---
 
 ## Architecture
