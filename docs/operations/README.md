@@ -11,4 +11,4 @@ documents are about **operating** the stack day-to-day once it's up.
 
 | File | Covers |
 |---|---|
-| [`dashboard-guide.md`](dashboard-guide.md) | Operator runbook for the Agentic Log Analysis Dashboard — driving load with the Agitator, enabling chaos middleware, reading the OpenAI embed-summary table, Vectorstore Stats screen, opt-in Proactive Scan loop |
+| [`dashboard-guide.md`](dashboard-guide.md) | Operator runbook for the Agentic Log Analysis Dashboard — driving load with the Agitator, enabling chaos middleware, reading the Ollama embed-summary table (tokens + wall-time, no USD — Phase 8 / ADR-017), Vectorstore Stats screen, opt-in Proactive Scan loop |

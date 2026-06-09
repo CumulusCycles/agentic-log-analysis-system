@@ -106,12 +106,30 @@ Per the project's NEVER LOG CREDENTIALS rule:
 - `runs.py:_sanitize_error` strips credential-shaped tokens from `last_error` before storage.
 - Run-status responses do not include any field from `AppSession`.
 
+## 2026-06-09 amendment — Phase 8 supersedes the OpenAI cost + level-gate framing (ADR-017)
+
+Phase 8 ([ADR-017](ADR-017-local-ai-via-ollama.md)) replaces OpenAI with locally-run Ollama and widens the default ingest level gate from `WARN,ERROR` to all four levels. Five claims in the original body are now stale; one invariant survives for a different reason.
+
+**Stale framings (now obsolete — original text retained above for traceability):**
+
+- **L38 — "surprise OpenAI cost every restart"** as a rejection of 2a (auto-fire on startup) — external cost is now $0 under any access pattern. The 2b decision (operator-button-only) stays in force for OTHER reasons: deterministic demo flow, restart-stable in-memory state, no auto-run vs. operator-action ambiguity.
+- **L58 — "The level gate (`WARN, ERROR`) is unchanged"** — Phase 8 widened the default to `DEBUG,INFO,WARN,ERROR`. The sentence's load-bearing claim that the source-gate widening (`{prod}` → `{prod, synthetic}`) is the only change is no longer true.
+- **L78 — "201 INFO traffic (not embedded — for /api/logs view)"** for `policy-not-found` — Phase 8 admits INFO. The 404 INFO line for that scenario now DOES enter Chroma. Same applies to the implied premise of `claim-burst`, `cp-read-burst`, `ap-read-burst`: INFO traffic is now corpus-bearing, not corpus-invisible. The scenarios still produce the documented log events; what changes is which surface (Log Explorer vs. Chroma) sees them.
+- **L96–98 — "Cost protection" section** — the $0.00002/token math no longer applies. Phase 8 inference cost is $0. The dedup-gate-keeps-repeat-runs-near-zero claim is still correct (performance benefit, not cost benefit). The "single-digit cents per demo session" upper bound was Phase 7 framing.
+
+**Invariant that survives — for a different reason:**
+
+- **L100 — "Agitator's own log lines … zero Chroma cost from the Agitator's own observability."** Still true post-Phase-8, but not because of the ingest level gate. The reason is architectural: the dashboard logs to stdout only (no log volume — verified by inspection of the `log-dashboard` compose block, which mounts the four app log volumes read-only but has no writable log mount of its own). The watchdog file watcher only watches the four ingested app log volumes; the dashboard's own stdout is never on a watcher path. So `agitator_run_started` / `agitator_run_complete` / `agitator_login_*` never reach Chroma regardless of the level gate's posture. The PR-A `log-events.md` edit captures the same reframing.
+
+**What stays in force:** Decisions 1–2 (bundled vs. separate container, operator-button-only), the source-tag single-seam enforcement at `build_client`, the per-scenario bounded-count + bounded-duration cap, the global concurrent-run cap, the in-memory `RunRegistry` ring buffer, the per-scenario auth model, and the credential-discipline posture (`_sanitize_error`, no JWT/token fields on the run-status response).
+
 ## References
 
 - ADR-005 — Shared Data API as sole data layer (CP-issued JWTs work against SDA)
 - ADR-006 — dashboard standalone JWT (still applies; Agitator routes use the same admin JWT)
 - ADR-011 — `X-Source` header convention (Agitator uses `synthetic`)
 - ADR-013 — chaos middleware (Agitator's `sda-degraded` drives it)
+- ADR-017 — Local AI via Ollama (amends the cost + level-gate framing above)
 - Memory: `project_agitator_design` — the design notes that fed this ADR
 - Memory: `project_agentreviewer_policy` — PR 3 is a named agentreviewer target
 - `.claude/rules/dashboard.md` — Agitator section for runtime conventions

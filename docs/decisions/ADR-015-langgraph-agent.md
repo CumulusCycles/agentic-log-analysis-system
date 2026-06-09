@@ -223,10 +223,16 @@ load-bearing justification for §5's `DASHBOARD_LLM_DRY_RUN=true` runtime defaul
   `ChatOpenAI` to `ChatOllama` is transparent to the dry-run model
 - **`fail_if_openai_invoked` is renamed `fail_if_real_llm_invoked`** and monkeypatches
   `ChatOllama.__init__` instead of `ChatOpenAI.__init__`. Defence-in-depth preserved
-- **Decisions §1, §2, §3, §4, §6, §7, §8 are UNCHANGED.** Only §5's cost-asymmetry
-  rationale evolves. The 5-node topology, manual tool dispatch, session memory,
-  cost caps (as values), credential redaction, and the non-streaming/SSE-streaming
-  contract all remain in force
+- **Decisions §1, §2, §3, §4, §6, §8 are UNCHANGED.** §7's three cap VALUES are also
+  unchanged (`MAX_TOOL_CALLS_PER_REQUEST=4`, `MAX_INPUT_TOKENS_PER_REQUEST=8000`,
+  `MAX_MESSAGES_PER_SESSION=40`); the rationale shifts from "cost bounding" to
+  "performance / UX bounding." §7's tokenizer MECHANISM, however, did change: PR 8b
+  replaced `tiktoken.encoding_for_model("gpt-4o")` + `o200k_base` fallback with a
+  `len(text) // 4` character-count heuristic (see ADR-017 §7). The 8000 cap is now a
+  coarse safety bound on input size, not a tokenizer-precise count; precision is
+  unnecessary for a safety gate. `tiktoken` drops from `pyproject.toml`. The 5-node
+  topology, manual tool dispatch, session memory, credential redaction, and the
+  non-streaming / SSE-streaming contract all remain in force
 
 See ADR-017 for the full Phase 8 design.
 

@@ -14,7 +14,7 @@ Persistent volumes ensure logs survive container crashes and restarts. The dashb
 ## Consequences
 The dashboard handles structlog JSON (Python), Winston JSON (Node), and Logback text (Java). The LangGraph agent receives `raw_text` and handles heterogeneity via LLM understanding.
 
-Seven named volumes: `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, `agent-portal-logs` (app logs) plus `postgres-data`, `mongodb-data`, `chroma-data` (data volumes). Never run `docker compose down -v`.
+Eight named volumes: `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, `agent-portal-logs` (app logs) plus `postgres-data`, `mongodb-data`, `chroma-data`, `ollama-data` (data volumes; `ollama-data` added Phase 8 / [ADR-017](ADR-017-local-ai-via-ollama.md) for cached local model weights). Never wipe volumes via `down -v`.
 
 ## Amendment — Shared Data API promoted to log-volume writer (ADR-005)
 
