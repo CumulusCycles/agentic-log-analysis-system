@@ -16,8 +16,9 @@ into it, the assertion fails before the change ships.
 from __future__ import annotations
 
 import pytest
+from langchain_ollama import ChatOllama
 
-from log_dashboard.agent.llm import _DryRunChatModel, _build_real_model, build_chat_model
+from log_dashboard.agent.llm import _build_real_model, _DryRunChatModel, build_chat_model
 from log_dashboard.config import Settings
 
 
@@ -30,6 +31,7 @@ def test_build_real_model_forwards_timeout_via_client_kwargs(
     settings = Settings()  # type: ignore[call-arg]
     model = _build_real_model(settings)
 
+    assert isinstance(model, ChatOllama)
     assert model.client_kwargs == {"timeout": 47}
 
 
