@@ -121,3 +121,44 @@ async def test_search_rejects_unknown_app_with_422(client, valid_token, ready_ap
     )
     assert response.status_code == 422
     assert "unknown app" in response.json()["detail"]
+
+
+async def test_search_response_partial_corpus_false_when_backfill_complete(
+    client, valid_token, ready_app
+) -> None:
+    """v1.1.2 — when the lifespan backfill task has finished (the normal
+    steady-state), the response field `partial_corpus` MUST be False so
+    operators reading the API don't see a misleading 'still indexing' hint.
+    """
+    ready_app.state.backfill_complete = True
+    response = await client.post(
+        "/api/logs/search",
+        json={"query": "claim", "top_k": 4},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["partial_corpus"] is False
+
+
+async def test_search_response_partial_corpus_true_during_backfill(
+    client, valid_token, ready_app
+) -> None:
+    """v1.1.2 — during the initial backfill window the response surfaces
+    `partial_corpus: True` so the frontend can distinguish 'no matches'
+    from 'still indexing'. The flag reads `app.state.backfill_complete`
+    via `getattr` with a True default, so this test pins the False
+    transition explicitly.
+    """
+    ready_app.state.backfill_complete = False
+    response = await client.post(
+        "/api/logs/search",
+        json={"query": "claim", "top_k": 4},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["partial_corpus"] is True
+    # Behaviour-preserving: the entries+scores arrays still come back
+    # populated — partial corpus does NOT block search.
+    assert len(body["entries"]) >= 1
+    assert len(body["scores"]) == len(body["entries"])

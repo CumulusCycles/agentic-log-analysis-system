@@ -106,4 +106,9 @@ export interface LogsSearchRequest {
 export interface LogsSearchResponse {
   entries: LogEntry[];
   scores: number[];
+  // v1.1.2 — True while the dashboard's initial backfill into Chroma is
+  // still running. Surface a hint so empty results during cold-start
+  // don't read as "no matches in a fully-populated corpus".
+  // Optional for backwards compatibility with older backends.
+  partial_corpus?: boolean;
 }

@@ -19,6 +19,7 @@ from urllib.parse import urlparse, urlunparse
 
 import chromadb
 import httpx
+from chromadb.config import Settings as ChromaClientSettings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
@@ -79,6 +80,9 @@ def is_embeddings_disabled(settings: Settings) -> bool:
     return False
 
 
+_UNPARSEABLE_URL_REDACTION = "<unparseable-url-redacted>"
+
+
 def _strip_url_userinfo(url: str) -> str:
     """Return `url` with any `user:pass@` segment removed.
 
@@ -88,11 +92,16 @@ def _strip_url_userinfo(url: str) -> str:
     stream. The DSN-style redactors in `credentials.py` cover
     `postgres://` shapes but not arbitrary HTTP URLs with userinfo, so the
     URL must be cleaned at the log-call site instead.
+
+    On parse failure (rare but possible for genuinely malformed input), the
+    function returns a constant redaction placeholder rather than the raw
+    input — v1.1.2 closes a silent-pass-through gap where a URL that
+    confused `urlparse` would otherwise echo its credentials unchanged.
     """
     try:
         parsed = urlparse(url)
     except (ValueError, AttributeError):
-        return url
+        return _UNPARSEABLE_URL_REDACTION
     if not (parsed.username or parsed.password):
         return url
     host = parsed.hostname or ""
@@ -108,7 +117,7 @@ def _strip_url_userinfo(url: str) -> str:
     try:
         return urlunparse(parsed._replace(netloc=netloc))
     except (ValueError, AttributeError):
-        return url
+        return _UNPARSEABLE_URL_REDACTION
 
 
 def configure_langsmith(settings: Settings) -> None:
@@ -146,7 +155,11 @@ def build_vectorstore(
         )
     if client is None:
         host, port = _parse_chroma_url(settings.chroma_url)
-        client = chromadb.HttpClient(host=host, port=port)
+        chroma_client_settings = ChromaClientSettings(
+            chroma_query_request_timeout_seconds=settings.chroma_timeout_seconds,
+            chroma_sysdb_request_timeout_seconds=settings.chroma_timeout_seconds,
+        )
+        client = chromadb.HttpClient(host=host, port=port, settings=chroma_client_settings)
     return Chroma(
         client=client,
         collection_name=settings.chroma_collection,
@@ -214,7 +227,7 @@ def upsert_entries(
         level_counts.update(e.level.value for e in new_entries)
         embedded_page_contents.extend(page_contents)
     if embedded > 0:
-        batch_wall_ms = int((time.perf_counter() - batch_started_at) * 1000)
+        batch_wall_ms = max(1, round((time.perf_counter() - batch_started_at) * 1000))
         batch_tokens = _count_embedding_tokens(embedded_page_contents)
         cumulative = _accumulate_session_totals(batch_tokens, batch_wall_ms)
         _emit_embed_summary(

@@ -132,6 +132,11 @@ class LogsSearchRequest(BaseModel):
 class LogsSearchResponse(BaseModel):
     entries: list[LogEntry]
     scores: list[float]
+    # v1.1.2 — surface the partial-corpus window during initial backfill so
+    # clients can distinguish "no results in a fully-populated corpus" from
+    # "no results yet because Chroma is still being filled". Defaults False
+    # so older clients ignoring the field see no change.
+    partial_corpus: bool = False
 
 
 # --- PR 3: Agitator ---

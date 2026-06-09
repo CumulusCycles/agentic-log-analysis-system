@@ -106,4 +106,8 @@ async def test_chat_complete_log_carries_duration_ms(
     duration = chat_complete_payloads[0].get("duration_ms")
     assert duration is not None, "chat_complete must carry a duration_ms field"
     assert isinstance(duration, int)
-    assert duration >= 0
+    # v1.1.2 — `max(1, round(...))` guarantees a measured operation always
+    # reports at least 1ms; 0 is now reserved for "not measured". Drop the
+    # weaker `>= 0` from v1.1.1 — that bound silently allowed `int()`
+    # floor-truncation on sub-ms dry-run paths to look like missing data.
+    assert duration >= 1

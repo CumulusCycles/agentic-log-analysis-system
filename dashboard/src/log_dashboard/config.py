@@ -38,6 +38,16 @@ class Settings(BaseSettings):
         alias="DASHBOARD_CHROMA_COLLECTION",
     )
 
+    # Wall-clock cap on Chroma HTTP calls (forwarded into chromadb's
+    # `chroma_query_request_timeout_seconds` + `chroma_sysdb_request_timeout_seconds`).
+    # Symmetric with `llm_timeout_seconds` — v1.1.1 closed the Ollama half of
+    # the asymmetric-hang risk; v1.1.2 closes the Chroma half. A hung Chroma
+    # would otherwise stall every code path that reads or writes the
+    # vectorstore (chat, search, error-detail, proactive scan, backfill, watcher).
+    chroma_timeout_seconds: int = Field(
+        default=60, alias="DASHBOARD_CHROMA_TIMEOUT_SECONDS", ge=5, le=600
+    )
+
     # Phase 8 / ADR-017 — local AI via Ollama. The dashboard MUST stay
     # usable for /api/logs and /api/status when Ollama is unreachable
     # (ADR-006 spirit); `is_embeddings_disabled` in vectorstore.py probes

@@ -164,4 +164,58 @@ describe("LogExplorer (7d semantic search)", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/OLLAMA_BASE_URL/i);
   });
+
+  it("renders the partial-corpus hint when the search response says backfill is still running", async () => {
+    // v1.1.2 — the backend reports `partial_corpus: true` while the
+    // lifespan backfill is still populating Chroma. The Log Explorer
+    // shows an inline "indexing in progress" hint so empty / sparse
+    // results during cold-start don't read as "no matches".
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const searchResp: LogsSearchResponse = {
+      entries: [entry({ id: "fnol:1", event: "auth_failed" })],
+      scores: [0.5],
+      partial_corpus: true,
+    };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(jsonResponse(searchResp));
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    const hint = await screen.findByTestId("partial-corpus-hint");
+    expect(hint).toHaveTextContent(/indexing/i);
+  });
+
+  it("does not render the partial-corpus hint when the search response is complete", async () => {
+    // Inverse of the previous test — the hint MUST NOT leak into the
+    // steady-state UI. `partial_corpus: false` (or absent) keeps the
+    // panel clean.
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const searchResp: LogsSearchResponse = {
+      entries: [entry({ id: "fnol:1", event: "auth_failed" })],
+      scores: [0.5],
+      partial_corpus: false,
+    };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(jsonResponse(searchResp));
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    // Wait for the score column so we know the search response landed.
+    await screen.findByTestId("score-header");
+    expect(screen.queryByTestId("partial-corpus-hint")).toBeNull();
+  });
 });

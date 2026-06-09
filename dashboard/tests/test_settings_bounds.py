@@ -30,6 +30,7 @@ _BOUNDED_FIELDS = [
     ),
     ("DASHBOARD_LLM_MAX_MESSAGES_PER_SESSION", 2, 200, "llm_max_messages_per_session"),
     ("DASHBOARD_LLM_TIMEOUT_SECONDS", 5, 600, "llm_timeout_seconds"),
+    ("DASHBOARD_CHROMA_TIMEOUT_SECONDS", 5, 600, "chroma_timeout_seconds"),
     ("DASHBOARD_SESSION_INDEX_MAX", 10, 10_000, "session_index_max"),
     (
         "DASHBOARD_PROACTIVE_SCAN_INTERVAL_SECONDS",

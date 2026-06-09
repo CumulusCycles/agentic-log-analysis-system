@@ -70,12 +70,22 @@ async def search_logs(
         entries.append(entry)
         scores.append(float(score))
 
+    # v1.1.2 — reflect whether the embedding backfill is still running so the
+    # frontend can distinguish "no matches" from "still indexing". The flag is
+    # set by the lifespan task (`main.py`) to False on entry and True after
+    # backfill completes (or when embeddings are disabled and backfill is
+    # skipped). Reading via `getattr` keeps tests that don't touch
+    # `app.state.backfill_complete` working.
+    backfill_complete = bool(getattr(request.app.state, "backfill_complete", True))
+    partial_corpus = not backfill_complete
+
     log.info(
         "search_complete",
         query_preview=_truncate(body.query),
         result_count=len(entries),
+        partial_corpus=partial_corpus,
     )
-    return LogsSearchResponse(entries=entries, scores=scores)
+    return LogsSearchResponse(entries=entries, scores=scores, partial_corpus=partial_corpus)
 
 
 def _validate_apps(apps: list[str] | None) -> None:

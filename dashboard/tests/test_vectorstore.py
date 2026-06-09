@@ -238,6 +238,42 @@ def test_upsert_entries_prints_level_count_table_after_embedding(
     assert "Session total (since startup)" in captured.out
 
 
+def test_upsert_entries_batch_wall_ms_is_at_least_one(fake_vectorstore, capfd) -> None:
+    """v1.1.2 — fast batches (a single entry on a fake vectorstore can
+    complete sub-millisecond on modern hardware) MUST report wall-time
+    `>= 1 ms` in the embed-summary table. Without `max(1, round(...))`,
+    `int()` floor-truncated sub-ms elapsed time to `0` — confusing
+    operators reading the table (`0 ms` reads like "didn't measure").
+
+    Asserts via the stdout print pipeline (matches the existing tests in
+    this file). The Wall row format is `| Wall    |             N ms |`
+    where N is right-justified in a 13-char column.
+    """
+    import re
+
+    embedded = upsert_entries(fake_vectorstore, [_entry(0)])
+    assert embedded == 1
+
+    out = capfd.readouterr().out
+
+    # Find the Wall row in the table — it always renders as `| Wall    |  <N> ms |`.
+    wall_match = re.search(r"\|\s*Wall\s*\|\s*(\d+)\s*ms\s*\|", out)
+    assert wall_match is not None, "Wall row missing from embed-summary table"
+    batch_wall_ms = int(wall_match.group(1))
+    # `max(1, round(...))` guarantees a measured operation always shows
+    # at least 1ms; 0 is reserved for "not measured" (which is unreachable
+    # here because the embed loop completed).
+    assert batch_wall_ms >= 1, f"expected batch_wall_ms >= 1, got {batch_wall_ms}"
+
+    # The session-totals footer also surfaces a wall-time number — same
+    # truncation risk if the running total accumulated `0` from a fast
+    # first batch. Format: `Session total (since startup): N tokens · N ms`.
+    session_match = re.search(r"Session total .*?(\d+)\s+ms", out)
+    assert session_match is not None, "session-totals footer missing"
+    session_wall_ms = int(session_match.group(1))
+    assert session_wall_ms >= 1, f"expected session_wall_ms >= 1, got {session_wall_ms}"
+
+
 def test_upsert_entries_accumulates_session_totals_across_calls(fake_vectorstore, capfd) -> None:
     """Two successive upserts (different content) drive the running session
     total — the second table's session row should show MORE tokens than
@@ -378,6 +414,41 @@ def test_strip_url_userinfo_passthrough_for_garbage_input() -> None:
     assert _strip_url_userinfo("") == ""
     assert _strip_url_userinfo("not-a-url") == "not-a-url"
     assert _strip_url_userinfo("///") == "///"
+
+
+def test_strip_url_userinfo_redacts_on_urlparse_failure(monkeypatch) -> None:
+    """v1.1.2: if `urlparse` itself raises (rare but possible on truly
+    malformed input), the function MUST return a constant placeholder
+    rather than the original input — otherwise a credentialed URL that
+    confuses `urlparse` would silently echo its credentials.
+    """
+    import log_dashboard.ingest.vectorstore as vs_mod
+
+    def _boom(_: str):
+        raise ValueError("simulated urlparse failure")
+
+    monkeypatch.setattr(vs_mod, "urlparse", _boom)
+    out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert out == "<unparseable-url-redacted>"
+    assert "leaky_user" not in out
+    assert "leaky_pass" not in out
+
+
+def test_strip_url_userinfo_redacts_on_urlunparse_failure(monkeypatch) -> None:
+    """v1.1.2: if `urlunparse` raises during netloc reassembly, the
+    function MUST return the constant placeholder rather than the
+    original input. Same credential-echo risk as the urlparse path.
+    """
+    import log_dashboard.ingest.vectorstore as vs_mod
+
+    def _boom(_):
+        raise ValueError("simulated urlunparse failure")
+
+    monkeypatch.setattr(vs_mod, "urlunparse", _boom)
+    out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert out == "<unparseable-url-redacted>"
+    assert "leaky_user" not in out
+    assert "leaky_pass" not in out
 
 
 def test_strip_url_userinfo_preserves_ipv6_brackets() -> None:
