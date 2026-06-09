@@ -3,8 +3,13 @@ import { test as base, expect, type Page } from "@playwright/test";
 // Seeded test data — the SDA seed is deterministic (random.seed(0)) so alice
 // is guaranteed to own POL-1004 on every cold boot. If the seed shape ever
 // changes, these tests will fail loudly and need updating.
+//
+// Username format must match `DEMO_CUSTOMER_USERNAMES` in `.env` — the
+// operator's seed uses the email form (`alice@test.com`). `.env.example`
+// retains the bare `alice` form for plain demo flow; tests hit the live
+// seed, so they track the operator's `.env`.
 export const ALICE = {
-  username: "alice",
+  username: "alice@test.com",
   password: "customer",
   policyNumber: "POL-1004",
 };

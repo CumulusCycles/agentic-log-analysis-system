@@ -34,15 +34,15 @@ async def test_chat_over_token_cap_returns_413(
 ) -> None:
     """Use the minimum allowed cap (512) and a message known to exceed it.
 
-    ~3500 chars of repeated words tokenises to well over 512 tokens against
-    `o200k_base`. The cap is enforced before any graph code runs, so
-    `fail_if_real_llm_invoked` would never even need to fire.
+    Phase 8 (ADR-017 §7) replaced the `tiktoken o200k_base` count with a
+    `len(text) // 4` heuristic. The cap is enforced before any graph code
+    runs, so `fail_if_real_llm_invoked` would never need to fire.
     """
     app, _, token = await _build_client_with_env(
         monkeypatch, DASHBOARD_LLM_MAX_INPUT_TOKENS_PER_REQUEST="512"
     )
-    # ~2640 chars / ~541 tokens against `o200k_base` — exceeds the 512 cap
-    # while staying under ChatRequest.message's `max_length=4000`.
+    # ~2640 chars / 4 ≈ 660 estimated tokens — exceeds the 512 cap while
+    # staying under ChatRequest.message's `max_length=4000`.
     huge_message = "the quick brown fox jumps over the lazy dog " * 60
     async with LifespanManager(app):
         transport = ASGITransport(app=app, raise_app_exceptions=False)

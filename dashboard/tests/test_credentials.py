@@ -24,6 +24,24 @@ from log_dashboard.credentials import sanitize_log_raw, sanitize_user_input
             "[REDACTED]",
             "eyJhbGciOiJIUzI1NiJ9zzzzzzzzzzz",
         ),
+        # Basic auth header (base64 user:pass)
+        (
+            "Authorization: Basic dXNlcjpzZWNyZXRwdw==",
+            "[REDACTED]",
+            "dXNlcjpzZWNyZXRwdw==",
+        ),
+        # AWS4 signature — both the credential and the signature must go
+        (
+            "Authorization: AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20260609/us-east-1/s3/aws4_request",
+            "[REDACTED]",
+            "AKIAIOSFODNN7EXAMPLE",
+        ),
+        # JSON-quoted Authorization shouldn't over-match into adjacent fields
+        (
+            '{"Authorization": "Bearer eyJabcdefghijklmnopqrstuvwxyz", "user": "alice"}',
+            "[REDACTED]",
+            "eyJabcdefghijklmnopqrstuvwxyz",
+        ),
         # Bare Bearer (note: token must be ≥20 chars to match)
         (
             "use Bearer ghp_abcdefghijklmnopqrst when calling",
@@ -120,6 +138,19 @@ def test_sanitize_log_raw_jwt_in_request_log() -> None:
 
 def test_sanitize_log_raw_empty_returns_empty() -> None:
     assert sanitize_log_raw("") == ""
+
+
+def test_sanitize_log_raw_authorization_in_json_preserves_neighbours() -> None:
+    """The Authorization redactor stops at the closing quote so adjacent
+    JSON fields on the same line are NOT swept up. Regression guard for
+    the rest-of-line broadening that catches non-Bearer schemes."""
+    raw = '{"Authorization": "Bearer eyJabcdefghijklmnopqrstuvwxyz", "user_id": "alice"}'
+    out = sanitize_log_raw(raw)
+    assert "[REDACTED]" in out
+    assert "eyJabcdefghijklmnopqrstuvwxyz" not in out
+    # Neighbouring fields survive — over-match would have eaten these.
+    assert '"user_id"' in out
+    assert "alice" in out
 
 
 def test_both_sanitisers_share_redaction_pool() -> None:

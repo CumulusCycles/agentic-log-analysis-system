@@ -123,4 +123,9 @@ def _build_real_model(settings: Settings) -> BaseChatModel:
         model=settings.dashboard_llm_model,
         base_url=settings.ollama_base_url,
         temperature=0,
+        # Without this, an Ollama hang would block graph.ainvoke indefinitely.
+        # 30s covers a slow generation on a saturated M1 Max; longer-form
+        # reasoning hits the request_timeout, surfaces as is_llm_api_error,
+        # and the router maps it to 502 instead of hanging the response.
+        timeout=30,
     )

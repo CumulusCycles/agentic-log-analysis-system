@@ -180,7 +180,7 @@
     <a href="system-overview.html" class="active" aria-current="page">System Overview</a>
     <a href="docker-architecture.html">Docker Architecture</a>
     <a href="log-flow.html">Log Flow</a>
-    <a href="../docs/architecture/system-integration.md" class="external">System Integration</a>
+    <a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/architecture/system-integration.md" class="external">System Integration</a>
   </div>
 </nav>
 
@@ -331,17 +331,17 @@
 </div>
 
 <div class="dag-legend">
-  Every <strong>waits:</strong> edge above uses <code>condition: service_healthy</code> — except the <code>log-dashboard → ollama-init</code> link, which uses <code>condition: service_completed_successfully</code> since <code>ollama-init</code> is a one-shot model puller that exits after caching <code>llama3.1:8b</code> and <code>nomic-embed-text</code> into the <code>ollama-data</code> volume. The app-tier health gates were upgraded as each phase landed a real server (Phase 3 SDA, Phases 4–6 FNOL/CP/AP). The Ollama gates landed in Phase 8 / <a href="../docs/decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a> so the dashboard never boots against an unready or model-less Ollama.
+  Every <strong>waits:</strong> edge above uses <code>condition: service_healthy</code> — except the <code>log-dashboard → ollama-init</code> link, which uses <code>condition: service_completed_successfully</code> since <code>ollama-init</code> is a one-shot model puller that exits after caching <code>llama3.1:8b</code> and <code>nomic-embed-text</code> into the <code>ollama-data</code> volume. The app-tier health gates were upgraded as each phase landed a real server (Phase 3 SDA, Phases 4–6 FNOL/CP/AP). The Ollama gates landed in Phase 8 / <a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/decisions/ADR-017-local-ai-via-ollama.md" style="color:#79c0ff;text-decoration:none">ADR-017</a> so the dashboard never boots against an unready or model-less Ollama.
 </div>
 
 <section class="refidx">
   <div class="refidx-label">Reference index</div>
   <dl>
-    <dt>Markdown source</dt><dd><a href="../docs/architecture/system-overview.md">docs/architecture/system-overview.md</a> — canonical reference</dd>
-    <dt>Healthcheck rationale</dt><dd><a href="../docs/decisions/ADR-001-local-docker-only.md">ADR-001</a> · infrastructure rule at <code>.claude/rules/infrastructure.md</code></dd>
+    <dt>Markdown source</dt><dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/architecture/system-overview.md">docs/architecture/system-overview.md</a> — canonical reference</dd>
+    <dt>Healthcheck rationale</dt><dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/decisions/ADR-001-local-docker-only.md">ADR-001</a> · infrastructure rule at <code>.claude/rules/infrastructure.md</code></dd>
     <dt>Chroma image probe</dt><dd>no curl/wget in <code>chromadb/chroma:1.5.9</code> — bash + <code>/dev/tcp</code> is the workaround</dd>
-    <dt>Phase 8 Ollama</dt><dd><a href="../docs/decisions/ADR-017-local-ai-via-ollama.md">ADR-017</a> — local AI runtime + the <code>ollama-init</code> one-shot pattern</dd>
-    <dt>App stack details</dt><dd><a href="../docs/architecture/system-integration.md">system-integration.md</a> — 14 Mermaid diagrams covering data layer, auth, request flows</dd>
+    <dt>Phase 8 Ollama</dt><dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/decisions/ADR-017-local-ai-via-ollama.md">ADR-017</a> — local AI runtime + the <code>ollama-init</code> one-shot pattern</dd>
+    <dt>App stack details</dt><dd><a href="https://github.com/CumulusCycles/agentic-log-analysis-system/blob/main/docs/architecture/system-integration.md">system-integration.md</a> — 14 Mermaid diagrams covering data layer, auth, request flows</dd>
   </dl>
 </section>
 
