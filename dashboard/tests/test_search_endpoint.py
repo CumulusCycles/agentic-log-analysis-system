@@ -146,8 +146,8 @@ async def test_search_response_partial_corpus_true_during_backfill(
     """v1.1.2 — during the initial backfill window the response surfaces
     `partial_corpus: True` so the frontend can distinguish 'no matches'
     from 'still indexing'. The flag reads `app.state.backfill_complete`
-    via `getattr` with a True default, so this test pins the False
-    transition explicitly.
+    via `getattr` with a False default (per the v1.1.2 round-1 flip);
+    this test pins the False transition explicitly.
     """
     ready_app.state.backfill_complete = False
     response = await client.post(
@@ -162,3 +162,31 @@ async def test_search_response_partial_corpus_true_during_backfill(
     # populated — partial corpus does NOT block search.
     assert len(body["entries"]) >= 1
     assert len(body["scores"]) == len(body["entries"])
+
+
+async def test_search_response_partial_corpus_defaults_true_when_flag_unset(
+    client, valid_token, ready_app
+) -> None:
+    """v1.1.2 post-review — pin the `getattr(..., False)` default
+    explicitly. Without this test, a typo or future refactor that
+    flipped the default back to `True` would silently regress (the
+    "missing flag in production → silent degraded mode" hole that
+    motivated the round-1 flip).
+
+    The `ready_app` fixture from `_seed_vectorstore` does not set
+    `backfill_complete` (it only assigns `vectorstore`). The lifespan
+    DID set it (False on entry), but `delattr` ensures the attribute
+    is absent so the getattr default path actually runs.
+    """
+    if hasattr(ready_app.state, "backfill_complete"):
+        delattr(ready_app.state, "backfill_complete")
+
+    response = await client.post(
+        "/api/logs/search",
+        json={"query": "claim", "top_k": 4},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+    # Missing flag → safer default → partial_corpus must be True
+    # ("still indexing"), not the previous unsafe False.
+    assert response.json()["partial_corpus"] is True
