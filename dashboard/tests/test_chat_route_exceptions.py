@@ -220,7 +220,10 @@ def _sse_error_detail(body: bytes) -> str:
     events = _decode_sse_events(body)
     error_events = [e for e in events if e.get("event") == "error"]
     assert len(error_events) == 1, f"expected exactly one error event; got {len(error_events)}"
-    data = json.loads(error_events[0]["data"])
+    try:
+        data = json.loads(error_events[0]["data"])
+    except (json.JSONDecodeError, KeyError) as exc:
+        raise AssertionError(f"malformed SSE error event: {error_events[0]!r}") from exc
     return str(data.get("detail", ""))
 
 
