@@ -29,23 +29,31 @@ cd apps/fnol/frontend && pnpm exec vitest run
 cd apps/fnol/frontend && pnpm exec playwright test --reporter=line
 ```
 
-### Customer Portal (`apps/customer-portal/`) — Phase 5
+### Customer Portal (`apps/customer-portal/`)
 ```bash
-# Backend
+# Backend (Vitest + Supertest + nock)
 cd apps/customer-portal && pnpm test
 
-# Frontend unit + E2E — same pattern as FNOL once it lands
+# Frontend unit (Vitest)
+cd apps/customer-portal/frontend && pnpm exec vitest run
+
+# Frontend E2E (Playwright) — requires the live stack
+cd apps/customer-portal/frontend && pnpm exec playwright test --reporter=line
 ```
 
-### Agent Portal (`apps/agent-portal/`) — Phase 6
+### Agent Portal (`apps/agent-portal/`)
 ```bash
-# Backend
+# Backend (JUnit 5 + Spring Boot Test)
 cd apps/agent-portal && ./mvnw test
 
-# Frontend unit + E2E — same pattern as FNOL once it lands
+# Frontend unit (Vitest)
+cd apps/agent-portal/frontend && pnpm exec vitest run
+
+# Frontend E2E (Playwright) — requires the live stack
+cd apps/agent-portal/frontend && pnpm exec playwright test --reporter=line
 ```
 
-### Agentic Log Analysis Dashboard (`dashboard/`) — Phase 7a ✅
+### Agentic Log Analysis Dashboard (`dashboard/`)
 ```bash
 # Backend (standalone JWT auth, structlog stdout-only)
 cd dashboard && uv run pytest -q

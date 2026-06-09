@@ -24,7 +24,7 @@ The supporting apps are the raw material. **The dashboard is the product.**
 | **Agent Portal** | Java / Spring Boot + React | Internal claim handler tool — **read-only** view (desktop) |
 | **Agentic Log Analysis Dashboard** | Python / FastAPI + React + LangGraph | Agentic log analysis — the primary deliverable |
 
-Infrastructure: PostgreSQL · MongoDB · Chroma vector store · Docker Compose · `insurance-net` bridge network
+Infrastructure: PostgreSQL · MongoDB · Chroma vector store · Ollama (local LLM + embeddings, Phase 8 / ADR-017) · Docker Compose · `insurance-net` bridge network
 
 Auth: JWT issued by Shared Data API for FNOL / Customer Portal / Agent Portal; standalone JWT for the Dashboard. See [ADR-006](docs/decisions/ADR-006-auth-strategy.md).
 
@@ -83,6 +83,7 @@ Each app row links the three conceptual endpoints where they apply:
 | PostgreSQL | `pg_isready` via Docker on TCP `localhost:5433` (not HTTP) | — | — |
 | MongoDB | `mongosh` ping via Docker on TCP `localhost:27018` (not HTTP) | — | — |
 | Chroma | `bash + /dev/tcp` via Docker, internal port `8000` only (not host-exposed) | — | — |
+| Ollama | `ollama list` via Docker, internal port `11434` only (not host-exposed) | — | — |
 
 > The Shared Data API exposes Swagger as the system's integration target. The Dashboard exposes Swagger as an admin diagnostic surface. The three end-user apps (FNOL / Customer Portal / Agent Portal) are SPA + thin proxy and intentionally do not expose `/docs`. Both Swagger UIs are browser-accessible without an API key for local dev ([ADR-001](docs/decisions/ADR-001-local-docker-only.md)); to **call** endpoints from them you still need a JWT — click **Authorize** and paste a `Bearer <token>` from a login round-trip.
 
@@ -106,7 +107,7 @@ runbook is in [`docs/operations/dashboard-guide.md`](docs/operations/dashboard-g
 | `docs/project-brief.md` | Narrative project overview with personas |
 | `docs/development-workflow.md` | Hooks, slash commands, review flow, phase checkpoints |
 | `docs/architecture/system-overview.md` | Container topology and log flow diagram |
-| `docs/operations/dashboard-guide.md` | Operator runbook — Agitator, chaos, embedding cost, Vectorstore Stats, Proactive Scan |
+| `docs/operations/dashboard-guide.md` | Operator runbook — Agitator, chaos, embedding wall-time, Vectorstore Stats, Proactive Scan |
 | `docs/decisions/` | ADR-001 through ADR-017 |
 | `docs/tech/tech-stack.md` | Full technology reference |
 | `docs/tech/logging-strategy.md` | Per-stack logging formats and volume paths |

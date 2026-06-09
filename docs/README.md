@@ -21,6 +21,6 @@ Each subdirectory has its own README with a per-file index and any local convent
 | Directory | What's in it |
 |---|---|
 | [`architecture/`](architecture/) | System architecture — container topology, log-flow diagram, port reference, startup dependencies |
-| [`decisions/`](decisions/) | Architecture Decision Records (ADRs 001–016) + supersession + amendment conventions |
-| [`operations/`](operations/) | Operator-facing runbooks for the running stack (Agitator, chaos, embedding cost, Proactive Scan) |
+| [`decisions/`](decisions/) | Architecture Decision Records (ADRs 001–017) + supersession + amendment conventions |
+| [`operations/`](operations/) | Operator-facing runbooks for the running stack (Agitator, chaos, embedding wall-time, Proactive Scan) |
 | [`tech/`](tech/) | Long-form tech reference — stack, logging strategy, log-event catalog, data model, file-naming convention |

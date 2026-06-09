@@ -13,11 +13,12 @@ Valid ARM64 runtime images:
 - Postgres: `postgres:16-alpine`
 - MongoDB: `mongo:7`
 - Chroma: `chromadb/chroma:1.5.9`
+- Ollama: `ollama/ollama:latest` (Phase 8 / ADR-017 — local AI runtime)
 
 Build-stage image (multi-stage Dockerfiles for fnol, customer-portal, agent-portal, log-dashboard):
 - Node: `node:22-alpine`
 
 Inspect volumes: `docker run --rm -v <volume>:/data alpine ls -la /data`
 
-The seven persistent volumes are: `postgres-data`, `mongodb-data`, `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, `agent-portal-logs`, `chroma-data`.
+The eight persistent volumes are: `postgres-data`, `mongodb-data`, `shared-data-api-logs`, `fnol-logs`, `customer-portal-logs`, `agent-portal-logs`, `chroma-data`, `ollama-data` (Phase 8 / ADR-017).
 App log volumes are mounted read-only in the dashboard container.
