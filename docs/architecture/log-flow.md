@@ -9,7 +9,7 @@ For a visual rendering of the same flow, open [`log-flow.html`](log-flow.html) i
 
 ---
 
-## The 10 steps
+## The 11 steps
 
 ### 1. Browser → FNOL backend
 
@@ -153,4 +153,4 @@ Two independent reading paths over the same source bytes — the human path (`/a
 | Dashboard watchdog observer | `dashboard/src/log_dashboard/ingest/watcher.py` |
 | Dashboard parser + source inference | `dashboard/src/log_dashboard/ingest/parsers.py` |
 | Dashboard vectorstore (Chroma upsert + dedup) | `dashboard/src/log_dashboard/ingest/vectorstore.py` |
-| Operator runbook (cost tracking, Vectorstore Stats, scan) | [`docs/operations/dashboard-guide.md`](../operations/dashboard-guide.md) |
+| Operator runbook (wall-time tracking, Vectorstore Stats, scan) | [`docs/operations/dashboard-guide.md`](../operations/dashboard-guide.md) |

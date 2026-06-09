@@ -13,7 +13,7 @@ description: Inspect raw log volumes from Docker containers. Triggered when aske
 1. Identify which app's logs to read
 2. Inspect the volume: `docker run --rm -v <volume>:/data alpine ls -la /data`
 3. Read recent entries: `docker run --rm -v <volume>:/data alpine tail -100 /data/<logfile>`
-4. Identify log format (structlog JSON + plain tracebacks for FNOL; Winston JSON for customer-portal; Logback text for agent-portal)
+4. Identify log format (structlog JSON + plain tracebacks for Shared Data API + FNOL; Winston JSON for customer-portal; Logback text for agent-portal)
 5. Summarize: error count, most recent errors, any patterns
 6. Flag misconfigurations vs real application errors
 

@@ -87,7 +87,7 @@ These fixed names are intentional and must not be renamed:
 
 Hook scripts are referenced from `.claude/settings.json`; update paths when renaming.
 
-### Application source (future: `apps/`, `dashboard/`)
+### Application source (`apps/`, `dashboard/`)
 
 Follow the toolchain default for each stack:
 
