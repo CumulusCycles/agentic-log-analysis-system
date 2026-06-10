@@ -23,6 +23,7 @@ from .ingest.backfill import run_initial_backfill
 from .ingest.vectorstore import (
     build_vectorstore,
     configure_langsmith,
+    embeddings_state,
     is_embeddings_disabled,
 )
 from .ingest.watcher import LogVolumeWatcher
@@ -67,6 +68,44 @@ def create_app() -> FastAPI:
                 error_class=type(exc).__name__,
             )
 
+    # v1.1.2 Option A — promotion watchdog. Started by lifespan when the
+    # initial probe reports `loading` (Ollama up, models still being pulled
+    # by ollama-init). Polls every `embeddings_promotion_interval_seconds`
+    # until the probe flips to `ready`, then wires up the vectorstore,
+    # rebuilds the agent graph against the live store, and kicks off the
+    # backfill + watcher chain. Lets the dashboard come up in ~30s on
+    # cold deploys instead of waiting 5–15 minutes for the model pull.
+    async def _await_embeddings_then_backfill(app: FastAPI) -> None:
+        interval = settings.embeddings_promotion_interval_seconds
+        while True:
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                raise
+            try:
+                state = await asyncio.to_thread(embeddings_state, settings)
+            except Exception as exc:  # noqa: BLE001 — never crash the loop
+                log.warning(
+                    "embeddings_promotion_probe_failed",
+                    error_class=type(exc).__name__,
+                )
+                continue
+            app.state.embeddings_state = state
+            if state == "ready":
+                log.info("embeddings_promoted", from_state="loading")
+                configure_langsmith(settings)
+                vectorstore = build_vectorstore(settings)
+                app.state.vectorstore = vectorstore
+                # Rebuild the agent graph so the `query_logs` tool binds
+                # to the live vectorstore. The existing checkpointer +
+                # SessionIndex are preserved so any in-flight conversations
+                # keep their thread state.
+                app.state.agent_graph = build_agent_graph(
+                    settings, vectorstore, app.state.agent_checkpointer
+                )
+                await _backfill_and_start_watcher(app)
+                return
+
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # Bcrypt-hash the admin password once at startup and drop the
@@ -85,16 +124,25 @@ def create_app() -> FastAPI:
         app.state.agitator_runs = RunRegistry()
         backfill_task: asyncio.Task[None] | None = None
 
-        # `is_embeddings_disabled` does a sync httpx probe with a 2s
-        # timeout — offload to a worker thread so the async lifespan
-        # doesn't block its event loop on a misconfigured stack.
-        embeddings_disabled = await asyncio.to_thread(is_embeddings_disabled, settings)
-        if embeddings_disabled:
-            log.info(
-                "embeddings_disabled",
-                reason="ollama_unreachable",
-            )
+        # v1.1.2 Option A — three-valued probe replaces the binary
+        # `is_embeddings_disabled` check. The probe is sync httpx with a
+        # 2s timeout, so it's offloaded to a worker thread to avoid
+        # blocking the event loop on a misconfigured stack.
+        state = await asyncio.to_thread(embeddings_state, settings)
+        app.state.embeddings_state = state
+        embeddings_promotion_task: asyncio.Task[None] | None = None
+        if state == "unreachable":
+            log.info("embeddings_disabled", reason="ollama_unreachable")
+            # No retry — `unreachable` means the operator's URL is wrong
+            # (or Ollama crashed). A restart-loop wouldn't help and would
+            # spam logs; the operator must fix the config and restart.
             app.state.backfill_complete = True
+        elif state == "loading":
+            log.info("embeddings_loading", reason="ollama_models_missing")
+            # Don't flip backfill_complete — the promotion watchdog will
+            # kick off backfill once models become available. `partial_corpus`
+            # on /api/logs/search correctly reports True in the meantime.
+            embeddings_promotion_task = asyncio.create_task(_await_embeddings_then_backfill(app))
         else:
             configure_langsmith(settings)
             # Build the vectorstore immediately so the search endpoint becomes
@@ -112,6 +160,11 @@ def create_app() -> FastAPI:
         from langgraph.checkpoint.memory import InMemorySaver
 
         agent_checkpointer = InMemorySaver()
+        # Stashed on app.state so the v1.1.2 embeddings-promotion watchdog
+        # can rebuild the agent graph against the live vectorstore once
+        # models become available — same checkpointer keeps in-flight
+        # conversations' thread state continuous across the rebuild.
+        app.state.agent_checkpointer = agent_checkpointer
         app.state.session_index = SessionIndex(
             checkpointer=agent_checkpointer, max_entries=settings.session_index_max
         )
@@ -142,6 +195,12 @@ def create_app() -> FastAPI:
 
         if backfill_task is not None and not backfill_task.done():
             backfill_task.cancel()
+        if embeddings_promotion_task is not None and not embeddings_promotion_task.done():
+            embeddings_promotion_task.cancel()
+            try:
+                await embeddings_promotion_task
+            except asyncio.CancelledError:
+                pass
         if proactive_task is not None and not proactive_task.done():
             proactive_task.cancel()
             # Drain the task so an in-flight `graph.ainvoke` (or any LangSmith

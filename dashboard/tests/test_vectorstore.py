@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from log_dashboard.config import Settings
@@ -80,12 +81,27 @@ def test_is_embeddings_disabled_returns_true_on_non_200() -> None:
         assert is_embeddings_disabled(settings) is True
 
 
-def test_is_embeddings_disabled_returns_false_on_200() -> None:
-    """A reachable Ollama that returns 200 to `/api/tags` is healthy."""
+def test_is_embeddings_disabled_returns_false_on_200_with_models_loaded() -> None:
+    """A reachable Ollama that returns 200 to `/api/tags` AND lists both
+    required models is healthy.
+
+    v1.1.2 Option A — the predicate widened from "daemon reachable" to
+    "daemon reachable AND required models in /api/tags". The 200-with-no-
+    models case now reports `loading` (covered by the new test below);
+    the daemon-only case is no longer "ready".
+    """
     settings = _settings(ollama_base_url="http://ollama-stub:11434")
 
     fake_resp = MagicMock()
     fake_resp.status_code = 200
+    fake_resp.json = MagicMock(
+        return_value={
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
+            ]
+        }
+    )
     fake_client = MagicMock()
     fake_client.__enter__ = MagicMock(return_value=fake_client)
     fake_client.__exit__ = MagicMock(return_value=False)
@@ -93,6 +109,138 @@ def test_is_embeddings_disabled_returns_false_on_200() -> None:
 
     with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
         assert is_embeddings_disabled(settings) is False
+
+
+# v1.1.2 Option A — three-valued `embeddings_state` predicate. The
+# lifespan branches on these states (ready / loading / unreachable) to
+# decide whether to wire up the vectorstore eagerly, start the promotion
+# watchdog, or stay disabled.
+
+
+def _build_fake_tags_client(status_code: int, json_body: dict | None) -> MagicMock:
+    fake_resp = MagicMock()
+    fake_resp.status_code = status_code
+    if json_body is not None:
+        fake_resp.json = MagicMock(return_value=json_body)
+    else:
+        fake_resp.json = MagicMock(side_effect=ValueError("non-json body"))
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+    return fake_client
+
+
+def test_embeddings_state_ready_when_both_models_present() -> None:
+    """`/api/tags` lists both required models → `"ready"`. This is the
+    happy path the lifespan branches into to build the vectorstore + start
+    backfill immediately.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
+                {"name": "other-model", "model": "other-model"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
+
+
+def test_embeddings_state_loading_when_models_missing() -> None:
+    """`/api/tags` returns 200 but neither required model is loaded → `"loading"`.
+    This is the cold-deploy window where ollama-init is still pulling.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(200, {"models": []})
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_loading_when_only_llm_present() -> None:
+    """Partial-pull edge case — LLM is in but embed model isn't.
+    Still `"loading"` (need BOTH).
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200, {"models": [{"name": "llama3.1:8b", "model": "llama3.1:8b"}]}
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_unreachable_on_connection_error() -> None:
+    """Daemon unreachable (connection refused / DNS / timeout) → `"unreachable"`.
+    The lifespan does NOT start the promotion watchdog for this state — a
+    bad URL won't fix itself.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://127.0.0.1:1")
+    # The conftest already points OLLAMA_BASE_URL at a closed port, but
+    # we patch httpx.Client explicitly here so the test is self-contained.
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(side_effect=httpx.ConnectError("refused"))
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
+        assert embeddings_state(settings) == "unreachable"
+
+
+def test_embeddings_state_unreachable_on_non_200() -> None:
+    """Any non-200 from `/api/tags` (auth required, etc.) → `"unreachable"`."""
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(403, None)
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "unreachable"
+
+
+def test_embeddings_state_unreachable_on_unparseable_body() -> None:
+    """200 with non-JSON body → `"unreachable"` (treats as broken probe)."""
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(200, None)
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "unreachable"
+
+
+def test_embeddings_state_loading_respects_custom_model_settings() -> None:
+    """The probe reads `dashboard_llm_model` + `dashboard_embed_model` from
+    Settings, so a future qwen2.5:14b trial needs the names updated in env,
+    not the predicate code. This pins the wiring.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(
+        ollama_base_url="http://ollama-stub:11434",
+        dashboard_llm_model="qwen2.5:14b",
+        dashboard_embed_model="nomic-embed-text",
+    )
+    # `/api/tags` carries the old llama3.1 but not the qwen — `"loading"`.
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
 
 
 def test_build_vectorstore_against_in_memory_client(fake_embeddings) -> None:

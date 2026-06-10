@@ -134,7 +134,10 @@ async def errors_client_with_chroma(monkeypatch, fake_vectorstore):
     """
     from log_dashboard import main as main_module
 
-    monkeypatch.setattr(main_module, "is_embeddings_disabled", lambda _settings: False)
+    # v1.1.2 Option A — lifespan now calls `embeddings_state` (three-valued)
+    # instead of `is_embeddings_disabled` (binary). Patch the new function
+    # to report "ready" so the lifespan wires up the vectorstore + agent.
+    monkeypatch.setattr(main_module, "embeddings_state", lambda _settings: "ready")
     monkeypatch.setattr(main_module, "build_vectorstore", lambda _settings, **_kw: fake_vectorstore)
     monkeypatch.setattr(main_module, "run_initial_backfill", lambda *_args, **_kw: [])
 

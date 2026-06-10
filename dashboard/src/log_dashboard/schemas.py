@@ -113,6 +113,14 @@ class StatusResponse(BaseModel):
     scan_enabled: bool = False
     last_scan_at: datetime | None = None
     next_scan_at: datetime | None = None
+    # v1.1.2 Option A — three-valued Ollama readiness so the frontend can
+    # distinguish "models still pulling on a cold deploy" (transient, will
+    # become ready) from "Ollama is unreachable" (operator config issue).
+    # `"ready"` = backfill running / done; `"loading"` = ollama-init still
+    # pulling, promotion watchdog re-probing; `"unreachable"` = daemon down
+    # or URL wrong. The Log Explorer search 503 banner reads this field
+    # to pick the right message.
+    embeddings_state: Literal["ready", "loading", "unreachable"] = "ready"
 
 
 # --- Phase 7d: semantic search ---

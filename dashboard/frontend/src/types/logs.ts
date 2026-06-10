@@ -58,6 +58,11 @@ export interface StatusResponse {
   scan_enabled?: boolean;
   last_scan_at?: string | null;
   next_scan_at?: string | null;
+  // v1.1.2 Option A — three-valued Ollama embeddings readiness. The Log
+  // Explorer reads this to distinguish "models still loading on a cold
+  // deploy" from "Ollama unreachable" when the search endpoint 503s.
+  // Optional on the wire so older backends gracefully degrade.
+  embeddings_state?: "ready" | "loading" | "unreachable";
 }
 
 export type TimeWindow = "1h" | "24h" | "7d";

@@ -148,12 +148,17 @@ describe("LogExplorer (7d semantic search)", () => {
     expect(cells[1]).toHaveTextContent("0.780");
   });
 
-  it("shows a friendly error when /api/logs/search returns 503", async () => {
+  it("shows the OLLAMA_BASE_URL error when /api/logs/search returns 503 (unreachable)", async () => {
+    // v1.1.2 Option A — the LogExplorer now renders `err.detail` verbatim so
+    // the backend's two distinct 503 messages flow through. This test pins
+    // the `unreachable` path (Ollama URL wrong / daemon down).
     const logsResp: LogsResponse = { entries: [], next_before: null };
     const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
       const u = String(url);
       if (u.includes("/api/logs/search")) {
-        return Promise.resolve(errorResponse(503, "semantic search is unavailable"));
+        return Promise.resolve(
+          errorResponse(503, "semantic search is unavailable — OLLAMA_BASE_URL is unreachable"),
+        );
       }
       return Promise.resolve(jsonResponse(logsResp));
     });
@@ -163,6 +168,34 @@ describe("LogExplorer (7d semantic search)", () => {
     await userEvent.type(screen.getByTestId("filter-query"), "auth");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/OLLAMA_BASE_URL/i);
+  });
+
+  it("shows the warming-up message when /api/logs/search returns 503 (loading)", async () => {
+    // v1.1.2 Option A — during the cold-deploy window the backend returns
+    // 503 with a "warming up — try again in a minute" detail. The Log
+    // Explorer must surface that message verbatim so operators understand
+    // the search is *transiently* unavailable, not broken.
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(
+          errorResponse(
+            503,
+            "semantic search is warming up — Ollama models are still being pulled. Try again in a minute.",
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/warming up/i);
+    expect(alert).not.toHaveTextContent(/OLLAMA_BASE_URL/i);
   });
 
   it("renders the partial-corpus hint when the search response says backfill is still running", async () => {

@@ -70,6 +70,10 @@ async def get_status(
         scan_enabled=settings.proactive_scan_enabled,
         last_scan_at=last_scan_at,
         next_scan_at=next_scan_at,
+        # v1.1.2 Option A — lifespan / promotion watchdog write this. Default
+        # `"ready"` matches the schema default so older lifespans (or tests
+        # that haven't set the attr) report the safer-during-tests value.
+        embeddings_state=getattr(request.app.state, "embeddings_state", "ready"),
     )
 
 

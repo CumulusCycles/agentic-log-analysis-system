@@ -33,15 +33,29 @@ async def search_logs(
 ) -> LogsSearchResponse:
     store: Chroma | None = getattr(request.app.state, "vectorstore", None)
     if store is None:
-        # Degraded mode: Ollama unreachable at lifespan. /api/logs and
-        # /api/status still work — only semantic search is unavailable.
+        # Degraded mode: vectorstore not wired up yet.
+        # v1.1.2 Option A — distinguish the two reasons so the frontend
+        # shows a friendlier "models still loading" hint during the
+        # cold-deploy window where ollama-init is still pulling, vs. a
+        # genuine "URL unreachable" config error. The lifespan writes
+        # the three-valued state; default to `"unreachable"` if the
+        # attr is missing (defensive — same posture as the older string).
+        state = getattr(request.app.state, "embeddings_state", "unreachable")
         log.info(
             "search_unavailable_no_embeddings",
             query_preview=_truncate(body.query),
+            embeddings_state=state,
         )
+        if state == "loading":
+            detail = (
+                "semantic search is warming up — Ollama models are still "
+                "being pulled. Try again in a minute."
+            )
+        else:
+            detail = "semantic search is unavailable — OLLAMA_BASE_URL is unreachable"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="semantic search is unavailable — OLLAMA_BASE_URL is unreachable",
+            detail=detail,
         )
 
     _validate_apps(body.apps)

@@ -48,15 +48,29 @@ _PLACEHOLDER_PREFIXES = ("your_", "change_me")
 _OLLAMA_PROBE_TIMEOUT_SECONDS = 2.0
 
 
-def is_embeddings_disabled(settings: Settings) -> bool:
-    """True when Ollama at `OLLAMA_BASE_URL` is unreachable.
+def embeddings_state(settings: Settings) -> str:
+    """Three-valued readiness probe for Ollama embeddings.
+
+    Returns one of:
+    - `"ready"`     — daemon reachable AND both required models are loaded
+    - `"loading"`   — daemon reachable but `dashboard_llm_model` or
+                      `dashboard_embed_model` not yet present (e.g.,
+                      ollama-init is still pulling them on first boot)
+    - `"unreachable"` — daemon connection error, timeout, or non-200
 
     The dashboard must stay usable for `/api/logs` and `/api/status` even
-    when Ollama is down (ADR-006 spirit). When disabled, the lifespan skips
-    backfill + watcher, and `/api/logs/search` returns 503.
+    when Ollama isn't ready (ADR-006 spirit). When NOT `"ready"`, the
+    lifespan skips backfill + watcher (the `"loading"` state is handled
+    by the promotion watchdog which re-probes periodically and kicks off
+    backfill once the state flips to `"ready"`); `/api/logs/search`
+    returns 503; `/api/status` surfaces the state so the frontend can
+    show a friendlier "models still loading" hint instead of a generic
+    503.
 
-    Probes `{ollama_base_url}/api/tags` with a short timeout. Any non-200
-    response or connection error counts as disabled.
+    Probes `{ollama_base_url}/api/tags` with a short timeout, then parses
+    the response's `models` array to confirm both required models are
+    listed. The list contains every model the local daemon has pulled
+    into its cache, regardless of whether it's currently loaded into RAM.
     """
     url = settings.ollama_base_url.rstrip("/") + "/api/tags"
     safe_url = _strip_url_userinfo(settings.ollama_base_url)
@@ -69,15 +83,56 @@ def is_embeddings_disabled(settings: Settings) -> bool:
             error_class=type(exc).__name__,
             base_url=safe_url,
         )
-        return True
+        return "unreachable"
     if response.status_code != 200:
         log.info(
             "ollama_probe_non_200",
             status=response.status_code,
             base_url=safe_url,
         )
-        return True
-    return False
+        return "unreachable"
+
+    # `models` is an array of `{name, model, modified_at, size, digest, ...}`
+    # — both `name` and `model` carry the `model:tag` string (the API uses
+    # both keys across versions). Use `.get()` so a future schema tweak
+    # can't crash the probe.
+    try:
+        body = response.json()
+        loaded = {
+            (entry.get("name") or entry.get("model") or "")
+            for entry in body.get("models", [])
+            if isinstance(entry, dict)
+        }
+    except (ValueError, AttributeError, TypeError) as exc:
+        log.info(
+            "ollama_tags_unparseable",
+            error_class=type(exc).__name__,
+            base_url=safe_url,
+        )
+        return "unreachable"
+
+    required = (settings.dashboard_llm_model, settings.dashboard_embed_model)
+    missing = [m for m in required if m not in loaded]
+    if missing:
+        log.info(
+            "ollama_models_missing",
+            missing=missing,
+            loaded=sorted(loaded),
+            base_url=safe_url,
+        )
+        return "loading"
+    return "ready"
+
+
+def is_embeddings_disabled(settings: Settings) -> bool:
+    """Backwards-compatible wrapper around `embeddings_state`.
+
+    Returns True for `"loading"` AND `"unreachable"` — both states must
+    skip embedding work. Callers that need the three-valued distinction
+    (the promotion watchdog, the `/api/status` field) call
+    `embeddings_state` directly.
+    """
+    return embeddings_state(settings) != "ready"
 
 
 _UNPARSEABLE_URL_REDACTION = "<unparseable-url-redacted>"

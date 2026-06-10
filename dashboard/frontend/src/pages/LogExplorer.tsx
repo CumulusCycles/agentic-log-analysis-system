@@ -101,7 +101,12 @@ export function LogExplorer() {
           return;
         }
         if (err instanceof HttpError && err.status === 503 && isSearchMode) {
-          setError("semantic search is unavailable — OLLAMA_BASE_URL is unreachable");
+          // v1.1.2 Option A — surface the backend's exact 503 detail. The
+          // search router now distinguishes "models still loading" (cold-deploy
+          // window, message says "warming up — try again in a minute") from
+          // "Ollama unreachable" (config error, message names OLLAMA_BASE_URL).
+          // Using the wire detail keeps frontend + backend strings in lockstep.
+          setError(err.detail);
         } else if (err instanceof HttpError) {
           setError(`${isSearchMode ? "search" : "logs"} request failed (${err.status})`);
         } else {

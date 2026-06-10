@@ -69,7 +69,10 @@ async def client_with_chroma(monkeypatch, fake_vectorstore):
     """
     from log_dashboard import main as main_module
 
-    monkeypatch.setattr(main_module, "is_embeddings_disabled", lambda _settings: False)
+    # v1.1.2 Option A — lifespan now calls `embeddings_state` (three-valued)
+    # instead of `is_embeddings_disabled` (binary). Patch the new function
+    # to report "ready" so the lifespan wires up the vectorstore + agent.
+    monkeypatch.setattr(main_module, "embeddings_state", lambda _settings: "ready")
     monkeypatch.setattr(main_module, "build_vectorstore", lambda _settings, **_kw: fake_vectorstore)
     # Don't spawn the real backfill thread; the fake store is already seeded
     # by individual tests via `_seed_chroma_entry`.
@@ -226,7 +229,7 @@ async def test_errors_token_cap_rejects_huge_raw(
     from log_dashboard import main as main_module
 
     monkeypatch.setenv("DASHBOARD_LLM_MAX_INPUT_TOKENS_PER_REQUEST", "512")
-    monkeypatch.setattr(main_module, "is_embeddings_disabled", lambda _settings: False)
+    monkeypatch.setattr(main_module, "embeddings_state", lambda _settings: "ready")
     monkeypatch.setattr(main_module, "build_vectorstore", lambda _settings, **_kw: fake_vectorstore)
     monkeypatch.setattr(main_module, "run_initial_backfill", lambda *_args, **_kw: [])
     get_settings.cache_clear()

@@ -68,6 +68,18 @@ class Settings(BaseSettings):
     embedding_batch_size: int = Field(default=100, alias="DASHBOARD_EMBEDDING_BATCH_SIZE")
     watcher_enabled: bool = Field(default=True, alias="DASHBOARD_WATCHER_ENABLED")
 
+    # v1.1.2 Option A — how often the embeddings-promotion watchdog
+    # re-probes Ollama when models aren't yet loaded (the cold-deploy
+    # window where ollama-init is still pulling). Default 30s balances
+    # responsiveness (dashboard goes fully online within ~30s of the
+    # pull completing) against probe noise. Tune up on slow links.
+    embeddings_promotion_interval_seconds: int = Field(
+        default=30,
+        alias="DASHBOARD_EMBEDDINGS_PROMOTION_INTERVAL_SECONDS",
+        ge=5,
+        le=600,
+    )
+
     # Ingest gate — what gets embedded into Chroma. Three orthogonal knobs.
     # The operator-facing `/api/logs` view is UNAFFECTED by any of these
     # (it reads volumes directly, not Chroma).

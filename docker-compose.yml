@@ -297,10 +297,20 @@ services:
     depends_on:
       chroma:
         condition: service_healthy
+      # v1.1.2 Option A — relaxed from the v1.1.1 `service_healthy` /
+      # `service_completed_successfully` chain. Previously the dashboard
+      # waited for ollama-init's full model pull to finish (5-15 min on a
+      # cold `ollama-data` volume) before its container left `Created`.
+      # The dashboard's own lifespan now handles "Ollama up but models not
+      # yet loaded" gracefully via the embeddings-promotion watchdog: it
+      # comes up in ~30s, /api/logs + /api/status work immediately, and
+      # /api/logs/search + /api/chat surface a "models still loading"
+      # state until the watchdog promotes them. `service_started` is
+      # sufficient since the dashboard only needs the daemon process to
+      # exist (its own probe checks model availability). The completed
+      # gate on ollama-init is dropped for the same reason.
       ollama:
-        condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
+        condition: service_started
     networks:
       - insurance-net
 
