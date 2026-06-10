@@ -104,8 +104,9 @@ async def test_chat_still_returns_502_for_real_llm_transport_error(
     event carries `duration_ms >= 1`. Covers chat.py:200 + 202-207
     (non-streaming LLM-failure path).
     """
-    import httpx
     import logging
+
+    import httpx
 
     caplog.set_level(logging.WARNING, logger="chat")
     boom = _BoomGraph(httpx.ConnectError("ollama unreachable"))
@@ -314,8 +315,9 @@ async def test_chat_streaming_emits_upstream_llm_error_for_real_transport_error(
     event (streaming branch) carries `duration_ms >= 1`. Covers
     chat.py:296-303 (streaming LLM-failure path).
     """
-    import httpx
     import logging
+
+    import httpx
 
     caplog.set_level(logging.WARNING, logger="chat")
     boom = _BoomGraph(httpx.ConnectError("ollama unreachable"))
