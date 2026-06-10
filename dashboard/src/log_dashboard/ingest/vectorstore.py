@@ -19,6 +19,7 @@ from urllib.parse import urlparse, urlunparse
 
 import chromadb
 import httpx
+from chromadb.config import Settings as ChromaClientSettings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
@@ -47,15 +48,29 @@ _PLACEHOLDER_PREFIXES = ("your_", "change_me")
 _OLLAMA_PROBE_TIMEOUT_SECONDS = 2.0
 
 
-def is_embeddings_disabled(settings: Settings) -> bool:
-    """True when Ollama at `OLLAMA_BASE_URL` is unreachable.
+def embeddings_state(settings: Settings) -> str:
+    """Three-valued readiness probe for Ollama embeddings.
+
+    Returns one of:
+    - `"ready"`     — daemon reachable AND both required models are loaded
+    - `"loading"`   — daemon reachable but `dashboard_llm_model` or
+                      `dashboard_embed_model` not yet present (e.g.,
+                      ollama-init is still pulling them on first boot)
+    - `"unreachable"` — daemon connection error, timeout, or non-200
 
     The dashboard must stay usable for `/api/logs` and `/api/status` even
-    when Ollama is down (ADR-006 spirit). When disabled, the lifespan skips
-    backfill + watcher, and `/api/logs/search` returns 503.
+    when Ollama isn't ready (ADR-006 spirit). When NOT `"ready"`, the
+    lifespan skips backfill + watcher (the `"loading"` state is handled
+    by the promotion watchdog which re-probes periodically and kicks off
+    backfill once the state flips to `"ready"`); `/api/logs/search`
+    returns 503; `/api/status` surfaces the state so the frontend can
+    show a friendlier "models still loading" hint instead of a generic
+    503.
 
-    Probes `{ollama_base_url}/api/tags` with a short timeout. Any non-200
-    response or connection error counts as disabled.
+    Probes `{ollama_base_url}/api/tags` with a short timeout, then parses
+    the response's `models` array to confirm both required models are
+    listed. The list contains every model the local daemon has pulled
+    into its cache, regardless of whether it's currently loaded into RAM.
     """
     url = settings.ollama_base_url.rstrip("/") + "/api/tags"
     safe_url = _strip_url_userinfo(settings.ollama_base_url)
@@ -68,15 +83,87 @@ def is_embeddings_disabled(settings: Settings) -> bool:
             error_class=type(exc).__name__,
             base_url=safe_url,
         )
-        return True
+        return "unreachable"
     if response.status_code != 200:
         log.info(
             "ollama_probe_non_200",
             status=response.status_code,
             base_url=safe_url,
         )
+        return "unreachable"
+
+    # `models` is an array of `{name, model, modified_at, size, digest, ...}`
+    # — both `name` and `model` carry the `model:tag` string (the API uses
+    # both keys across versions). Use `.get()` so a future schema tweak
+    # can't crash the probe.
+    #
+    # Round-4 fix: explicitly validate `models` is a list. Without this
+    # guard, an Ollama response with `{"models": null}` (or `{"models":
+    # "broken"}`, etc.) would make `body.get("models", [])` return the
+    # actual `None`/non-list value (default only fires on missing keys),
+    # then the comprehension would raise `TypeError` and the outer except
+    # would map to "unreachable" — wrong category for what's actually a
+    # transient Ollama issue. Surface as "loading" instead so the
+    # watchdog re-probes.
+    try:
+        body = response.json()
+    except (ValueError, AttributeError, TypeError) as exc:
+        log.info(
+            "ollama_tags_unparseable",
+            error_class=type(exc).__name__,
+            base_url=safe_url,
+        )
+        return "unreachable"
+
+    models = body.get("models") if isinstance(body, dict) else None
+    if not isinstance(models, list):
+        log.info(
+            "ollama_tags_models_field_not_list",
+            actual_type=type(models).__name__,
+            base_url=safe_url,
+        )
+        return "loading"
+
+    loaded = {
+        (entry.get("name") or entry.get("model") or "")
+        for entry in models
+        if isinstance(entry, dict)
+    }
+
+    required = (settings.dashboard_llm_model, settings.dashboard_embed_model)
+    missing = [m for m in required if not _is_model_loaded(m, loaded)]
+    if missing:
+        log.info(
+            "ollama_models_missing",
+            missing=missing,
+            loaded=sorted(loaded),
+            base_url=safe_url,
+        )
+        return "loading"
+    return "ready"
+
+
+def _is_model_loaded(required: str, loaded: set[str]) -> bool:
+    """True if `required` matches any name in `loaded`, treating
+    `name` and `name:latest` as the same model.
+
+    Ollama's `/api/tags` always emits the explicit `:latest` tag even
+    when the operator ran `ollama pull <name>` without a tag (which is
+    the most common case for `nomic-embed-text`). Without this
+    normalisation, `dashboard_embed_model="nomic-embed-text"` would
+    forever report `missing` against a `/api/tags` entry of
+    `"nomic-embed-text:latest"` — the watchdog would loop indefinitely,
+    embeddings would never come online, and the operator would have to
+    redeploy. This guard makes the probe robust to that tag elision.
+    """
+    if required in loaded:
+        return True
+    if ":" not in required and f"{required}:latest" in loaded:
         return True
     return False
+
+
+_UNPARSEABLE_URL_REDACTION = "<unparseable-url-redacted>"
 
 
 def _strip_url_userinfo(url: str) -> str:
@@ -88,11 +175,25 @@ def _strip_url_userinfo(url: str) -> str:
     stream. The DSN-style redactors in `credentials.py` cover
     `postgres://` shapes but not arbitrary HTTP URLs with userinfo, so the
     URL must be cleaned at the log-call site instead.
+
+    On parse failure (rare but possible for genuinely malformed input), the
+    function returns a constant redaction placeholder rather than the raw
+    input — v1.1.2 closes a silent-pass-through gap where a URL that
+    confused `urlparse` would otherwise echo its credentials unchanged.
+
+    Exception handling is intentionally broad (`except Exception`). This
+    is a credential-redaction boundary; any unhandled exception type
+    would otherwise let the raw URL leak through the unhandled-exception
+    path (logged with traceback). Defence-in-depth wins over fail-fast
+    here. Per the v1.1.2 /local-review reviewer (Security Medium):
+    `(ValueError, AttributeError)` covers urllib.parse's documented
+    surface but not future versions or unexpected inputs (e.g.,
+    TypeError on `None`).
     """
     try:
         parsed = urlparse(url)
-    except (ValueError, AttributeError):
-        return url
+    except Exception:
+        return _UNPARSEABLE_URL_REDACTION
     if not (parsed.username or parsed.password):
         return url
     host = parsed.hostname or ""
@@ -107,8 +208,8 @@ def _strip_url_userinfo(url: str) -> str:
         netloc = f"{netloc}:{parsed.port}"
     try:
         return urlunparse(parsed._replace(netloc=netloc))
-    except (ValueError, AttributeError):
-        return url
+    except Exception:
+        return _UNPARSEABLE_URL_REDACTION
 
 
 def configure_langsmith(settings: Settings) -> None:
@@ -146,7 +247,11 @@ def build_vectorstore(
         )
     if client is None:
         host, port = _parse_chroma_url(settings.chroma_url)
-        client = chromadb.HttpClient(host=host, port=port)
+        chroma_client_settings = ChromaClientSettings(
+            chroma_query_request_timeout_seconds=settings.chroma_timeout_seconds,
+            chroma_sysdb_request_timeout_seconds=settings.chroma_timeout_seconds,
+        )
+        client = chromadb.HttpClient(host=host, port=port, settings=chroma_client_settings)
     return Chroma(
         client=client,
         collection_name=settings.chroma_collection,
@@ -214,7 +319,7 @@ def upsert_entries(
         level_counts.update(e.level.value for e in new_entries)
         embedded_page_contents.extend(page_contents)
     if embedded > 0:
-        batch_wall_ms = int((time.perf_counter() - batch_started_at) * 1000)
+        batch_wall_ms = max(1, round((time.perf_counter() - batch_started_at) * 1000))
         batch_tokens = _count_embedding_tokens(embedded_page_contents)
         cumulative = _accumulate_session_totals(batch_tokens, batch_wall_ms)
         _emit_embed_summary(

@@ -197,7 +197,7 @@ async def post_chat(
         # context for programming errors just as much as for LLM transport
         # failures. The non-LLM branch then re-raises so the global 500
         # handler runs as before.
-        duration_ms = int((time.perf_counter() - started_at) * 1000)
+        duration_ms = max(1, round((time.perf_counter() - started_at) * 1000))
         if is_llm_api_error(exc):
             log.warning(
                 "chat_upstream_failure",
@@ -228,7 +228,7 @@ async def post_chat(
         dry_run=dry_run,
         citation_count=len(citations),
         tool_budget_exhausted=tool_budget_exhausted,
-        duration_ms=int((time.perf_counter() - started_at) * 1000),
+        duration_ms=max(1, round((time.perf_counter() - started_at) * 1000)),
     )
 
     return ChatResponse(
@@ -299,7 +299,7 @@ async def _stream_chat_events(
                 session_id=session_id,
                 error_class=type(exc).__name__,
                 streaming=True,
-                duration_ms=int((time.perf_counter() - started_at) * 1000),
+                duration_ms=max(1, round((time.perf_counter() - started_at) * 1000)),
             )
             yield _sse_event(
                 "error",
@@ -312,7 +312,7 @@ async def _stream_chat_events(
             "chat_stream_failed",
             session_id=session_id,
             error_class=type(exc).__name__,
-            duration_ms=int((time.perf_counter() - started_at) * 1000),
+            duration_ms=max(1, round((time.perf_counter() - started_at) * 1000)),
         )
         yield _sse_event("error", {"detail": "stream failed unexpectedly"})
         return
@@ -338,7 +338,7 @@ async def _stream_chat_events(
         citation_count=len(citations),
         tool_budget_exhausted=tool_budget_exhausted,
         streaming=True,
-        duration_ms=int((time.perf_counter() - started_at) * 1000),
+        duration_ms=max(1, round((time.perf_counter() - started_at) * 1000)),
     )
 
     # Re-use ChatResponse's serializer so the SSE `complete` event mirrors

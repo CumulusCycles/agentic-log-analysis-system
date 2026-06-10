@@ -113,6 +113,21 @@ class StatusResponse(BaseModel):
     scan_enabled: bool = False
     last_scan_at: datetime | None = None
     next_scan_at: datetime | None = None
+    # v1.1.2 Option A — three-valued Ollama readiness so the frontend can
+    # distinguish "models still pulling on a cold deploy" (transient, will
+    # become ready) from "Ollama is unreachable" (operator config issue).
+    # `"ready"` = backfill running / done; `"loading"` = ollama-init still
+    # pulling, promotion watchdog re-probing; `"unreachable"` = daemon down
+    # or URL wrong. The Log Explorer search 503 banner reads this field
+    # to pick the right message.
+    #
+    # Round-4 fix: default to `"unreachable"` (defensive), NOT `"ready"`.
+    # A missing field means the lifespan didn't set it — which can only
+    # happen on a programming bug or a test path that skips lifespan.
+    # Defaulting to `"unreachable"` surfaces that bug instead of hiding it
+    # behind a false "everything is fine." Aligned with the same
+    # defensive default in `routers/search.py` and `routers/status.py`.
+    embeddings_state: Literal["ready", "loading", "unreachable"] = "unreachable"
 
 
 # --- Phase 7d: semantic search ---
@@ -132,6 +147,11 @@ class LogsSearchRequest(BaseModel):
 class LogsSearchResponse(BaseModel):
     entries: list[LogEntry]
     scores: list[float]
+    # v1.1.2 — surface the partial-corpus window during initial backfill so
+    # clients can distinguish "no results in a fully-populated corpus" from
+    # "no results yet because Chroma is still being filled". Defaults False
+    # so older clients ignoring the field see no change.
+    partial_corpus: bool = False
 
 
 # --- PR 3: Agitator ---

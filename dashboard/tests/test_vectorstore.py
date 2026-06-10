@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from log_dashboard.config import Settings
@@ -10,7 +11,7 @@ from log_dashboard.ingest.vectorstore import (
     _SESSION_TOTALS,
     _strip_url_userinfo,
     build_vectorstore,
-    is_embeddings_disabled,
+    embeddings_state,
     metadata_to_log_entry,
     upsert_entries,
 )
@@ -52,47 +53,292 @@ def _entry(seq: int) -> LogEntry:
     )
 
 
-def test_is_embeddings_disabled_returns_true_when_ollama_unreachable() -> None:
-    """The test conftest defaults `OLLAMA_BASE_URL` to a closed port, so
-    `is_embeddings_disabled` should refuse the connection and return True
-    immediately."""
-    settings = _settings()
-    assert is_embeddings_disabled(settings) is True
+# v1.1.2 Option A — three-valued `embeddings_state` predicate. The
+# lifespan branches on these states (ready / loading / unreachable) to
+# decide whether to wire up the vectorstore eagerly, start the promotion
+# watchdog, or stay disabled.
 
 
-def test_is_embeddings_disabled_returns_true_on_non_200() -> None:
-    """A reachable URL that returns a non-200 status counts as disabled.
+def _build_fake_tags_client(status_code: int, json_body: dict | None) -> MagicMock:
+    fake_resp = MagicMock()
+    fake_resp.status_code = status_code
+    if json_body is not None:
+        fake_resp.json = MagicMock(return_value=json_body)
+    else:
+        fake_resp.json = MagicMock(side_effect=ValueError("non-json body"))
+    fake_client = MagicMock()
+    fake_client.__enter__ = MagicMock(return_value=fake_client)
+    fake_client.__exit__ = MagicMock(return_value=False)
+    fake_client.get = MagicMock(return_value=fake_resp)
+    return fake_client
 
-    Belt-and-braces for the case where some other service answers on the
-    Ollama port but isn't actually Ollama — the dashboard still degrades
-    cleanly rather than crashing in the embedder.
+
+def test_embeddings_state_ready_when_both_models_present() -> None:
+    """`/api/tags` lists both required models → `"ready"`. This is the
+    happy path the lifespan branches into to build the vectorstore + start
+    backfill immediately.
+
+    Round-4: the model entries carry every field a real Ollama
+    `/api/tags` response returns (`name`, `model`, `modified_at`, `size`,
+    `digest`, `details`). Future code that reads these extra fields will
+    work in tests without a shape mismatch with production.
     """
-    settings = _settings(ollama_base_url="http://example.invalid:11434")
+    from log_dashboard.ingest.vectorstore import embeddings_state
 
-    fake_resp = MagicMock()
-    fake_resp.status_code = 502
-    fake_client = MagicMock()
-    fake_client.__enter__ = MagicMock(return_value=fake_client)
-    fake_client.__exit__ = MagicMock(return_value=False)
-    fake_client.get = MagicMock(return_value=fake_resp)
-
-    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
-        assert is_embeddings_disabled(settings) is True
-
-
-def test_is_embeddings_disabled_returns_false_on_200() -> None:
-    """A reachable Ollama that returns 200 to `/api/tags` is healthy."""
     settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {
+                    "name": "llama3.1:8b",
+                    "model": "llama3.1:8b",
+                    "modified_at": "2026-06-09T12:00:00Z",
+                    "size": 4_661_211_808,
+                    "digest": "sha256:abc123def456",
+                    "details": {
+                        "format": "gguf",
+                        "family": "llama",
+                        "parameter_size": "8.0B",
+                        "quantization_level": "Q4_0",
+                    },
+                },
+                {
+                    "name": "nomic-embed-text",
+                    "model": "nomic-embed-text",
+                    "modified_at": "2026-06-09T12:00:00Z",
+                    "size": 274_302_450,
+                    "digest": "sha256:def789ghi012",
+                    "details": {
+                        "format": "gguf",
+                        "family": "nomic-bert",
+                        "parameter_size": "137M",
+                        "quantization_level": "F16",
+                    },
+                },
+                {"name": "other-model", "model": "other-model"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
 
-    fake_resp = MagicMock()
-    fake_resp.status_code = 200
+
+def test_embeddings_state_loading_when_models_missing() -> None:
+    """`/api/tags` returns 200 but neither required model is loaded → `"loading"`.
+    This is the cold-deploy window where ollama-init is still pulling.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(200, {"models": []})
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_ready_when_ollama_normalises_to_latest_tag() -> None:
+    """Ollama's `/api/tags` reports tagged names — even when the operator
+    pulled `nomic-embed-text` without an explicit tag, the response shows
+    `nomic-embed-text:latest`. The dashboard config carries the bare name
+    `nomic-embed-text` (matching `ollama pull` usage), so the probe MUST
+    treat `name` and `name:latest` as the same model. Without this guard
+    the watchdog loops indefinitely after a fresh model pull — the bug
+    that motivated the v1.1.2 round-4 cold-deploy live-validation fix.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    # Mirrors the actual /api/tags JSON observed on a fresh ollama-init pull.
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text:latest", "model": "nomic-embed-text:latest"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
+
+
+def test_embeddings_state_ready_when_explicit_latest_tag_in_settings() -> None:
+    """Inverse of the previous test — operator pulled `nomic-embed-text:latest`
+    explicitly AND configured it with the tag. Must also report ready.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(
+        ollama_base_url="http://ollama-stub:11434",
+        dashboard_embed_model="nomic-embed-text:latest",
+    )
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text:latest", "model": "nomic-embed-text:latest"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
+
+
+def test_embeddings_state_does_not_match_arbitrary_tag_substitution() -> None:
+    """The `:latest` normalisation is intentionally narrow — `llama3.1:8b`
+    (an EXPLICIT tag) must NOT silently match `llama3.1:latest` if that's
+    what's loaded. Pin this so a future "be lenient" refactor doesn't
+    mistakenly accept a wrong-version model.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:latest", "model": "llama3.1:latest"},
+                {"name": "nomic-embed-text:latest", "model": "nomic-embed-text:latest"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        # `llama3.1:8b` is missing (only `llama3.1:latest` is loaded).
+        assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_loading_when_only_llm_present() -> None:
+    """Partial-pull edge case — LLM is in but embed model isn't.
+    Still `"loading"` (need BOTH).
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200, {"models": [{"name": "llama3.1:8b", "model": "llama3.1:8b"}]}
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_unreachable_on_connection_error() -> None:
+    """Daemon unreachable (connection refused / DNS / timeout) → `"unreachable"`.
+    The lifespan does NOT start the promotion watchdog for this state — a
+    bad URL won't fix itself.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://127.0.0.1:1")
+    # The conftest already points OLLAMA_BASE_URL at a closed port, but
+    # we patch httpx.Client explicitly here so the test is self-contained.
     fake_client = MagicMock()
     fake_client.__enter__ = MagicMock(return_value=fake_client)
     fake_client.__exit__ = MagicMock(return_value=False)
-    fake_client.get = MagicMock(return_value=fake_resp)
-
+    fake_client.get = MagicMock(side_effect=httpx.ConnectError("refused"))
     with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
-        assert is_embeddings_disabled(settings) is False
+        assert embeddings_state(settings) == "unreachable"
+
+
+def test_embeddings_state_unreachable_on_non_200() -> None:
+    """Any non-200 from `/api/tags` (auth required, etc.) → `"unreachable"`."""
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(403, None)
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "unreachable"
+
+
+def test_embeddings_state_unreachable_on_unparseable_body() -> None:
+    """200 with non-JSON body → `"unreachable"` (treats as broken probe)."""
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(200, None)
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "unreachable"
+
+
+def test_embeddings_state_loading_when_models_field_is_null() -> None:
+    """Round-4 fix: `{"models": null}` from Ollama (transient state during
+    startup, or older Ollama versions) MUST return `"loading"` so the
+    watchdog re-probes — NOT `"unreachable"` which would stop the
+    promotion loop forever.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(200, {"models": None})
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_loading_when_models_field_is_not_a_list() -> None:
+    """Round-4 fix: `{"models": "bogus"}` or `{"models": 42}` from a
+    misbehaving upstream MUST also return `"loading"`. Defensive — the
+    probe shouldn't crash on a malformed but still-200 response.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    for malformed in ("bogus", 42, {"nested": "object"}):
+        client = _build_fake_tags_client(200, {"models": malformed})
+        with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+            assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_skips_non_dict_model_entries() -> None:
+    """Round-4 fix: defensive `isinstance(entry, dict)` guard in the set
+    comprehension is exercised here. A `/api/tags` response with mixed
+    dict + non-dict entries (e.g., string or int from a buggy upstream)
+    must filter the non-dicts and still evaluate the dicts that ARE
+    present. With both required models present in valid dict form,
+    state is `"ready"` despite the noise entries.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                "stray-string-not-a-dict",  # filtered by isinstance guard
+                42,  # also filtered
+                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
+                None,  # also filtered
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
+
+
+def test_embeddings_state_loading_respects_custom_model_settings() -> None:
+    """The probe reads `dashboard_llm_model` + `dashboard_embed_model` from
+    Settings, so a future qwen2.5:14b trial needs the names updated in env,
+    not the predicate code. This pins the wiring.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(
+        ollama_base_url="http://ollama-stub:11434",
+        dashboard_llm_model="qwen2.5:14b",
+        dashboard_embed_model="nomic-embed-text",
+    )
+    # `/api/tags` carries the old llama3.1 but not the qwen — `"loading"`.
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
 
 
 def test_build_vectorstore_against_in_memory_client(fake_embeddings) -> None:
@@ -238,6 +484,42 @@ def test_upsert_entries_prints_level_count_table_after_embedding(
     assert "Session total (since startup)" in captured.out
 
 
+def test_upsert_entries_batch_wall_ms_is_at_least_one(fake_vectorstore, capfd) -> None:
+    """v1.1.2 — fast batches (a single entry on a fake vectorstore can
+    complete sub-millisecond on modern hardware) MUST report wall-time
+    `>= 1 ms` in the embed-summary table. Without `max(1, round(...))`,
+    `int()` floor-truncated sub-ms elapsed time to `0` — confusing
+    operators reading the table (`0 ms` reads like "didn't measure").
+
+    Asserts via the stdout print pipeline (matches the existing tests in
+    this file). The Wall row format is `| Wall    |             N ms |`
+    where N is right-justified in a 13-char column.
+    """
+    import re
+
+    embedded = upsert_entries(fake_vectorstore, [_entry(0)])
+    assert embedded == 1
+
+    out = capfd.readouterr().out
+
+    # Find the Wall row in the table — it always renders as `| Wall    |  <N> ms |`.
+    wall_match = re.search(r"\|\s*Wall\s*\|\s*(\d+)\s*ms\s*\|", out)
+    assert wall_match is not None, "Wall row missing from embed-summary table"
+    batch_wall_ms = int(wall_match.group(1))
+    # `max(1, round(...))` guarantees a measured operation always shows
+    # at least 1ms; 0 is reserved for "not measured" (which is unreachable
+    # here because the embed loop completed).
+    assert batch_wall_ms >= 1, f"expected batch_wall_ms >= 1, got {batch_wall_ms}"
+
+    # The session-totals footer also surfaces a wall-time number — same
+    # truncation risk if the running total accumulated `0` from a fast
+    # first batch. Format: `Session total (since startup): N tokens · N ms`.
+    session_match = re.search(r"Session total .*?(\d+)\s+ms", out)
+    assert session_match is not None, "session-totals footer missing"
+    session_wall_ms = int(session_match.group(1))
+    assert session_wall_ms >= 1, f"expected session_wall_ms >= 1, got {session_wall_ms}"
+
+
 def test_upsert_entries_accumulates_session_totals_across_calls(fake_vectorstore, capfd) -> None:
     """Two successive upserts (different content) drive the running session
     total — the second table's session row should show MORE tokens than
@@ -380,6 +662,82 @@ def test_strip_url_userinfo_passthrough_for_garbage_input() -> None:
     assert _strip_url_userinfo("///") == "///"
 
 
+def test_strip_url_userinfo_redacts_on_urlparse_failure(monkeypatch) -> None:
+    """v1.1.2: if `urlparse` itself raises (rare but possible on truly
+    malformed input), the function MUST return a constant placeholder
+    rather than the original input — otherwise a credentialed URL that
+    confuses `urlparse` would silently echo its credentials.
+
+    v1.1.2 round-3 — also asserts the patched `urlparse` actually fires.
+    Without the call-count guard, a future refactor that stops calling
+    `urlparse` would silently slot the patch in but never trigger it,
+    masking the redaction-path test as a no-op.
+    """
+    import log_dashboard.ingest.vectorstore as vs_mod
+
+    calls: list[str] = []
+
+    def _boom(arg: str):
+        calls.append(arg)
+        raise ValueError("simulated urlparse failure")
+
+    monkeypatch.setattr(vs_mod, "urlparse", _boom)
+    out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert calls, "urlparse was never called — redaction path not exercised"
+    assert out == "<unparseable-url-redacted>"
+    assert "leaky_user" not in out
+    assert "leaky_pass" not in out
+
+
+def test_strip_url_userinfo_redacts_on_urlunparse_failure(monkeypatch) -> None:
+    """v1.1.2: if `urlunparse` raises during netloc reassembly, the
+    function MUST return the constant placeholder rather than the
+    original input. Same credential-echo risk as the urlparse path.
+
+    v1.1.2 round-3 — call-count guard mirrors the urlparse-failure test.
+    """
+    import log_dashboard.ingest.vectorstore as vs_mod
+
+    calls: list[object] = []
+
+    def _boom(arg):
+        calls.append(arg)
+        raise ValueError("simulated urlunparse failure")
+
+    monkeypatch.setattr(vs_mod, "urlunparse", _boom)
+    out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert calls, "urlunparse was never called — redaction path not exercised"
+    assert out == "<unparseable-url-redacted>"
+    assert "leaky_user" not in out
+    assert "leaky_pass" not in out
+
+
+def test_strip_url_userinfo_redacts_on_unexpected_exception_type(monkeypatch) -> None:
+    """v1.1.2 post-review hardening — the except clause was broadened to
+    `except Exception` so future Python versions or unexpected input
+    types can't slip past the (ValueError, AttributeError) tuple. This
+    test pins a non-tuple exception type (RuntimeError) and verifies the
+    redaction still fires.
+
+    v1.1.2 round-3 — call-count guard mirrors the other two parse-failure
+    tests.
+    """
+    import log_dashboard.ingest.vectorstore as vs_mod
+
+    calls: list[str] = []
+
+    def _boom(arg: str):
+        calls.append(arg)
+        raise RuntimeError("hypothetical future-Python urlparse error")
+
+    monkeypatch.setattr(vs_mod, "urlparse", _boom)
+    out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert calls, "urlparse was never called — redaction path not exercised"
+    assert out == "<unparseable-url-redacted>"
+    assert "leaky_user" not in out
+    assert "leaky_pass" not in out
+
+
 def test_strip_url_userinfo_preserves_ipv6_brackets() -> None:
     """IPv6 hosts use bracket syntax (`[::1]`). The redactor must
     preserve the brackets — without them, the URL becomes malformed
@@ -410,9 +768,9 @@ def test_strip_url_userinfo_leaves_query_string_unchanged() -> None:
 
 
 def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, caplog) -> None:
-    """End-to-end guarantee: `is_embeddings_disabled` must NOT emit the
-    raw userinfo on the structured log line, even when the probe fails
-    against a credentialed URL.
+    """End-to-end guarantee: `embeddings_state` must NOT emit the raw
+    userinfo on the structured log line, even when the probe fails against
+    a credentialed URL.
 
     Constructs a Settings object pointing at an unroutable URL with
     credentials, calls the probe, and asserts no part of the credential
@@ -423,7 +781,7 @@ def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, 
     import logging
 
     caplog.set_level(logging.INFO)
-    assert is_embeddings_disabled(settings) is True
+    assert embeddings_state(settings) == "unreachable"
 
     # Defensive: check the message AND every value in the record dict
     # individually, in case a future structlog formatter wraps a value
@@ -468,3 +826,58 @@ def test_build_vectorstore_forwards_timeout_to_ollama_embeddings(monkeypatch) ->
     assert captured.get("client_kwargs") == {"timeout": 77}
     assert captured.get("base_url") == settings.ollama_base_url
     assert captured.get("model") == settings.dashboard_embed_model
+
+
+def test_build_vectorstore_forwards_chroma_timeout_to_http_client(
+    monkeypatch, fake_embeddings
+) -> None:
+    """v1.1.2 — `chroma_timeout_seconds` MUST reach the underlying
+    `chromadb.HttpClient` via `ChromaClientSettings`. A typo on the
+    setting name (e.g., `chroma_query_request_timeoutsec_onds`) would
+    silently no-op — `chromadb.config.Settings` accepts arbitrary kwargs
+    that don't match a defined field, which would mean the timeout never
+    binds to httpx.
+
+    Asserts the spy's captured `settings` arg has BOTH the query and
+    sysdb request-timeout fields set to the configured value. Closes the
+    integration gap that the bounds test (`test_settings_bounds.py`)
+    doesn't cover — that test only pins env→Settings, not Settings→Chroma.
+    """
+    captured: dict[str, object] = {}
+
+    class _FakeChromaClient:
+        """Stand-in for `chromadb.HttpClient` — captures the constructor
+        kwargs and exposes the minimum surface `Chroma()` needs to wrap
+        it (collection access via `get_or_create_collection`).
+        """
+
+        def __init__(self, host=None, port=None, settings=None, **kwargs):  # noqa: ANN001
+            captured["host"] = host
+            captured["port"] = port
+            captured["settings"] = settings
+            captured["extra"] = kwargs
+
+        def get_or_create_collection(self, *args, **kwargs):  # noqa: ANN001
+            # langchain-chroma calls this during Chroma() init; return a
+            # minimal stub that won't crash subsequent .add/.query attempts.
+            import chromadb
+
+            real = chromadb.Client()
+            return real.get_or_create_collection(*args, **kwargs)
+
+    monkeypatch.setattr("log_dashboard.ingest.vectorstore.chromadb.HttpClient", _FakeChromaClient)
+
+    settings = _settings(
+        chroma_timeout_seconds=42,
+        chroma_url="http://chroma-test:8000",
+        chroma_collection="vs-chroma-timeout-test",
+    )
+    # No `client=` so the HttpClient construction path runs.
+    build_vectorstore(settings, embedding_function=fake_embeddings)
+
+    assert captured.get("host") == "chroma-test"
+    assert captured.get("port") == 8000
+    chroma_settings = captured.get("settings")
+    assert chroma_settings is not None, "ChromaClientSettings must be forwarded to HttpClient"
+    assert chroma_settings.chroma_query_request_timeout_seconds == 42
+    assert chroma_settings.chroma_sysdb_request_timeout_seconds == 42

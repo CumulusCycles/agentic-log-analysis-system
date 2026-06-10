@@ -130,12 +130,23 @@ services:
   # permanently unstartable (depends_on requires this service to complete
   # successfully). Each command prints a clear marker before exiting so
   # the operator's `docker logs` shows which pull failed.
+  #
+  # v1.1.2 — `condition: service_started` (NOT service_healthy). On a truly
+  # cold `ollama-data` volume, `ollama`'s healthcheck (post-v1.1.1) requires
+  # both models to be loaded, but `ollama-init` is what pulls them — a
+  # service_healthy dependency would deadlock the cold-start sequence. The
+  # daemon listens on its port within seconds of process start, so
+  # `service_started` is sufficient for `ollama pull` to succeed against it.
+  # The dashboard's gate downstream still uses `service_healthy` on `ollama`
+  # AND `service_completed_successfully` on `ollama-init`, so the v1.1.1
+  # race-protection guarantee (no chat call before models are loaded) is
+  # preserved at the consumer.
   ollama-init:
     image: ollama/ollama:latest
     platform: linux/arm64
     depends_on:
       ollama:
-        condition: service_healthy
+        condition: service_started
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]
@@ -286,10 +297,28 @@ services:
     depends_on:
       chroma:
         condition: service_healthy
+      # v1.1.2 Option A — relaxed from the v1.1.1 `service_healthy` /
+      # `service_completed_successfully` chain. Previously the dashboard
+      # waited for ollama-init's full model pull to finish (5-15 min on a
+      # cold `ollama-data` volume) before its container left `Created`.
+      # The dashboard's own lifespan now handles "Ollama up but models not
+      # yet loaded" gracefully via the embeddings-promotion watchdog: it
+      # comes up in ~30s, /api/logs + /api/status work immediately, and
+      # /api/logs/search + /api/chat surface a "models still loading"
+      # state until the watchdog promotes them. `service_started` is
+      # sufficient since the dashboard only needs the daemon process to
+      # exist (its own probe checks model availability).
       ollama:
-        condition: service_healthy
+        condition: service_started
+      # `service_started` (not `service_completed_successfully`) ensures
+      # `docker compose up -d log-dashboard` (selective start) pulls
+      # ollama-init into the same batch so the model pull begins
+      # immediately — without this, a selective start would leave
+      # ollama-init orphaned and the watchdog would loop forever waiting
+      # for models nothing will pull. The dashboard still doesn't wait
+      # on ollama-init to complete; the watchdog handles late arrival.
       ollama-init:
-        condition: service_completed_successfully
+        condition: service_started
     networks:
       - insurance-net
 

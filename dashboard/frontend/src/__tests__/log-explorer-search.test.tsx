@@ -148,12 +148,17 @@ describe("LogExplorer (7d semantic search)", () => {
     expect(cells[1]).toHaveTextContent("0.780");
   });
 
-  it("shows a friendly error when /api/logs/search returns 503", async () => {
+  it("shows the OLLAMA_BASE_URL error when /api/logs/search returns 503 (unreachable)", async () => {
+    // v1.1.2 Option A — the LogExplorer now renders `err.detail` verbatim so
+    // the backend's two distinct 503 messages flow through. This test pins
+    // the `unreachable` path (Ollama URL wrong / daemon down).
     const logsResp: LogsResponse = { entries: [], next_before: null };
     const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
       const u = String(url);
       if (u.includes("/api/logs/search")) {
-        return Promise.resolve(errorResponse(503, "semantic search is unavailable"));
+        return Promise.resolve(
+          errorResponse(503, "semantic search is unavailable — OLLAMA_BASE_URL is unreachable"),
+        );
       }
       return Promise.resolve(jsonResponse(logsResp));
     });
@@ -163,5 +168,120 @@ describe("LogExplorer (7d semantic search)", () => {
     await userEvent.type(screen.getByTestId("filter-query"), "auth");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/OLLAMA_BASE_URL/i);
+  });
+
+  it("shows the warming-up message when /api/logs/search returns 503 (loading)", async () => {
+    // v1.1.2 Option A — during the cold-deploy window the backend returns
+    // 503 with a "warming up — try again in a minute" detail. The Log
+    // Explorer must surface that message verbatim so operators understand
+    // the search is *transiently* unavailable, not broken.
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(
+          errorResponse(
+            503,
+            "semantic search is warming up — Ollama models are still being pulled. Try again in a minute.",
+          ),
+        );
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    // Round-4: pin the full backend detail string so a typo on either
+    // side (a stray space, a smart-quote, a missing word) surfaces as
+    // a test failure — backend + frontend strings must stay in lockstep.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "semantic search is warming up — Ollama models are still being pulled. Try again in a minute.",
+    );
+    expect(alert).not.toHaveTextContent(/OLLAMA_BASE_URL/i);
+  });
+
+  it("renders the partial-corpus hint when the search response says backfill is still running", async () => {
+    // v1.1.2 — the backend reports `partial_corpus: true` while the
+    // lifespan backfill is still populating Chroma. The Log Explorer
+    // shows an inline "indexing in progress" hint so empty / sparse
+    // results during cold-start don't read as "no matches".
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const searchResp: LogsSearchResponse = {
+      entries: [entry({ id: "fnol:1", event: "auth_failed" })],
+      scores: [0.5],
+      partial_corpus: true,
+    };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(jsonResponse(searchResp));
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    const hint = await screen.findByTestId("partial-corpus-hint");
+    expect(hint).toHaveTextContent(/indexing/i);
+  });
+
+  it("does not render the partial-corpus hint when the search response is complete", async () => {
+    // Inverse of the previous test — the hint MUST NOT leak into the
+    // steady-state UI. `partial_corpus: false` (or absent) keeps the
+    // panel clean.
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const searchResp: LogsSearchResponse = {
+      entries: [entry({ id: "fnol:1", event: "auth_failed" })],
+      scores: [0.5],
+      partial_corpus: false,
+    };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(jsonResponse(searchResp));
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    // Wait for the score column so we know the search response landed.
+    await screen.findByTestId("score-header");
+    expect(screen.queryByTestId("partial-corpus-hint")).toBeNull();
+  });
+
+  it("renders the partial-corpus hint with EMPTY results — the cold-start UX case", async () => {
+    // v1.1.2 post-review — the most operator-confusing scenario:
+    // partial_corpus: true AND entries: []. Without the hint, the
+    // empty-state would read as "no matches" when the truth is
+    // "still indexing." This test pins the cold-start UX explicitly.
+    const logsResp: LogsResponse = { entries: [], next_before: null };
+    const searchResp: LogsSearchResponse = {
+      entries: [],
+      scores: [],
+      partial_corpus: true,
+    };
+    const fetchSpy = vi.fn().mockImplementation((url: string | URL) => {
+      const u = String(url);
+      if (u.includes("/api/logs/search")) {
+        return Promise.resolve(jsonResponse(searchResp));
+      }
+      return Promise.resolve(jsonResponse(logsResp));
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderExplorer();
+    await userEvent.type(screen.getByTestId("filter-query"), "auth");
+
+    const hint = await screen.findByTestId("partial-corpus-hint");
+    expect(hint).toBeInTheDocument();
+    expect(hint).toHaveTextContent(/indexing/i);
   });
 });

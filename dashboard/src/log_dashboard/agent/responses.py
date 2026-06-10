@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 from langchain_core.messages import AIMessage
+from ollama import ResponseError as OllamaResponseError
 
 from ..credentials import sanitize_log_raw
 from ..schemas import Citation
@@ -26,6 +27,12 @@ from ..schemas import Citation
 # misclassify any future non-LLM httpx caller in the graph (e.g., a tool
 # that fetches an upstream URL) as a 502. The narrowed set keeps the
 # 502-mapping scoped to actual LLM-transport failures.
+#
+# v1.1.2 — `OllamaResponseError` (the `ollama` python client's non-200
+# reply class) is imported directly rather than matched by string-name +
+# module check. `langchain-ollama` is now a required dep (Phase 8 /
+# ADR-017) and transitively requires `ollama`, so the import is safe and
+# the string match is gone.
 _LLM_API_ERROR_TYPES: tuple[type[BaseException], ...] = (
     httpx.ConnectError,
     httpx.ConnectTimeout,
@@ -40,6 +47,7 @@ _LLM_API_ERROR_TYPES: tuple[type[BaseException], ...] = (
     # duplicate.
     TimeoutError,
     ConnectionError,
+    OllamaResponseError,
 )
 
 
@@ -102,20 +110,11 @@ def is_llm_api_error(exc: BaseException) -> bool:
     is built on `httpx`, so connection errors and timeouts come through as
     specific `httpx.HTTPError` subclasses (see `_LLM_API_ERROR_TYPES`).
     The underlying `ollama` python client also raises `ResponseError` on
-    non-200 replies; we match it by module + class name to avoid an
-    import-time dependency.
+    non-200 replies — v1.1.2 imports the type directly via
+    `OllamaResponseError` in `_LLM_API_ERROR_TYPES`, replacing the
+    earlier string-name match.
     """
-    if isinstance(exc, _LLM_API_ERROR_TYPES):
-        return True
-    # Match the `ollama` client's `ResponseError` by module + class name
-    # without an import. Tightened to `module == "ollama"` or
-    # `startswith("ollama.")` so a third-party `ollama_utils.ResponseError`
-    # wouldn't false-positive.
-    cls = type(exc)
-    module = getattr(cls, "__module__", "") or ""
-    if (module == "ollama" or module.startswith("ollama.")) and cls.__name__ == "ResponseError":
-        return True
-    return False
+    return isinstance(exc, _LLM_API_ERROR_TYPES)
 
 
 def count_tokens(text: str) -> int:

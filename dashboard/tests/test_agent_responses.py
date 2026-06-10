@@ -1,9 +1,11 @@
 """Unit tests for `agent/responses.py` helpers.
 
-Focused on the Phase 8 / ADR-017 changes:
+Focused on the Phase 8 / ADR-017 changes (with v1.1.2 refinement):
 - `is_llm_api_error` — broadened from the Phase 7 `openai.APIError` check
-  to httpx subclasses + `ollama.ResponseError` matched by module + class
-  name (no import dependency).
+  to httpx subclasses + the real `ollama.ResponseError` type (v1.1.2:
+  imported directly via `OllamaResponseError`; the earlier string-name +
+  module match was replaced because `langchain-ollama` is now a required
+  dep and transitively pulls `ollama`).
 - `count_tokens` — heuristic `len(text) // 4`, dropped the `model` arg.
 """
 
@@ -11,6 +13,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
+from ollama import ResponseError as OllamaResponseError
 
 from log_dashboard.agent.responses import count_tokens, is_llm_api_error
 
@@ -55,31 +58,40 @@ def test_is_llm_api_error_true_for_connectionerror() -> None:
     assert is_llm_api_error(ConnectionError("refused")) is True
 
 
-def test_is_llm_api_error_true_for_ollama_response_error() -> None:
-    """The `ollama` python client raises `ResponseError` on non-200
-    replies. We match by module + class name to avoid an import-time
-    dependency on the `ollama` package."""
-    response_error_cls = type("ResponseError", (Exception,), {"__module__": "ollama"})
-    exc = response_error_cls("model not found")
+def test_is_llm_api_error_true_for_real_ollama_response_error() -> None:
+    """v1.1.2 — the `ollama` python client raises `ResponseError` on
+    non-200 replies. We now import the real type directly rather than
+    matching by module + class name, so `isinstance` catches it via
+    `_LLM_API_ERROR_TYPES` membership.
+    """
+    exc = OllamaResponseError("model not found", 404)
     assert is_llm_api_error(exc) is True
 
 
-def test_is_llm_api_error_true_for_ollama_submodule_response_error() -> None:
-    """`ollama.client.ResponseError` and similar submodule paths must
-    also match (the `startswith("ollama.")` branch)."""
-    response_error_cls = type("ResponseError", (Exception,), {"__module__": "ollama.client"})
-    exc = response_error_cls("boom")
+def test_is_llm_api_error_true_for_ollama_response_error_subclass() -> None:
+    """A user-defined subclass of `ollama.ResponseError` must still match.
+    `isinstance` walks the MRO; the v1.1.1 string-name match did not, so
+    this is a small correctness gain over the previous implementation.
+    """
+
+    class _CustomOllamaResponseError(OllamaResponseError):
+        pass
+
+    exc = _CustomOllamaResponseError("subclass boom", 500)
     assert is_llm_api_error(exc) is True
 
 
-def test_is_llm_api_error_false_for_unrelated_module_named_response_error() -> None:
-    """A third-party package whose module name STARTS WITH `ollama` but
-    isn't the real Ollama client (e.g., `ollama_utils.ResponseError`)
-    must NOT be misclassified. Guards against the over-loose
-    `startswith("ollama")` match."""
-    response_error_cls = type("ResponseError", (Exception,), {"__module__": "ollama_utils"})
-    exc = response_error_cls("unrelated")
-    assert is_llm_api_error(exc) is False
+def test_is_llm_api_error_false_for_impostor_named_response_error() -> None:
+    """A third-party class merely NAMED `ResponseError` (or living under
+    a module path that starts with `ollama`) must NOT be misclassified.
+    The v1.1.1 string-match-by-name implementation would have caught these;
+    the v1.1.2 direct-type check correctly rejects them."""
+    impostor_cls = type("ResponseError", (Exception,), {"__module__": "ollama_utils"})
+    assert is_llm_api_error(impostor_cls("unrelated")) is False
+    # Even a module path that starts with `ollama.` does not match without
+    # actually being a subclass of the real type.
+    look_alike_cls = type("ResponseError", (Exception,), {"__module__": "ollama.fake"})
+    assert is_llm_api_error(look_alike_cls("masquerade")) is False
 
 
 def test_is_llm_api_error_false_for_value_error() -> None:
@@ -102,6 +114,9 @@ def test_llm_api_error_types_tuple_contents() -> None:
 
     Cardinality is asserted explicitly so a swap (drop one, add another)
     that keeps the size constant doesn't silently pass on set equality.
+
+    v1.1.2 — added `OllamaResponseError` (size 8 → 9) when the string-name
+    match was retired.
     """
     import httpx
 
@@ -116,8 +131,9 @@ def test_llm_api_error_types_tuple_contents() -> None:
         httpx.HTTPStatusError,
         TimeoutError,
         ConnectionError,
+        OllamaResponseError,
     }
-    assert len(_LLM_API_ERROR_TYPES) == 8
+    assert len(_LLM_API_ERROR_TYPES) == 9
     assert set(_LLM_API_ERROR_TYPES) == expected
 
 

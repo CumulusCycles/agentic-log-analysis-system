@@ -28,6 +28,8 @@ from langchain_core.documents import Document
 
 from log_dashboard.ingest.embeddings import make_doc_id
 
+from .conftest import _extract_chat_log_event
+
 
 class _BoomGraph:
     """Stand-in for a compiled LangGraph whose `ainvoke` raises a
@@ -54,12 +56,20 @@ class _BoomGraph:
 
 @pytest.mark.asyncio
 async def test_chat_returns_500_when_graph_raises_non_llm_exception(
-    client, valid_token, monkeypatch
+    client, valid_token, monkeypatch, caplog
 ) -> None:
     """A `ValueError` from inside `graph.ainvoke` must NOT be mapped to
     502. With the narrowed `is_llm_api_error`, only specific httpx
     transport failures + `ollama.ResponseError` qualify; everything else
-    bubbles to the global 500 handler."""
+    bubbles to the global 500 handler.
+
+    v1.1.2 post-review — also asserts the `chat_unexpected_failure` log
+    event carries `duration_ms >= 1`. Covers chat.py:200 + 212-217
+    (non-streaming error path) for the `max(1, round())` regression.
+    """
+    import logging
+
+    caplog.set_level(logging.WARNING, logger="chat")
     boom = _BoomGraph(ValueError("not an LLM error"))
 
     # The client fixture's lifespan already built the real graph; swap
@@ -76,16 +86,29 @@ async def test_chat_returns_500_when_graph_raises_non_llm_exception(
     )
     assert response.status_code == 500
 
+    event = _extract_chat_log_event(caplog, "chat_unexpected_failure")
+    assert event is not None, "chat_unexpected_failure log not emitted"
+    assert isinstance(event["duration_ms"], int)
+    assert event["duration_ms"] >= 1
+
 
 @pytest.mark.asyncio
 async def test_chat_still_returns_502_for_real_llm_transport_error(
-    client, valid_token, monkeypatch
+    client, valid_token, monkeypatch, caplog
 ) -> None:
     """Belt-and-braces sibling of the test above — confirms the 502 path
     isn't accidentally broken by the narrowing. An `httpx.ConnectError`
-    DOES match `is_llm_api_error` and should surface as 502, not 500."""
+    DOES match `is_llm_api_error` and should surface as 502, not 500.
+
+    v1.1.2 post-review — also asserts the `chat_upstream_failure` log
+    event carries `duration_ms >= 1`. Covers chat.py:200 + 202-207
+    (non-streaming LLM-failure path).
+    """
+    import logging
+
     import httpx
 
+    caplog.set_level(logging.WARNING, logger="chat")
     boom = _BoomGraph(httpx.ConnectError("ollama unreachable"))
     app = client._transport.app  # noqa: SLF001
     monkeypatch.setattr(app.state, "agent_graph", boom)
@@ -98,6 +121,11 @@ async def test_chat_still_returns_502_for_real_llm_transport_error(
     assert response.status_code == 502
     assert "upstream LLM" in response.json()["detail"]
 
+    event = _extract_chat_log_event(caplog, "chat_upstream_failure")
+    assert event is not None, "chat_upstream_failure log not emitted"
+    assert isinstance(event["duration_ms"], int)
+    assert event["duration_ms"] >= 1
+
 
 @pytest_asyncio.fixture
 async def errors_client_with_chroma(monkeypatch, fake_vectorstore):
@@ -107,7 +135,10 @@ async def errors_client_with_chroma(monkeypatch, fake_vectorstore):
     """
     from log_dashboard import main as main_module
 
-    monkeypatch.setattr(main_module, "is_embeddings_disabled", lambda _settings: False)
+    # v1.1.2 Option A — lifespan now calls `embeddings_state` (three-valued)
+    # instead of `is_embeddings_disabled` (binary). Patch the new function
+    # to report "ready" so the lifespan wires up the vectorstore + agent.
+    monkeypatch.setattr(main_module, "embeddings_state", lambda _settings: "ready")
     monkeypatch.setattr(main_module, "build_vectorstore", lambda _settings, **_kw: fake_vectorstore)
     monkeypatch.setattr(main_module, "run_initial_backfill", lambda *_args, **_kw: [])
 
@@ -229,13 +260,21 @@ def _sse_error_detail(body: bytes) -> str:
 
 @pytest.mark.asyncio
 async def test_chat_streaming_emits_generic_error_for_non_llm_exception(
-    client, valid_token, monkeypatch
+    client, valid_token, monkeypatch, caplog
 ) -> None:
     """When `streaming=true` and the graph raises a non-LLM exception
     (e.g., ValueError from a buggy tool path), `_stream_chat_events`
     must NOT label it as "upstream LLM unavailable" — that detail is
     reserved for the LLM-transport-error branch. The generic
-    `stream failed unexpectedly` detail covers everything else."""
+    `stream failed unexpectedly` detail covers everything else.
+
+    v1.1.2 post-review — also asserts the `chat_stream_failed` log
+    event carries `duration_ms >= 1`. Covers chat.py:311-316
+    (streaming non-LLM error path).
+    """
+    import logging
+
+    caplog.set_level(logging.WARNING, logger="chat")
     boom = _BoomGraph(ValueError("not an LLM error"))
     app = client._transport.app  # noqa: SLF001
     monkeypatch.setattr(app.state, "agent_graph", boom)
@@ -257,17 +296,30 @@ async def test_chat_streaming_emits_generic_error_for_non_llm_exception(
     ), "non-LLM exceptions must not be mis-labeled as LLM-transport failures"
     assert "stream failed" in detail
 
+    event = _extract_chat_log_event(caplog, "chat_stream_failed")
+    assert event is not None, "chat_stream_failed log not emitted"
+    assert isinstance(event["duration_ms"], int)
+    assert event["duration_ms"] >= 1
+
 
 @pytest.mark.asyncio
 async def test_chat_streaming_emits_upstream_llm_error_for_real_transport_error(
-    client, valid_token, monkeypatch
+    client, valid_token, monkeypatch, caplog
 ) -> None:
     """Sibling: the SSE error-event path correctly labels real LLM
     transport failures (httpx.ConnectError) with the "upstream LLM
     unavailable" copy. Regression guard so the narrowed
-    `is_llm_api_error` doesn't close this path."""
+    `is_llm_api_error` doesn't close this path.
+
+    v1.1.2 post-review — also asserts the `chat_upstream_failure` log
+    event (streaming branch) carries `duration_ms >= 1`. Covers
+    chat.py:296-303 (streaming LLM-failure path).
+    """
+    import logging
+
     import httpx
 
+    caplog.set_level(logging.WARNING, logger="chat")
     boom = _BoomGraph(httpx.ConnectError("ollama unreachable"))
     app = client._transport.app  # noqa: SLF001
     monkeypatch.setattr(app.state, "agent_graph", boom)
@@ -282,3 +334,9 @@ async def test_chat_streaming_emits_upstream_llm_error_for_real_transport_error(
 
     detail = _sse_error_detail(response.content)
     assert "upstream LLM" in detail
+
+    event = _extract_chat_log_event(caplog, "chat_upstream_failure")
+    assert event is not None, "chat_upstream_failure log (streaming) not emitted"
+    assert isinstance(event["duration_ms"], int)
+    assert event["duration_ms"] >= 1
+    assert event.get("streaming") is True

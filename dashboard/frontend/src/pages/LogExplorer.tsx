@@ -39,6 +39,11 @@ export function LogExplorer() {
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // v1.1.2 — surfaced from the search response when the backend's
+  // backfill task is still populating Chroma. Shows an "indexing in
+  // progress" hint above the empty-state row so a cold-start blank
+  // result doesn't read as "no matches".
+  const [partialCorpus, setPartialCorpus] = useState(false);
 
   // Debounce the search input so every keystroke doesn't trigger an embedding
   // round-trip. 300ms feels responsive but coalesces typing bursts.
@@ -70,6 +75,7 @@ export function LogExplorer() {
           });
           setEntries(res.entries);
           setScores(res.scores);
+          setPartialCorpus(Boolean(res.partial_corpus));
           setNextBefore(null);
         } else {
           // Cursor pagination uses `before` for the timestamp cursor. The
@@ -85,6 +91,7 @@ export function LogExplorer() {
           });
           setEntries((prev) => (append ? [...prev, ...res.entries] : res.entries));
           setScores([]);
+          setPartialCorpus(false);
           setNextBefore(res.next_before);
         }
         setError(null);
@@ -94,7 +101,12 @@ export function LogExplorer() {
           return;
         }
         if (err instanceof HttpError && err.status === 503 && isSearchMode) {
-          setError("semantic search is unavailable — OLLAMA_BASE_URL is unreachable");
+          // v1.1.2 Option A — surface the backend's exact 503 detail. The
+          // search router now distinguishes "models still loading" (cold-deploy
+          // window, message says "warming up — try again in a minute") from
+          // "Ollama unreachable" (config error, message names OLLAMA_BASE_URL).
+          // Using the wire detail keeps frontend + backend strings in lockstep.
+          setError(err.detail);
         } else if (err instanceof HttpError) {
           setError(`${isSearchMode ? "search" : "logs"} request failed (${err.status})`);
         } else {
@@ -136,6 +148,15 @@ export function LogExplorer() {
       {error && (
         <p role="alert" className="rounded-md bg-red-50 p-3 text-sm text-red-700">
           {error}
+        </p>
+      )}
+      {isSearchMode && partialCorpus && !loading && (
+        <p
+          role="status"
+          data-testid="partial-corpus-hint"
+          className="rounded-md bg-amber-50 p-3 text-sm text-amber-800"
+        >
+          Indexing still in progress — semantic search results may be incomplete.
         </p>
       )}
       <LogsTable

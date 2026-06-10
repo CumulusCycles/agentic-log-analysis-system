@@ -33,15 +33,29 @@ async def search_logs(
 ) -> LogsSearchResponse:
     store: Chroma | None = getattr(request.app.state, "vectorstore", None)
     if store is None:
-        # Degraded mode: Ollama unreachable at lifespan. /api/logs and
-        # /api/status still work — only semantic search is unavailable.
+        # Degraded mode: vectorstore not wired up yet.
+        # v1.1.2 Option A — distinguish the two reasons so the frontend
+        # shows a friendlier "models still loading" hint during the
+        # cold-deploy window where ollama-init is still pulling, vs. a
+        # genuine "URL unreachable" config error. The lifespan writes
+        # the three-valued state; default to `"unreachable"` if the
+        # attr is missing (defensive — same posture as the older string).
+        state = getattr(request.app.state, "embeddings_state", "unreachable")
         log.info(
             "search_unavailable_no_embeddings",
             query_preview=_truncate(body.query),
+            embeddings_state=state,
         )
+        if state == "loading":
+            detail = (
+                "semantic search is warming up — Ollama models are still "
+                "being pulled. Try again in a minute."
+            )
+        else:
+            detail = "semantic search is unavailable — OLLAMA_BASE_URL is unreachable"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="semantic search is unavailable — OLLAMA_BASE_URL is unreachable",
+            detail=detail,
         )
 
     _validate_apps(body.apps)
@@ -70,12 +84,25 @@ async def search_logs(
         entries.append(entry)
         scores.append(float(score))
 
+    # v1.1.2 — reflect whether the embedding backfill is still running so the
+    # frontend can distinguish "no matches" from "still indexing". The flag is
+    # set by the lifespan task (`main.py`) to False on entry and True after
+    # backfill completes (or when embeddings are disabled and backfill is
+    # skipped). Default-False is deliberate — if the lifespan somehow failed
+    # to set the flag (startup race, future test path that skips lifespan),
+    # the safer report is "still indexing" rather than the silent-degraded-
+    # mode "complete" the inverse default would produce. Per the v1.1.2
+    # /local-review consensus across 3 reviewer angles.
+    backfill_complete = bool(getattr(request.app.state, "backfill_complete", False))
+    partial_corpus = not backfill_complete
+
     log.info(
         "search_complete",
         query_preview=_truncate(body.query),
         result_count=len(entries),
+        partial_corpus=partial_corpus,
     )
-    return LogsSearchResponse(entries=entries, scores=scores)
+    return LogsSearchResponse(entries=entries, scores=scores, partial_corpus=partial_corpus)
 
 
 def _validate_apps(apps: list[str] | None) -> None:
