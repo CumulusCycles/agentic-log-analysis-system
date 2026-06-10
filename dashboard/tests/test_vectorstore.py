@@ -165,6 +165,78 @@ def test_embeddings_state_loading_when_models_missing() -> None:
         assert embeddings_state(settings) == "loading"
 
 
+def test_embeddings_state_ready_when_ollama_normalises_to_latest_tag() -> None:
+    """Ollama's `/api/tags` reports tagged names — even when the operator
+    pulled `nomic-embed-text` without an explicit tag, the response shows
+    `nomic-embed-text:latest`. The dashboard config carries the bare name
+    `nomic-embed-text` (matching `ollama pull` usage), so the probe MUST
+    treat `name` and `name:latest` as the same model. Without this guard
+    the watchdog loops indefinitely after a fresh model pull — the bug
+    that motivated the v1.1.2 round-4 cold-deploy live-validation fix.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    # Mirrors the actual /api/tags JSON observed on a fresh ollama-init pull.
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text:latest", "model": "nomic-embed-text:latest"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
+
+
+def test_embeddings_state_ready_when_explicit_latest_tag_in_settings() -> None:
+    """Inverse of the previous test — operator pulled `nomic-embed-text:latest`
+    explicitly AND configured it with the tag. Must also report ready.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(
+        ollama_base_url="http://ollama-stub:11434",
+        dashboard_embed_model="nomic-embed-text:latest",
+    )
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                {"name": "nomic-embed-text:latest", "model": "nomic-embed-text:latest"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
+
+
+def test_embeddings_state_does_not_match_arbitrary_tag_substitution() -> None:
+    """The `:latest` normalisation is intentionally narrow — `llama3.1:8b`
+    (an EXPLICIT tag) must NOT silently match `llama3.1:latest` if that's
+    what's loaded. Pin this so a future "be lenient" refactor doesn't
+    mistakenly accept a wrong-version model.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:latest", "model": "llama3.1:latest"},
+                {"name": "nomic-embed-text:latest", "model": "nomic-embed-text:latest"},
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        # `llama3.1:8b` is missing (only `llama3.1:latest` is loaded).
+        assert embeddings_state(settings) == "loading"
+
+
 def test_embeddings_state_loading_when_only_llm_present() -> None:
     """Partial-pull edge case — LLM is in but embed model isn't.
     Still `"loading"` (need BOTH).

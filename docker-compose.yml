@@ -307,9 +307,17 @@ services:
       # /api/logs/search + /api/chat surface a "models still loading"
       # state until the watchdog promotes them. `service_started` is
       # sufficient since the dashboard only needs the daemon process to
-      # exist (its own probe checks model availability). The completed
-      # gate on ollama-init is dropped for the same reason.
+      # exist (its own probe checks model availability).
       ollama:
+        condition: service_started
+      # `service_started` (not `service_completed_successfully`) ensures
+      # `docker compose up -d log-dashboard` (selective start) pulls
+      # ollama-init into the same batch so the model pull begins
+      # immediately — without this, a selective start would leave
+      # ollama-init orphaned and the watchdog would loop forever waiting
+      # for models nothing will pull. The dashboard still doesn't wait
+      # on ollama-init to complete; the watchdog handles late arrival.
+      ollama-init:
         condition: service_started
     networks:
       - insurance-net

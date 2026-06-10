@@ -112,7 +112,7 @@ def embeddings_state(settings: Settings) -> str:
         return "unreachable"
 
     required = (settings.dashboard_llm_model, settings.dashboard_embed_model)
-    missing = [m for m in required if m not in loaded]
+    missing = [m for m in required if not _is_model_loaded(m, loaded)]
     if missing:
         log.info(
             "ollama_models_missing",
@@ -122,6 +122,26 @@ def embeddings_state(settings: Settings) -> str:
         )
         return "loading"
     return "ready"
+
+
+def _is_model_loaded(required: str, loaded: set[str]) -> bool:
+    """True if `required` matches any name in `loaded`, treating
+    `name` and `name:latest` as the same model.
+
+    Ollama's `/api/tags` always emits the explicit `:latest` tag even
+    when the operator ran `ollama pull <name>` without a tag (which is
+    the most common case for `nomic-embed-text`). Without this
+    normalisation, `dashboard_embed_model="nomic-embed-text"` would
+    forever report `missing` against a `/api/tags` entry of
+    `"nomic-embed-text:latest"` — the watchdog would loop indefinitely,
+    embeddings would never come online, and the operator would have to
+    redeploy. This guard makes the probe robust to that tag elision.
+    """
+    if required in loaded:
+        return True
+    if ":" not in required and f"{required}:latest" in loaded:
+        return True
+    return False
 
 
 def is_embeddings_disabled(settings: Settings) -> bool:
