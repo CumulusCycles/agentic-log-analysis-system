@@ -130,12 +130,23 @@ services:
   # permanently unstartable (depends_on requires this service to complete
   # successfully). Each command prints a clear marker before exiting so
   # the operator's `docker logs` shows which pull failed.
+  #
+  # v1.1.2 — `condition: service_started` (NOT service_healthy). On a truly
+  # cold `ollama-data` volume, `ollama`'s healthcheck (post-v1.1.1) requires
+  # both models to be loaded, but `ollama-init` is what pulls them — a
+  # service_healthy dependency would deadlock the cold-start sequence. The
+  # daemon listens on its port within seconds of process start, so
+  # `service_started` is sufficient for `ollama pull` to succeed against it.
+  # The dashboard's gate downstream still uses `service_healthy` on `ollama`
+  # AND `service_completed_successfully` on `ollama-init`, so the v1.1.1
+  # race-protection guarantee (no chat call before models are loaded) is
+  # preserved at the consumer.
   ollama-init:
     image: ollama/ollama:latest
     platform: linux/arm64
     depends_on:
       ollama:
-        condition: service_healthy
+        condition: service_started
     environment:
       OLLAMA_HOST: http://ollama:11434
     entrypoint: ["/bin/sh", "-c"]

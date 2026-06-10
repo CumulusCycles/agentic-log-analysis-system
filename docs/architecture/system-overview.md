@@ -43,15 +43,17 @@ Full healthcheck rationale + chroma probe internals in [`.claude/rules/infrastru
 
 ## Startup Dependencies
 
-Compose-wired `depends_on` relationships. Every `service_healthy` relationship below uses `condition: service_healthy`; the `ollama-init` link uses `condition: service_completed_successfully` since it's a one-shot pull.
+Compose-wired `depends_on` relationships. App-tier and `log-dashboard → ollama` use `condition: service_healthy`; the `log-dashboard → ollama-init` link uses `condition: service_completed_successfully` (one-shot pull); the `ollama-init → ollama` link uses `condition: service_started` (v1.1.2 — see note below).
 
-| Service | Waits for |
-|---|---|
-| shared-data-api | postgres, mongodb |
-| fnol-app | shared-data-api |
-| customer-portal | shared-data-api |
-| agent-portal | shared-data-api |
-| ollama-init | ollama (then pulls `llama3.1:8b` + `nomic-embed-text` and exits) |
-| log-dashboard | chroma, ollama, ollama-init |
+| Service | Waits for | Gate |
+|---|---|---|
+| shared-data-api | postgres, mongodb | service_healthy |
+| fnol-app | shared-data-api | service_healthy |
+| customer-portal | shared-data-api | service_healthy |
+| agent-portal | shared-data-api | service_healthy |
+| ollama-init | ollama (then pulls `llama3.1:8b` + `nomic-embed-text` and exits) | **service_started** (v1.1.2) |
+| log-dashboard | chroma, ollama, ollama-init | service_healthy + service_completed_successfully |
 
 The app-tier dependencies were upgraded as each phase landed a real server with a healthcheck (Phase 3 SDA → postgres/mongodb, Phases 4–6 FNOL/CP/AP → SDA). The `log-dashboard → chroma` link has used `service_healthy` since Phase 2; Phase 8 (ADR-017) added the `ollama` healthy gate and the `ollama-init` completion gate so the dashboard never boots against an unready or model-less Ollama.
+
+**v1.1.2 cold-start fix:** the `ollama-init → ollama` link was `service_healthy` from v1.1.1 through v1.1.1.patch — that combined with v1.1.1's model-aware healthcheck created a cold-start deadlock (ollama can't be healthy without models loaded; ollama-init is what loads them). The gate was flipped to `service_started` so ollama-init starts as soon as the ollama daemon process is up (within seconds — the daemon accepts API calls almost immediately). The dashboard's race protection is preserved at the downstream gate: it still waits for `ollama: service_healthy` AND `ollama-init: service_completed_successfully`, so no chat call fires before both models are loaded.
