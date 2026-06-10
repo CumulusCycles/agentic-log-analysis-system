@@ -58,10 +58,10 @@ async def test_search_requires_auth(client) -> None:
     assert response.status_code == 401
 
 
-async def test_search_returns_503_when_embeddings_disabled(client, valid_token) -> None:
+async def test_search_returns_503_when_embeddings_unreachable(client, valid_token) -> None:
     # Default lifespan path: Ollama is unreachable in the test env (probe URL
-    # points at a closed port), so is_embeddings_disabled() returns True and
-    # app.state.vectorstore is None.
+    # points at a closed port), so embeddings_state() returns "unreachable"
+    # and app.state.vectorstore is None.
     response = await client.post(
         "/api/logs/search",
         json={"query": "auth failures"},
@@ -69,6 +69,31 @@ async def test_search_returns_503_when_embeddings_disabled(client, valid_token) 
     )
     assert response.status_code == 503
     assert "OLLAMA_BASE_URL" in response.json()["detail"]
+
+
+async def test_search_returns_503_with_warming_up_detail_during_loading(
+    client, valid_token, app_instance
+) -> None:
+    """v1.1.2 Option A round-4 — the search router picks one of two
+    distinct 503 detail strings based on `embeddings_state`. The
+    `loading` path returns a "warming up — try again in a minute"
+    message so the frontend can distinguish the cold-deploy window from
+    a genuine "URL unreachable" config error. Pin both paths so a typo
+    in the detail string or an inverted branch wouldn't silently pass.
+    """
+    # Manually flip the lifespan-set value to "loading". Vectorstore
+    # stays None, so the router enters the 503 branch — but now picks
+    # the loading-specific detail.
+    app_instance.state.embeddings_state = "loading"
+    response = await client.post(
+        "/api/logs/search",
+        json={"query": "anything"},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert "warming up" in detail
+    assert "OLLAMA_BASE_URL" not in detail
 
 
 async def test_search_returns_entries_with_scores(client, valid_token, ready_app) -> None:

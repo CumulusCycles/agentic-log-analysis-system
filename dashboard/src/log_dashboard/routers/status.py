@@ -70,10 +70,12 @@ async def get_status(
         scan_enabled=settings.proactive_scan_enabled,
         last_scan_at=last_scan_at,
         next_scan_at=next_scan_at,
-        # v1.1.2 Option A — lifespan / promotion watchdog write this. Default
-        # `"ready"` matches the schema default so older lifespans (or tests
-        # that haven't set the attr) report the safer-during-tests value.
-        embeddings_state=getattr(request.app.state, "embeddings_state", "ready"),
+        # v1.1.2 Option A (round-4): default `"unreachable"` matches the
+        # schema default + search.py — a missing attribute means the
+        # lifespan didn't set it (programming bug), and the defensive
+        # default surfaces that instead of hiding it behind a false
+        # "everything is fine."
+        embeddings_state=getattr(request.app.state, "embeddings_state", "unreachable"),
     )
 
 

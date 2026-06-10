@@ -96,13 +96,17 @@ def embeddings_state(settings: Settings) -> str:
     # — both `name` and `model` carry the `model:tag` string (the API uses
     # both keys across versions). Use `.get()` so a future schema tweak
     # can't crash the probe.
+    #
+    # Round-4 fix: explicitly validate `models` is a list. Without this
+    # guard, an Ollama response with `{"models": null}` (or `{"models":
+    # "broken"}`, etc.) would make `body.get("models", [])` return the
+    # actual `None`/non-list value (default only fires on missing keys),
+    # then the comprehension would raise `TypeError` and the outer except
+    # would map to "unreachable" — wrong category for what's actually a
+    # transient Ollama issue. Surface as "loading" instead so the
+    # watchdog re-probes.
     try:
         body = response.json()
-        loaded = {
-            (entry.get("name") or entry.get("model") or "")
-            for entry in body.get("models", [])
-            if isinstance(entry, dict)
-        }
     except (ValueError, AttributeError, TypeError) as exc:
         log.info(
             "ollama_tags_unparseable",
@@ -110,6 +114,21 @@ def embeddings_state(settings: Settings) -> str:
             base_url=safe_url,
         )
         return "unreachable"
+
+    models = body.get("models") if isinstance(body, dict) else None
+    if not isinstance(models, list):
+        log.info(
+            "ollama_tags_models_field_not_list",
+            actual_type=type(models).__name__,
+            base_url=safe_url,
+        )
+        return "loading"
+
+    loaded = {
+        (entry.get("name") or entry.get("model") or "")
+        for entry in models
+        if isinstance(entry, dict)
+    }
 
     required = (settings.dashboard_llm_model, settings.dashboard_embed_model)
     missing = [m for m in required if not _is_model_loaded(m, loaded)]
@@ -142,17 +161,6 @@ def _is_model_loaded(required: str, loaded: set[str]) -> bool:
     if ":" not in required and f"{required}:latest" in loaded:
         return True
     return False
-
-
-def is_embeddings_disabled(settings: Settings) -> bool:
-    """Backwards-compatible wrapper around `embeddings_state`.
-
-    Returns True for `"loading"` AND `"unreachable"` — both states must
-    skip embedding work. Callers that need the three-valued distinction
-    (the promotion watchdog, the `/api/status` field) call
-    `embeddings_state` directly.
-    """
-    return embeddings_state(settings) != "ready"
 
 
 _UNPARSEABLE_URL_REDACTION = "<unparseable-url-redacted>"

@@ -24,7 +24,6 @@ from .ingest.vectorstore import (
     build_vectorstore,
     configure_langsmith,
     embeddings_state,
-    is_embeddings_disabled,
 )
 from .ingest.watcher import LogVolumeWatcher
 from .logging_setup import configure_logging, get_logger
@@ -90,21 +89,37 @@ def create_app() -> FastAPI:
                     error_class=type(exc).__name__,
                 )
                 continue
-            app.state.embeddings_state = state
-            if state == "ready":
-                log.info("embeddings_promoted", from_state="loading")
-                configure_langsmith(settings)
-                vectorstore = build_vectorstore(settings)
-                app.state.vectorstore = vectorstore
-                # Rebuild the agent graph so the `query_logs` tool binds
-                # to the live vectorstore. The existing checkpointer +
-                # SessionIndex are preserved so any in-flight conversations
-                # keep their thread state.
-                app.state.agent_graph = build_agent_graph(
-                    settings, vectorstore, app.state.agent_checkpointer
-                )
-                await _backfill_and_start_watcher(app)
-                return
+            if state != "ready":
+                # Stay in loading; expose the live state. `embeddings_state`
+                # is written even when not promoting so a transient flap
+                # (e.g., ollama restart mid-pull) is observable on /api/status.
+                app.state.embeddings_state = state
+                continue
+            # Round-4 fix: write `embeddings_state="ready"` ONLY after the
+            # vectorstore + agent graph are wired. Readers (`/api/status`,
+            # `/api/logs/search`) that branch on `embeddings_state` must
+            # never see "ready" with `vectorstore=None` — that would make
+            # the search 503 emit the wrong detail string ("URL unreachable"
+            # instead of operational), and chat could bind tools to a
+            # half-built state.
+            log.info("embeddings_promoted", from_state="loading")
+            configure_langsmith(settings)
+            vectorstore = build_vectorstore(settings)
+            app.state.vectorstore = vectorstore
+            # Rebuild the agent graph so the `query_logs` tool binds
+            # to the live vectorstore. The existing checkpointer +
+            # SessionIndex are preserved so any in-flight conversations
+            # keep their thread state.
+            app.state.agent_graph = build_agent_graph(
+                settings, vectorstore, app.state.agent_checkpointer
+            )
+            # State write is the LAST step — flip to "ready" only after
+            # every downstream attribute (vectorstore + agent_graph) is
+            # in place. The backfill task is kicked AFTER the flip so
+            # the search endpoint immediately reports the new state.
+            app.state.embeddings_state = "ready"
+            await _backfill_and_start_watcher(app)
+            return
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -123,6 +138,19 @@ def create_app() -> FastAPI:
         # No persistence by design; restart clears history.
         app.state.agitator_runs = RunRegistry()
         backfill_task: asyncio.Task[None] | None = None
+
+        # Round-4 fix: create the agent checkpointer + stash it on app.state
+        # BEFORE the embeddings-state branch so the promotion watchdog (if
+        # started by the `loading` branch below) can safely read
+        # `app.state.agent_checkpointer` on its first iteration. Previously
+        # the assignment happened later in lifespan; if the watchdog's first
+        # sleep ever elapsed faster than the lifespan's synchronous
+        # remainder, the read would have raised AttributeError. Eager
+        # creation closes the race and documents the dependency order.
+        from langgraph.checkpoint.memory import InMemorySaver
+
+        agent_checkpointer = InMemorySaver()
+        app.state.agent_checkpointer = agent_checkpointer
 
         # v1.1.2 Option A — three-valued probe replaces the binary
         # `is_embeddings_disabled` check. The probe is sync httpx with a
@@ -153,18 +181,12 @@ def create_app() -> FastAPI:
             backfill_task = asyncio.create_task(_backfill_and_start_watcher(app))
 
         # LangGraph agent + /api/chat (ADR-015, amended by ADR-017). The
-        # graph and its InMemorySaver checkpointer + SessionIndex are built
-        # unconditionally — `vectorstore=None` is permitted so the chat
-        # route still responds in degraded mode (the `query_logs` tool
-        # returns a tool_error).
-        from langgraph.checkpoint.memory import InMemorySaver
-
-        agent_checkpointer = InMemorySaver()
-        # Stashed on app.state so the v1.1.2 embeddings-promotion watchdog
-        # can rebuild the agent graph against the live vectorstore once
-        # models become available — same checkpointer keeps in-flight
-        # conversations' thread state continuous across the rebuild.
-        app.state.agent_checkpointer = agent_checkpointer
+        # graph + SessionIndex are built unconditionally — `vectorstore=None`
+        # is permitted so the chat route still responds in degraded mode
+        # (the `query_logs` tool returns a tool_error). The checkpointer
+        # itself was created above the embeddings-state branch (round-4
+        # fix) so the promotion watchdog can read app.state.agent_checkpointer
+        # safely on its first iteration.
         app.state.session_index = SessionIndex(
             checkpointer=agent_checkpointer, max_entries=settings.session_index_max
         )

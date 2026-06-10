@@ -43,7 +43,7 @@ Full healthcheck rationale + chroma probe internals in [`.claude/rules/infrastru
 
 ## Startup Dependencies
 
-Compose-wired `depends_on` relationships. App-tier and `log-dashboard → ollama` use `condition: service_healthy`; the `log-dashboard → ollama-init` link uses `condition: service_completed_successfully` (one-shot pull); the `ollama-init → ollama` link uses `condition: service_started` (v1.1.2 — see note below).
+Compose-wired `depends_on` relationships. v1.1.2 Option A relaxed the dashboard's chain so it comes up in seconds on cold deploys instead of waiting on the 5–15 min Ollama model pull — full rationale + fix layers documented below the table.
 
 | Service | Waits for | Gate |
 |---|---|---|
@@ -52,8 +52,14 @@ Compose-wired `depends_on` relationships. App-tier and `log-dashboard → ollama
 | customer-portal | shared-data-api | service_healthy |
 | agent-portal | shared-data-api | service_healthy |
 | ollama-init | ollama (then pulls `llama3.1:8b` + `nomic-embed-text` and exits) | **service_started** (v1.1.2) |
-| log-dashboard | chroma, ollama, ollama-init | service_healthy + service_completed_successfully |
+| log-dashboard | chroma | **service_healthy** (fast — chroma starts in ~10s) |
+| log-dashboard | ollama | **service_started** (v1.1.2 Option A — daemon process up; model availability checked by the dashboard's own probe + watchdog) |
+| log-dashboard | ollama-init | **service_started** (v1.1.2 Option A — ensures the model puller is in the same start batch so selective `up -d log-dashboard` doesn't orphan it; the dashboard does NOT wait on the pull to complete) |
 
-The app-tier dependencies were upgraded as each phase landed a real server with a healthcheck (Phase 3 SDA → postgres/mongodb, Phases 4–6 FNOL/CP/AP → SDA). The `log-dashboard → chroma` link has used `service_healthy` since Phase 2; Phase 8 (ADR-017) added the `ollama` healthy gate and the `ollama-init` completion gate so the dashboard never boots against an unready or model-less Ollama.
+The app-tier dependencies were upgraded as each phase landed a real server with a healthcheck (Phase 3 SDA → postgres/mongodb, Phases 4–6 FNOL/CP/AP → SDA). The `log-dashboard → chroma` link has used `service_healthy` since Phase 2; Phase 8 (ADR-017) added the `ollama` healthy gate and the `ollama-init` completion gate so the dashboard never booted against an unready or model-less Ollama — but that combined with v1.1.1's model-aware healthcheck to create a cold-start chain that left log-dashboard in `Created` for the full 5–15 min model pull.
 
-**v1.1.2 cold-start fix:** the `ollama-init → ollama` link was `service_healthy` from v1.1.1 through v1.1.1.patch — that combined with v1.1.1's model-aware healthcheck created a cold-start deadlock (ollama can't be healthy without models loaded; ollama-init is what loads them). The gate was flipped to `service_started` so ollama-init starts as soon as the ollama daemon process is up (within seconds — the daemon accepts API calls almost immediately). The dashboard's race protection is preserved at the downstream gate: it still waits for `ollama: service_healthy` AND `ollama-init: service_completed_successfully`, so no chat call fires before both models are loaded.
+**v1.1.2 fix layers — read in order:**
+
+1. **Deadlock fix (commit `4c037ba`):** the `ollama-init → ollama` link was `service_healthy` from v1.1.1; combined with v1.1.1's model-aware healthcheck, `ollama` could never be healthy without models loaded AND `ollama-init` is what loads them → deadlock. Flipped to `service_started` so `ollama-init` starts as soon as the daemon process is up. Confirmed by commit message + `4c037ba`.
+
+2. **Option A (commit `2553045` + `c4fd665`):** Even after the deadlock fix, the dashboard waited on `ollama: service_healthy` + `ollama-init: service_completed_successfully` — so log-dashboard's container still sat in `Created` for the full pull. Option A relaxes both gates to `service_started` and adds a lifespan-level promotion watchdog that re-probes Ollama for model availability every 30s (`DASHBOARD_EMBEDDINGS_PROMOTION_INTERVAL_SECONDS`); when both models become available the watchdog wires up the vectorstore + rebuilds the agent graph + kicks off backfill. `/api/status` surfaces `embeddings_state: ready | loading | unreachable` so the frontend can show a friendlier message during the loading window. The `ollama-init: service_started` gate is kept (not dropped) so selective `up -d log-dashboard` doesn't orphan the puller.

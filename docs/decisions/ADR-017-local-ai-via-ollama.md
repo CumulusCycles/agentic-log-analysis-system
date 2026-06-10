@@ -265,3 +265,68 @@ pivots.
 - `feedback_never_log_credentials` — credential-redaction posture preserved
 - `feedback_ship_skip_e2e_still_needs_smoke` — PR 8b needs live-stack validation
 - `project_phase_8_local_ai_plan` (memory) — parked planning notes
+
+---
+
+## Amendments
+
+### 2026-06-10 — v1.1.2 cold-start readiness model
+
+Two operational issues surfaced after PR 8b shipped, both rooted in the
+v1.1.1 model-aware Ollama healthcheck (`ollama list | awk` predicate)
+interacting with the docker-compose dep chain. This amendment captures
+the v1.1.2 fix layers; the original Decisions above are unchanged.
+
+**Issue 1 — `ollama-init → ollama` deadlock on cold volumes (commit `4c037ba`).**
+v1.1.1 tightened the Ollama healthcheck to require both `llama3.1:8b` and
+`nomic-embed-text` loaded. But `ollama-init` (the model puller) had
+`depends_on: ollama: condition: service_healthy` — and the only thing
+that loads the models IS `ollama-init`. On any truly cold `ollama-data`
+volume, ollama could never be healthy without models, and ollama-init
+would never start to pull them. Hit twice in the wild. **Fix:** flip
+`ollama-init → ollama` to `service_started`; the daemon binds its API
+port within seconds of process start, which is sufficient for
+`ollama pull` to succeed against it.
+
+**Issue 2 — Dashboard waits 5-15 min on model pull (commits `2553045` +
+`c4fd665` + round-4 cleanup).** Even after Issue 1's deadlock fix,
+`log-dashboard` still waited on `ollama: service_healthy` + `ollama-init:
+service_completed_successfully` before its container left `Created`. That
+meant a 5-15 min "dead container" window on any cold deploy where the
+operator could see nothing on `localhost:4001`. This amendment formalises
+the **Option A** fix:
+
+1. **Three-valued readiness probe.** `vectorstore.embeddings_state(settings)`
+   returns one of `"ready"`, `"loading"`, or `"unreachable"`. The probe
+   queries `/api/tags` and verifies both required models are listed
+   (with `:latest` tag normalisation since `ollama pull <name>` without
+   a tag pulls the `:latest` variant — round-4 fix). The old binary
+   `is_embeddings_disabled` is removed.
+2. **Promotion watchdog.** When the initial lifespan probe returns
+   `loading`, lifespan starts an asyncio task that re-probes every
+   `DASHBOARD_EMBEDDINGS_PROMOTION_INTERVAL_SECONDS` (default 30s).
+   On the first `loading → ready` transition, the watchdog builds the
+   vectorstore, rebuilds the agent graph against the live store
+   (preserving the InMemorySaver checkpointer so in-flight conversations
+   keep their thread state), and kicks off the backfill+watcher chain.
+   Round-4 ordering fix: `embeddings_state="ready"` is the LAST write,
+   after every downstream attribute is in place — readers never see a
+   `ready` state with `vectorstore=None`.
+3. **Relaxed dashboard depends_on.** `log-dashboard → ollama` flipped to
+   `service_started`; `log-dashboard → ollama-init` kept as
+   `service_started` (not dropped) so selective `up -d log-dashboard`
+   pulls the puller into the same start batch.
+4. **API surface.** `/api/status` exposes `embeddings_state` so the
+   frontend can show a "models still loading" hint distinct from
+   "Ollama unreachable." `/api/logs/search` picks one of two 503 detail
+   strings based on the state. All defaults (schema, getattr, search
+   detail builder) are `"unreachable"` — defensive when the lifespan
+   didn't set the attribute (programming bug surfaces instead of being
+   hidden by a false "ready").
+
+**Verified end-to-end:** absolute-zero deploy (`docker compose down -v
+--rmi all --remove-orphans` + `system prune -a --volumes`) followed by
+`docker compose up -d --build` produces a healthy `log-dashboard` in
+~25s, watchdog auto-promotes to `ready` ~60s after `ollama-init` exits
+(3-min total cold-deploy wall time including the model pull). No manual
+intervention required.

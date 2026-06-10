@@ -193,8 +193,13 @@ describe("LogExplorer (7d semantic search)", () => {
     renderExplorer();
     await userEvent.type(screen.getByTestId("filter-query"), "auth");
 
+    // Round-4: pin the full backend detail string so a typo on either
+    // side (a stray space, a smart-quote, a missing word) surfaces as
+    // a test failure — backend + frontend strings must stay in lockstep.
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/warming up/i);
+    expect(alert).toHaveTextContent(
+      "semantic search is warming up — Ollama models are still being pulled. Try again in a minute.",
+    );
     expect(alert).not.toHaveTextContent(/OLLAMA_BASE_URL/i);
   });
 

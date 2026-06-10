@@ -120,7 +120,14 @@ class StatusResponse(BaseModel):
     # pulling, promotion watchdog re-probing; `"unreachable"` = daemon down
     # or URL wrong. The Log Explorer search 503 banner reads this field
     # to pick the right message.
-    embeddings_state: Literal["ready", "loading", "unreachable"] = "ready"
+    #
+    # Round-4 fix: default to `"unreachable"` (defensive), NOT `"ready"`.
+    # A missing field means the lifespan didn't set it — which can only
+    # happen on a programming bug or a test path that skips lifespan.
+    # Defaulting to `"unreachable"` surfaces that bug instead of hiding it
+    # behind a false "everything is fine." Aligned with the same
+    # defensive default in `routers/search.py` and `routers/status.py`.
+    embeddings_state: Literal["ready", "loading", "unreachable"] = "unreachable"
 
 
 # --- Phase 7d: semantic search ---

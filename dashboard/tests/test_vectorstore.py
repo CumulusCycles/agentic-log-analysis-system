@@ -11,7 +11,7 @@ from log_dashboard.ingest.vectorstore import (
     _SESSION_TOTALS,
     _strip_url_userinfo,
     build_vectorstore,
-    is_embeddings_disabled,
+    embeddings_state,
     metadata_to_log_entry,
     upsert_entries,
 )
@@ -53,64 +53,6 @@ def _entry(seq: int) -> LogEntry:
     )
 
 
-def test_is_embeddings_disabled_returns_true_when_ollama_unreachable() -> None:
-    """The test conftest defaults `OLLAMA_BASE_URL` to a closed port, so
-    `is_embeddings_disabled` should refuse the connection and return True
-    immediately."""
-    settings = _settings()
-    assert is_embeddings_disabled(settings) is True
-
-
-def test_is_embeddings_disabled_returns_true_on_non_200() -> None:
-    """A reachable URL that returns a non-200 status counts as disabled.
-
-    Belt-and-braces for the case where some other service answers on the
-    Ollama port but isn't actually Ollama — the dashboard still degrades
-    cleanly rather than crashing in the embedder.
-    """
-    settings = _settings(ollama_base_url="http://example.invalid:11434")
-
-    fake_resp = MagicMock()
-    fake_resp.status_code = 502
-    fake_client = MagicMock()
-    fake_client.__enter__ = MagicMock(return_value=fake_client)
-    fake_client.__exit__ = MagicMock(return_value=False)
-    fake_client.get = MagicMock(return_value=fake_resp)
-
-    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
-        assert is_embeddings_disabled(settings) is True
-
-
-def test_is_embeddings_disabled_returns_false_on_200_with_models_loaded() -> None:
-    """A reachable Ollama that returns 200 to `/api/tags` AND lists both
-    required models is healthy.
-
-    v1.1.2 Option A — the predicate widened from "daemon reachable" to
-    "daemon reachable AND required models in /api/tags". The 200-with-no-
-    models case now reports `loading` (covered by the new test below);
-    the daemon-only case is no longer "ready".
-    """
-    settings = _settings(ollama_base_url="http://ollama-stub:11434")
-
-    fake_resp = MagicMock()
-    fake_resp.status_code = 200
-    fake_resp.json = MagicMock(
-        return_value={
-            "models": [
-                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
-                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
-            ]
-        }
-    )
-    fake_client = MagicMock()
-    fake_client.__enter__ = MagicMock(return_value=fake_client)
-    fake_client.__exit__ = MagicMock(return_value=False)
-    fake_client.get = MagicMock(return_value=fake_resp)
-
-    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=fake_client):
-        assert is_embeddings_disabled(settings) is False
-
-
 # v1.1.2 Option A — three-valued `embeddings_state` predicate. The
 # lifespan branches on these states (ready / loading / unreachable) to
 # decide whether to wire up the vectorstore eagerly, start the promotion
@@ -135,6 +77,11 @@ def test_embeddings_state_ready_when_both_models_present() -> None:
     """`/api/tags` lists both required models → `"ready"`. This is the
     happy path the lifespan branches into to build the vectorstore + start
     backfill immediately.
+
+    Round-4: the model entries carry every field a real Ollama
+    `/api/tags` response returns (`name`, `model`, `modified_at`, `size`,
+    `digest`, `details`). Future code that reads these extra fields will
+    work in tests without a shape mismatch with production.
     """
     from log_dashboard.ingest.vectorstore import embeddings_state
 
@@ -143,8 +90,32 @@ def test_embeddings_state_ready_when_both_models_present() -> None:
         200,
         {
             "models": [
-                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
-                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
+                {
+                    "name": "llama3.1:8b",
+                    "model": "llama3.1:8b",
+                    "modified_at": "2026-06-09T12:00:00Z",
+                    "size": 4_661_211_808,
+                    "digest": "sha256:abc123def456",
+                    "details": {
+                        "format": "gguf",
+                        "family": "llama",
+                        "parameter_size": "8.0B",
+                        "quantization_level": "Q4_0",
+                    },
+                },
+                {
+                    "name": "nomic-embed-text",
+                    "model": "nomic-embed-text",
+                    "modified_at": "2026-06-09T12:00:00Z",
+                    "size": 274_302_450,
+                    "digest": "sha256:def789ghi012",
+                    "details": {
+                        "format": "gguf",
+                        "family": "nomic-bert",
+                        "parameter_size": "137M",
+                        "quantization_level": "F16",
+                    },
+                },
                 {"name": "other-model", "model": "other-model"},
             ]
         },
@@ -287,6 +258,61 @@ def test_embeddings_state_unreachable_on_unparseable_body() -> None:
     client = _build_fake_tags_client(200, None)
     with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
         assert embeddings_state(settings) == "unreachable"
+
+
+def test_embeddings_state_loading_when_models_field_is_null() -> None:
+    """Round-4 fix: `{"models": null}` from Ollama (transient state during
+    startup, or older Ollama versions) MUST return `"loading"` so the
+    watchdog re-probes — NOT `"unreachable"` which would stop the
+    promotion loop forever.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(200, {"models": None})
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_loading_when_models_field_is_not_a_list() -> None:
+    """Round-4 fix: `{"models": "bogus"}` or `{"models": 42}` from a
+    misbehaving upstream MUST also return `"loading"`. Defensive — the
+    probe shouldn't crash on a malformed but still-200 response.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    for malformed in ("bogus", 42, {"nested": "object"}):
+        client = _build_fake_tags_client(200, {"models": malformed})
+        with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+            assert embeddings_state(settings) == "loading"
+
+
+def test_embeddings_state_skips_non_dict_model_entries() -> None:
+    """Round-4 fix: defensive `isinstance(entry, dict)` guard in the set
+    comprehension is exercised here. A `/api/tags` response with mixed
+    dict + non-dict entries (e.g., string or int from a buggy upstream)
+    must filter the non-dicts and still evaluate the dicts that ARE
+    present. With both required models present in valid dict form,
+    state is `"ready"` despite the noise entries.
+    """
+    from log_dashboard.ingest.vectorstore import embeddings_state
+
+    settings = _settings(ollama_base_url="http://ollama-stub:11434")
+    client = _build_fake_tags_client(
+        200,
+        {
+            "models": [
+                {"name": "llama3.1:8b", "model": "llama3.1:8b"},
+                "stray-string-not-a-dict",  # filtered by isinstance guard
+                42,  # also filtered
+                {"name": "nomic-embed-text", "model": "nomic-embed-text"},
+                None,  # also filtered
+            ]
+        },
+    )
+    with patch("log_dashboard.ingest.vectorstore.httpx.Client", return_value=client):
+        assert embeddings_state(settings) == "ready"
 
 
 def test_embeddings_state_loading_respects_custom_model_settings() -> None:
@@ -742,9 +768,9 @@ def test_strip_url_userinfo_leaves_query_string_unchanged() -> None:
 
 
 def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, caplog) -> None:
-    """End-to-end guarantee: `is_embeddings_disabled` must NOT emit the
-    raw userinfo on the structured log line, even when the probe fails
-    against a credentialed URL.
+    """End-to-end guarantee: `embeddings_state` must NOT emit the raw
+    userinfo on the structured log line, even when the probe fails against
+    a credentialed URL.
 
     Constructs a Settings object pointing at an unroutable URL with
     credentials, calls the probe, and asserts no part of the credential
@@ -755,7 +781,7 @@ def test_strip_url_userinfo_does_not_log_credentials_through_probe(monkeypatch, 
     import logging
 
     caplog.set_level(logging.INFO)
-    assert is_embeddings_disabled(settings) is True
+    assert embeddings_state(settings) == "unreachable"
 
     # Defensive: check the message AND every value in the record dict
     # individually, in case a future structlog formatter wraps a value
