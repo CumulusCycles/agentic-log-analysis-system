@@ -36,6 +36,27 @@ from log_dashboard.auth.jwt import encode_token  # noqa: E402
 from log_dashboard.config import get_settings  # noqa: E402
 
 
+def _extract_chat_log_event(caplog, event_name: str) -> dict | None:
+    """Find the first chat-router log record whose serialised dict has
+    `event == event_name`. Returns the parsed dict or None.
+
+    structlog under pytest emits a Python dict repr (single quotes), so
+    `ast.literal_eval` is the correct parser — `json.loads` would fail.
+    Lifted to conftest in v1.1.2 round-3 so the chat-route exceptions
+    test and the new sub-ms duration_ms test in dry_run share one impl.
+    """
+    import ast
+
+    for rec in caplog.records:
+        try:
+            payload = ast.literal_eval(rec.getMessage())
+        except (ValueError, SyntaxError):
+            continue
+        if isinstance(payload, dict) and payload.get("event") == event_name:
+            return payload
+    return None
+
+
 @pytest.fixture(autouse=True)
 def _clear_settings_cache():
     """get_settings() is @lru_cache'd; clear it around every test so any

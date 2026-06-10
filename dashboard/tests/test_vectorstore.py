@@ -421,14 +421,23 @@ def test_strip_url_userinfo_redacts_on_urlparse_failure(monkeypatch) -> None:
     malformed input), the function MUST return a constant placeholder
     rather than the original input — otherwise a credentialed URL that
     confuses `urlparse` would silently echo its credentials.
+
+    v1.1.2 round-3 — also asserts the patched `urlparse` actually fires.
+    Without the call-count guard, a future refactor that stops calling
+    `urlparse` would silently slot the patch in but never trigger it,
+    masking the redaction-path test as a no-op.
     """
     import log_dashboard.ingest.vectorstore as vs_mod
 
-    def _boom(_: str):
+    calls: list[str] = []
+
+    def _boom(arg: str):
+        calls.append(arg)
         raise ValueError("simulated urlparse failure")
 
     monkeypatch.setattr(vs_mod, "urlparse", _boom)
     out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert calls, "urlparse was never called — redaction path not exercised"
     assert out == "<unparseable-url-redacted>"
     assert "leaky_user" not in out
     assert "leaky_pass" not in out
@@ -438,14 +447,20 @@ def test_strip_url_userinfo_redacts_on_urlunparse_failure(monkeypatch) -> None:
     """v1.1.2: if `urlunparse` raises during netloc reassembly, the
     function MUST return the constant placeholder rather than the
     original input. Same credential-echo risk as the urlparse path.
+
+    v1.1.2 round-3 — call-count guard mirrors the urlparse-failure test.
     """
     import log_dashboard.ingest.vectorstore as vs_mod
 
-    def _boom(_):
+    calls: list[object] = []
+
+    def _boom(arg):
+        calls.append(arg)
         raise ValueError("simulated urlunparse failure")
 
     monkeypatch.setattr(vs_mod, "urlunparse", _boom)
     out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert calls, "urlunparse was never called — redaction path not exercised"
     assert out == "<unparseable-url-redacted>"
     assert "leaky_user" not in out
     assert "leaky_pass" not in out
@@ -457,14 +472,21 @@ def test_strip_url_userinfo_redacts_on_unexpected_exception_type(monkeypatch) ->
     types can't slip past the (ValueError, AttributeError) tuple. This
     test pins a non-tuple exception type (RuntimeError) and verifies the
     redaction still fires.
+
+    v1.1.2 round-3 — call-count guard mirrors the other two parse-failure
+    tests.
     """
     import log_dashboard.ingest.vectorstore as vs_mod
 
-    def _boom(_: str):
+    calls: list[str] = []
+
+    def _boom(arg: str):
+        calls.append(arg)
         raise RuntimeError("hypothetical future-Python urlparse error")
 
     monkeypatch.setattr(vs_mod, "urlparse", _boom)
     out = _strip_url_userinfo("http://leaky_user:leaky_pass@host:11434")
+    assert calls, "urlparse was never called — redaction path not exercised"
     assert out == "<unparseable-url-redacted>"
     assert "leaky_user" not in out
     assert "leaky_pass" not in out

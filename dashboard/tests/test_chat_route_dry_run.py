@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import pytest
 
+from .conftest import _extract_chat_log_event
+
 
 @pytest.mark.asyncio
 async def test_chat_default_is_dry_run(client, valid_token, fail_if_real_llm_invoked) -> None:
@@ -111,3 +113,51 @@ async def test_chat_complete_log_carries_duration_ms(
     # weaker `>= 0` from v1.1.1 — that bound silently allowed `int()`
     # floor-truncation on sub-ms dry-run paths to look like missing data.
     assert duration >= 1
+
+
+@pytest.mark.asyncio
+async def test_chat_complete_duration_ms_floors_at_one_on_sub_ms_path(
+    client, valid_token, fail_if_real_llm_invoked, caplog, monkeypatch
+) -> None:
+    """v1.1.2 round-3 — pin the `max(1, round())` floor against a
+    regression to bare `int()`. The earlier `>= 1` test passes whether
+    production uses `int()` or `max(1, round())` because real dry-run
+    paths take >= 1ms; this test forces a sub-ms delta so a revert to
+    `int()` would emit 0 (which fails the `== 1` assertion below).
+    """
+    import logging
+    from types import SimpleNamespace
+
+    import log_dashboard.routers.chat as chat_mod
+
+    # First perf_counter() call returns the "start"; every subsequent
+    # call returns start + 0.0001s (0.1ms). Robust against intermediate
+    # perf_counter samples — extra calls keep the "end" frozen, so the
+    # delta stays sub-ms regardless of how many times chat.py samples.
+    # Patches a fake `time` namespace on the chat module so the global
+    # `time` module is untouched (asyncio/uvicorn use the same module).
+    state = {"first": True}
+
+    def _fake_pc() -> float:
+        if state["first"]:
+            state["first"] = False
+            return 100.0
+        return 100.0001
+
+    monkeypatch.setattr(chat_mod, "time", SimpleNamespace(perf_counter=_fake_pc))
+
+    caplog.set_level(logging.INFO, logger="chat")
+    response = await client.post(
+        "/api/chat",
+        json={"message": "hello"},
+        headers={"Authorization": f"Bearer {valid_token}"},
+    )
+    assert response.status_code == 200
+
+    payload = _extract_chat_log_event(caplog, "chat_complete")
+    assert payload is not None, "chat_complete log event not found in caplog records"
+    duration = payload.get("duration_ms")
+    assert duration == 1, (
+        f"sub-ms path must floor to 1 via `max(1, round(...))`; "
+        f"got {duration!r} — possible regression to bare `int()`"
+    )

@@ -28,6 +28,8 @@ from langchain_core.documents import Document
 
 from log_dashboard.ingest.embeddings import make_doc_id
 
+from .conftest import _extract_chat_log_event
+
 
 class _BoomGraph:
     """Stand-in for a compiled LangGraph whose `ainvoke` raises a
@@ -50,26 +52,6 @@ class _BoomGraph:
         self, *args, **kwargs
     ):  # noqa: ARG002 — not reached because astream raises first
         return None
-
-
-def _extract_chat_log_event(caplog, event_name: str) -> dict | None:
-    """Find the first chat-router log record whose serialised dict has
-    `event == event_name`. Returns the parsed dict or None.
-
-    structlog under pytest emits a Python dict repr (single quotes), so
-    `ast.literal_eval` is the correct parser — `json.loads` would fail.
-    Mirrors the helper inline in `test_chat_route_dry_run.py`.
-    """
-    import ast
-
-    for rec in caplog.records:
-        try:
-            payload = ast.literal_eval(rec.getMessage())
-        except (ValueError, SyntaxError):
-            continue
-        if isinstance(payload, dict) and payload.get("event") == event_name:
-            return payload
-    return None
 
 
 @pytest.mark.asyncio
